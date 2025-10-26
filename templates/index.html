@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head >
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Sentiment</title>
@@ -76,6 +76,8 @@
             padding: 20px;
             color: #9333ea;
         }
+
+
 
         .stock-header {
             margin-bottom: 30px;
@@ -336,7 +338,24 @@
                 <div class="price-change" id="priceChange"></div>
                 <div class="price-change" id="afterHoursChange"></div>
             </div>
-
+            <div class="sentiment-summary">
+                <div class="sentiment-item">
+                    <div class="sentiment-label">POSITIVE</div>
+                    <div class="sentiment-value positive" id="positiveCount">0</div>
+                </div>
+                <div class="sentiment-item">
+                    <div class="sentiment-label">NEGATIVE</div>
+                    <div class="sentiment-value negative" id="negativeCount">0</div>
+                </div>
+                <div class="sentiment-item">
+                    <div class="sentiment-label">NEUTRAL</div>
+                    <div class="sentiment-value" style="color: #888;" id="neutralCount">0</div>
+                </div>
+                <div class="sentiment-item">
+                    <div class="sentiment-label">OVERALL SENTIMENT</div>
+                    <div class="sentiment-value" id="overallSentiment">-</div>
+                </div>
+            </div>
             <div class="chart-container">
                 <div class="chart-tabs">
                     <span class="chart-tab active" data-period="1d">1D</span>
@@ -422,24 +441,7 @@
             <div class="news-section">
                 <div class="section-title">News & Sentiment Analysis</div>
 
-                <div class="sentiment-summary">
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">POSITIVE</div>
-                        <div class="sentiment-value positive" id="positiveCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">NEGATIVE</div>
-                        <div class="sentiment-value negative" id="negativeCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">NEUTRAL</div>
-                        <div class="sentiment-value" style="color: #888;" id="neutralCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">OVERALL SENTIMENT</div>
-                        <div class="sentiment-value" id="overallSentiment">-</div>
-                    </div>
-                </div>
+                
 
                 <div id="newsArticles"></div>
             </div>
@@ -450,6 +452,7 @@
         let chart = null;
         let currentSymbol = null;
         let historicalData = {};
+        const CACHE_DURATION_MS = 12 * 60 * 60 * 1000;
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -467,6 +470,46 @@
             return num.toFixed(2) + '%';
         }
 
+        function getCachedNewsData(symbol) {
+            try {
+                const cached = localStorage.getItem(`news_${symbol}`);
+                if (!cached) return null;
+
+                const data = JSON.parse(cached);
+                const now = new Date().getTime();
+                
+                if (now - data.timestamp < CACHE_DURATION_MS) {
+                    console.log(`Using cached news data for ${symbol}`);
+                    return {
+                        articles: data.articles,
+                        sentiment_summary: data.sentiment_summary,
+                        overall_sentiment: data.overall_sentiment
+                    };
+                } else {
+                    localStorage.removeItem(`news_${symbol}`);
+                    return null;
+                }
+            } catch (e) {
+                console.error('Error reading cache:', e);
+                return null;
+            }
+        }
+
+        function cacheNewsData(symbol, articles, sentiment_summary, overall_sentiment) {
+            try {
+                const cacheData = {
+                    articles: articles,
+                    sentiment_summary: sentiment_summary,
+                    overall_sentiment: overall_sentiment,
+                    timestamp: new Date().getTime()
+                };
+                localStorage.setItem(`news_${symbol}`, JSON.stringify(cacheData));
+                console.log(`Cached news data for ${symbol}`);
+            } catch (e) {
+                console.error('Error writing to cache:', e);
+            }
+        }
+
         async function searchStock() {
             const companyName = document.getElementById('companyInput').value.trim();
 
@@ -481,24 +524,64 @@
             document.getElementById('searchBtn').disabled = true;
 
             try {
-                const response = await fetch('/search', {
+                const initialResponse = await fetch('/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ company_name: companyName }),
+                    body: JSON.stringify({ 
+                        company_name: companyName,
+                        use_cache: true
+                    }),
                 });
 
-                const data = await response.json();
+                const initialData = await initialResponse.json();
 
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to fetch data');
+                if (!initialResponse.ok) {
+                    throw new Error(initialData.error || 'Failed to fetch data');
                 }
 
-                displayResults(data);
-                currentSymbol = data.stock_info.symbol;
+                const symbol = initialData.stock_info.symbol;
+                const cachedNews = getCachedNewsData(symbol);
+                
+                let finalData = initialData;
+                
+                if (cachedNews) {
+                    finalData.articles = cachedNews.articles;
+                    finalData.sentiment_summary = cachedNews.sentiment_summary;
+                    finalData.overall_sentiment = cachedNews.overall_sentiment;
+                } else {
+                    const newsResponse = await fetch('/search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            company_name: companyName,
+                            use_cache: false
+                        }),
+                    });
+
+                    const newsData = await newsResponse.json();
+                    
+                    if (newsResponse.ok && newsData.articles) {
+                        finalData.articles = newsData.articles;
+                        finalData.sentiment_summary = newsData.sentiment_summary;
+                        finalData.overall_sentiment = newsData.overall_sentiment;
+                        
+                        cacheNewsData(
+                            symbol,
+                            newsData.articles,
+                            newsData.sentiment_summary,
+                            newsData.overall_sentiment
+                        );
+                    }
+                }
+
+                displayResults(finalData);
+                currentSymbol = finalData.stock_info.symbol;
                 historicalData = {};
-                historicalData['1d'] = data.historical_data;
+                historicalData['1d'] = finalData.historical_data;
 
                 document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
                 document.querySelector('.chart-tab[data-period="1d"]').classList.add('active');
