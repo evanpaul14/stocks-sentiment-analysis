@@ -325,7 +325,7 @@
                 <input type="text" id="companyInput" placeholder="Enter company name">
                 <button onclick="searchStock()" id="searchBtn">Search</button>
             </div>
-            <div class="loading" id="loading">Analyzing stock and news sentiment...</div>
+            <div class="loading" id="loading">Getting stock market data...</div>
             <div id="errorMessage"></div>
         </div>
 
@@ -336,8 +336,25 @@
                 <div class="price-change" id="priceChange"></div>
                 <div class="price-change" id="afterHoursChange"></div>
             </div>
-
-            <div class="chart-container">
+            <div class="sentiment-summary">
+                    <div class="sentiment-item">
+                        <div class="sentiment-label">POSITIVE</div>
+                        <div class="sentiment-value positive" id="positiveCount">0</div>
+                    </div>
+                    <div class="sentiment-item">
+                        <div class="sentiment-label">NEGATIVE</div>
+                        <div class="sentiment-value negative" id="negativeCount">0</div>
+                    </div>
+                    <div class="sentiment-item">
+                        <div class="sentiment-label">NEUTRAL</div>
+                        <div class="sentiment-value" style="color: #888;" id="neutralCount">0</div>
+                    </div>
+                    <div class="sentiment-item">
+                        <div class="sentiment-label">OVERALL SENTIMENT</div>
+                        <div class="sentiment-value" id="overallSentiment">-</div>
+                    </div>
+                </div>
+                <div class="chart-container">
                 <div class="chart-tabs">
                     <span class="chart-tab active" data-period="1d">1D</span>
                     <span class="chart-tab" data-period="5d">1W</span>
@@ -422,24 +439,7 @@
             <div class="news-section">
                 <div class="section-title">News & Sentiment Analysis</div>
 
-                <div class="sentiment-summary">
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">POSITIVE</div>
-                        <div class="sentiment-value positive" id="positiveCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">NEGATIVE</div>
-                        <div class="sentiment-value negative" id="negativeCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">NEUTRAL</div>
-                        <div class="sentiment-value" style="color: #888;" id="neutralCount">0</div>
-                    </div>
-                    <div class="sentiment-item">
-                        <div class="sentiment-label">OVERALL SENTIMENT</div>
-                        <div class="sentiment-value" id="overallSentiment">-</div>
-                    </div>
-                </div>
+                
 
                 <div id="newsArticles"></div>
             </div>
