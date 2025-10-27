@@ -8,9 +8,18 @@ import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 app = Flask(__name__)
+
+# set up rate limiting
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["500 per hour"] 
+)
 
 # Initialize Google Gemini client
 apikey = os.getenv('GOOGLE_API_KEY')
@@ -38,8 +47,6 @@ def get_stock_info(symbol):
         description = info.get('longBusinessSummary', '')
         year_founded = 'N/A'
         if description:
-            # Search for the first occurrence of a 4-digit year starting with 19 or 20
-            # The \b ensures we match a whole word
             match = re.search(r"in (\b(?:19|20)\d{2}\b)", description)
             if match:
                 year_founded = int(match.group(1))
@@ -177,11 +184,13 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
 
 
 @app.route('/')
+@limiter.limit("10 per minute")
 def index():
     return render_template('index.html')
 
 
 @app.route('/search', methods=['POST'])
+@limiter.limit("10 per minute")
 def search_stock():
     try:
         company_name = request.json.get('company_name')
@@ -238,6 +247,7 @@ def search_stock():
 
 
 @app.route('/historical/<symbol>/<period>', methods=['GET'])
+@limiter.limit("10 per minute")
 def get_historical(symbol, period):
     """Get historical data for a specific period"""
     try:
