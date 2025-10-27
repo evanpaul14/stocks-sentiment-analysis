@@ -1,0 +1,7 @@
+Flask
+google-genai
+pygooglenews
+yahooquery
+yfinance
+python-dotenv
+Flask-Limiter
