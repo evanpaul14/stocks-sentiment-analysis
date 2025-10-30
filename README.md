@@ -158,13 +158,13 @@ Interactive charts allow you to view price trends across different timeframes:
 ## Configuration
 
 ### Sentiment Analysis Model
-The default model is `gemma-3-27b-it`. To change the model, edit `app.py`:
+The default model is `gemma-3-27b-it`. To change the model, edit `main.py`:
 ```python
 gemma_model = "your-preferred-model"
 ```
 
 ### Number of News Articles
-To change the number of articles analyzed (default: 10), modify the `get_news_articles` call in `app.py`:
+To change the number of articles analyzed (default: 10), modify the `get_news_articles` call in `main.py`:
 ```python
 articles = get_news_articles(stock_symbol, 20)  # Analyze 20 articles
 ```
