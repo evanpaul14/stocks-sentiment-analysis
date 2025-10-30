@@ -184,13 +184,13 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
 
 
 @app.route('/')
-@limiter.limit("10 per minute")
+@limiter.limit("50 per minute")
 def index():
     return render_template('index.html')
 
 
 @app.route('/search', methods=['POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("50 per minute")
 def search_stock():
     try:
         company_name = request.json.get('company_name')
@@ -242,12 +242,14 @@ def search_stock():
         return jsonify(response_data)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error in search: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/historical/<symbol>/<period>', methods=['GET'])
-@limiter.limit("10 per minute")
+@limiter.limit("50 per minute")
 def get_historical(symbol, period):
     """Get historical data for a specific period"""
     try:
