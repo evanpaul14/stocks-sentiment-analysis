@@ -1,3 +1,6 @@
 .env
 cert.pem
 key.pem
+test.py
+./idea
+*.iml
