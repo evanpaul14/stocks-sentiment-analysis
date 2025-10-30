@@ -186,12 +186,14 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
 @app.route('/')
 @limiter.limit("50 per minute")
 def index():
+    '''Render the main page'''
     return render_template('index.html')
 
 
 @app.route('/search', methods=['POST'])
 @limiter.limit("50 per minute")
 def search_stock():
+    '''Search for stock and return info, historical data, news, and sentiment analysis'''
     try:
         company_name = request.json.get('company_name')
         use_cache = request.json.get('use_cache', False)
