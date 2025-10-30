@@ -23,7 +23,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **yfinance**: Real-time stock data
 - **yahooquery**: Company search functionality
 - **pygooglenews**: News article aggregation
-- **Google Gemini AI**: Sentiment analysis (Gemma 3 27B model)
+- **Google Gemma AI**: Sentiment analysis (Gemma 3 27B model)
 
 ### Frontend
 - **HTML5/CSS3**: Modern responsive design
@@ -72,7 +72,7 @@ To obtain a Google API key:
 ```
 stock-sentiment-analyzer/
 │
-├── app.py                 # Flask backend application
+├── main.py                 # Flask backend application
 ├── templates/
 │   └── index.html        # Frontend interface
 ├── .env                  # Environment variables (create this)
@@ -83,11 +83,11 @@ stock-sentiment-analyzer/
 
 1. **Start the Flask server**
 ```bash
-python app.py
+python main.py
 ```
 
 2. **Open your browser**
-Navigate to `http://localhost:5000`
+Navigate to `https://127.0.0.1:8000`
 
 3. **Search for a stock**
 - Enter a company name (e.g., "Apple", "Tesla", "Microsoft")
@@ -140,7 +140,7 @@ Retrieve historical price data for a specific timeframe.
 - 52-week high/low
 
 ### Sentiment Analysis
-The application uses Google's Gemini AI to analyze news headlines and descriptions:
+The application uses Google's Gemma AI to analyze news headlines and descriptions:
 - **Positive**: Favorable news about the company
 - **Negative**: Concerning or critical news
 - **Neutral**: Factual or balanced reporting
