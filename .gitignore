@@ -4,3 +4,6 @@ key.pem
 test.py
 ./idea
 *.iml
+./__pycache__  
+*.pyc
+.vscode
