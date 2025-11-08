@@ -18,7 +18,7 @@ app = Flask(__name__)
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["500 per hour"] 
+    default_limits=["100 per hour"] 
 )
 
 # Initialize Google Gemini client
