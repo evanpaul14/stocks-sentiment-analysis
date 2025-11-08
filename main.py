@@ -10,9 +10,19 @@ from dotenv import load_dotenv
 import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockLatestQuoteRequest
+from datetime import datetime, timedelta
 
 load_dotenv()
 app = Flask(__name__)
+ALPACA_API_KEY = os.getenv('APCA_API_KEY_ID')
+ALPACA_SECRET_KEY = os.getenv('APCA_API_SECRET_KEY')
+client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+print(os.getenv("APCA_API_KEY_ID"))
+
 
 # set up rate limiting
 limiter = Limiter(
@@ -30,112 +40,89 @@ gemma_model = "gemma-3-27b-it"
 
 
 def get_stock_info(symbol):
-    """Get stock information using yfinance"""
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        # latest quote request
+        quote_req = StockLatestQuoteRequest(symbol_or_symbols=[symbol])
+        latest = client.get_stock_latest_quote(quote_req)
 
-        # Get current price data
-        current_price = info.get('currentPrice') or info.get('regularMarketPrice', 0)
-        previous_close = info.get('previousClose', 0)
+        current_price = latest.ask_price
+        # If previousClose not available via quote, set fallback
+        previous_close = None  
+        if hasattr(latest, 'bp'):  # bid price attribute
+            previous_close = latest.bp
 
-        # Calculate change
-        change = current_price - previous_close if previous_close else 0
+        change = (current_price - previous_close) if previous_close else 0
         change_percent = (change / previous_close * 100) if previous_close else 0
-
-        # Extract the year founded from the business summary using regex
-        description = info.get('longBusinessSummary', '')
-        year_founded = 'N/A'
-        if description:
-            match = re.search(r"in (\b(?:19|20)\d{2}\b)", description)
-            if match:
-                year_founded = int(match.group(1))
 
         return {
             'symbol': symbol,
             'price': current_price,
             'change': change,
             'changePercent': change_percent,
-            'afterHoursPrice': info.get('postMarketPrice'),
-            'afterHoursChange': info.get('postMarketChange'),
-            'afterHoursChangePercent': info.get('postMarketChangePercent'),
-            'marketCap': info.get('marketCap', 0),
-            'peRatio': info.get('forwardPE') or info.get('trailingPE', 0),
-            'dividendYield': info.get('dividendYield', 0) if info.get('dividendYield') else 0,
-            'avgVolume': info.get('averageDailyVolume10Day', 0),
-            'dayHigh': info.get('dayHigh', 0),
-            'dayLow': info.get('dayLow', 0),
-            'openPrice': info.get('open') or info.get('regularMarketOpen', 0),
-            'volume': info.get('volume', 0),
-            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh', 0),
-            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow', 0),
-            'companyName': info.get('longName') or info.get('shortName', symbol),
-            'ceo': info.get('companyOfficers', [{}])[0].get('name', 'N/A') if info.get('companyOfficers') else 'N/A',
-            'employees': info.get('fullTimeEmployees'),
-            'city': info.get('city'),
-            'state': info.get('state'),
-            'country': info.get('country'),
-            'industry': info.get('industry'),
-            'sector': info.get('sector'),
-            'website': info.get('website'),
-            'description': description,
-            'yearFounded': year_founded
+            # fill others with None or default if not supported by Alpaca
+            'afterHoursPrice': None,
+            'afterHoursChange': None,
+            'afterHoursChangePercent': None,
+            'marketCap': None,
+            'peRatio': None,
+            'dividendYield': None,
+            'avgVolume': None,
+            'dayHigh': None,
+            'dayLow': None,
+            'openPrice': None,
+            'volume': None,
+            'fiftyTwoWeekHigh': None,
+            'fiftyTwoWeekLow': None,
+            'companyName': symbol,
+            'ceo': 'N/A',
+            'employees': None,
+            'city': None,
+            'state': None,
+            'country': None,
+            'industry': None,
+            'sector': None,
+            'website': None,
+            'description': None,
+            'yearFounded': None
         }
     except Exception as e:
-        print(f"Error getting stock info: {e}")
+        print(f"Error getting stock info (Alpaca): {e}")
         return None
 
-
 def get_historical_data(symbol, period='1d'):
-    """Get historical price data using yfinance"""
     try:
-        ticker = yf.Ticker(symbol)
-
-        # For intraday data (1d), keep your existing logic
+        end = datetime.now()
         if period == '1d':
-            hist = ticker.history(period='5d', interval='5m')
-            if not hist.empty:
-                last_date = hist.index[-1].date()
-                hist = hist[hist.index.date == last_date]
-
-        # For 1 week, use explicit start/end dates and 1h interval
+            start = end - timedelta(days=1)
+            timeframe = TimeFrame.Minute
         elif period in ['7d', '1w']:
-            end = datetime.now()
             start = end - timedelta(days=7)
-            hist = yf.download(
-                symbol,
-                start=start,
-                end=end,
-                interval='1h',
-                prepost=True,
-                progress=False
-            )
-
+            timeframe = TimeFrame.Hour
+        elif period == '1mo':
+            start = end - timedelta(days=30)
+            timeframe = TimeFrame.Day
         else:
-            # Default logic for other periods
-            interval = None
-            if period == '1mo':
-                interval = '90m'
+            # fallback
+            start = end - timedelta(days=7)
+            timeframe = TimeFrame.Day
 
-            if interval:
-                hist = ticker.history(period=period, interval=interval)
-            else:
-                hist = ticker.history(period=period)
-
-        if hist.empty:
-            return []
+        bars_req = StockBarsRequest(
+            symbol_or_symbols=[symbol],
+            timeframe=timeframe,
+            start=start,
+            end=end
+        )
+        bars = client.get_stock_bars(bars_req)[symbol]
 
         data = [
-            {"date": idx.strftime("%Y-%m-%d %H:%M:%S"), "price": float(row["Close"])}
-            for idx, row in hist.iterrows()
+            {"date": bar.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "price": bar.close}
+            for bar in bars
         ]
         return data
-
     except Exception as e:
-        print(f"Error getting historical data: {e}")
+        print(f"Error getting historical data (Alpaca): {e}")
         return []
-
-
+    
 def get_news_articles(stock_symbol, num_articles=10):
     """Get news articles using Google News"""
     try:
@@ -156,8 +143,7 @@ def get_news_articles(stock_symbol, num_articles=10):
     except Exception as e:
         print(f"Error getting news: {e}")
         return []
-
-
+    
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemini"""
     try:
