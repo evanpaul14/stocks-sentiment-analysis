@@ -5,3 +5,4 @@ yahooquery
 yfinance
 python-dotenv
 Flask-Limiter
+gunicorn
