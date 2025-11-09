@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from google import genai
 from pygooglenews import GoogleNews
-from yahooquery import search
-import yfinance as yf
+import requests
 import json
 import re
 from datetime import datetime, timedelta
@@ -10,119 +9,161 @@ from dotenv import load_dotenv
 import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockLatestQuoteRequest
-from datetime import datetime, timedelta
+from yahooquery import search
 
 load_dotenv()
 app = Flask(__name__)
-ALPACA_API_KEY = os.getenv('APCA_API_KEY_ID')
-ALPACA_SECRET_KEY = os.getenv('APCA_API_SECRET_KEY')
-client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
-print(os.getenv("APCA_API_KEY_ID"))
 
-
-# set up rate limiting
+# Rate limiting
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["500 per hour"] 
+    default_limits=["100 per hour"]
 )
 
-# Initialize Google Gemini client
+# Google Gemini setup
 apikey = os.getenv('GOOGLE_API_KEY')
 if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
 gemma_model = "gemma-3-27b-it"
 
+# Alpha Vantage API key
+av_key = os.getenv("ALPHA_VANTAGE_KEY")
+if not av_key:
+    raise ValueError("Alpha Vantage key not set in environment!")
+
+BASE_URL = "https://www.alphavantage.co/query"
+
 
 def get_stock_info(symbol):
+    """Get stock information using Alpha Vantage API (drop‑in replacing yfinance)"""
     try:
-        # latest quote request
-        quote_req = StockLatestQuoteRequest(symbol_or_symbols=[symbol])
-        latest = client.get_stock_latest_quote(quote_req)
+        # 1) Get quote
+        quote_url = (
+            f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE"
+            f"&symbol={symbol}&apikey={av_key}"
+        )
+        r1 = requests.get(quote_url)
+        r1.raise_for_status()
+        qdata = r1.json().get("Global Quote", {})
 
-        current_price = latest.ask_price
-        # If previousClose not available via quote, set fallback
-        previous_close = None  
-        if hasattr(latest, 'bp'):  # bid price attribute
-            previous_close = latest.bp
+        current_price = float(qdata.get("05. price", 0))
+        previous_close = float(qdata.get("08. previous close", 0))
+        change = current_price - previous_close if previous_close else 0
+        change_percent = (
+            (change / previous_close * 100) if previous_close else 0
+        )
 
-        change = (current_price - previous_close) if previous_close else 0
-        change_percent = (change / previous_close * 100) if previous_close else 0
+        # 2) Get fundamentals/overview
+        ov_url = (
+            f"https://www.alphavantage.co/query?function=OVERVIEW"
+            f"&symbol={symbol}&apikey={av_key}"
+        )
+        r2 = requests.get(ov_url)
+        r2.raise_for_status()
+        ov = r2.json()
 
         return {
             'symbol': symbol,
             'price': current_price,
             'change': change,
             'changePercent': change_percent,
-            # fill others with None or default if not supported by Alpaca
             'afterHoursPrice': None,
             'afterHoursChange': None,
             'afterHoursChangePercent': None,
-            'marketCap': None,
-            'peRatio': None,
-            'dividendYield': None,
+            'marketCap': float(ov.get('MarketCapitalization', 0)),
+            'peRatio': float(ov.get('PERatio', 0)) if ov.get('PERatio') else 0,
+            'dividendYield': float(ov.get('DividendYield', 0)) if ov.get('DividendYield') else 0,
             'avgVolume': None,
             'dayHigh': None,
             'dayLow': None,
-            'openPrice': None,
-            'volume': None,
+            'openPrice': float(qdata.get("02. open", 0)),
+            'volume': float(qdata.get("06. volume", 0)),
             'fiftyTwoWeekHigh': None,
             'fiftyTwoWeekLow': None,
-            'companyName': symbol,
-            'ceo': 'N/A',
+            'companyName': ov.get('Name', symbol),
+            'ceo': None,
             'employees': None,
             'city': None,
             'state': None,
             'country': None,
-            'industry': None,
-            'sector': None,
-            'website': None,
-            'description': None,
-            'yearFounded': None
+            'industry': ov.get('Industry'),
+            'sector': ov.get('Sector'),
+            'website': ov.get('Website'),
+            'description': ov.get('Description'),
+            'yearFounded': int(ov.get('Founded')) if ov.get('Founded') else 'N/A'
         }
     except Exception as e:
-        print(f"Error getting stock info (Alpaca): {e}")
+        print(f"Error getting stock info (AV): {e}")
         return None
 
+
 def get_historical_data(symbol, period='1d'):
+    """Get historical price data using Alpha Vantage API (drop‑in)"""
     try:
-        end = datetime.now()
         if period == '1d':
-            start = end - timedelta(days=1)
-            timeframe = TimeFrame.Minute
+            # use intraday 5min interval
+            interval = '5min'
+            func = 'TIME_SERIES_INTRADAY'
+            url = (
+                f"https://www.alphavantage.co/query?function={func}"
+                f"&symbol={symbol}&interval={interval}&outputsize=compact"
+                f"&apikey={av_key}"
+            )
         elif period in ['7d', '1w']:
-            start = end - timedelta(days=7)
-            timeframe = TimeFrame.Hour
+            # use daily adjusted and then filter last ~7 entries
+            func = 'TIME_SERIES_DAILY_ADJUSTED'
+            url = (
+                f"https://www.alphavantage.co/query?function={func}"
+                f"&symbol={symbol}&outputsize=compact"
+                f"&apikey={av_key}"
+            )
         elif period == '1mo':
-            start = end - timedelta(days=30)
-            timeframe = TimeFrame.Day
+            func = 'TIME_SERIES_DAILY_ADJUSTED'
+            url = (
+                f"https://www.alphavantage.co/query?function={func}"
+                f"&symbol={symbol}&outputsize=full"
+                f"&apikey={av_key}"
+            )
         else:
-            # fallback
-            start = end - timedelta(days=7)
-            timeframe = TimeFrame.Day
+            func = 'TIME_SERIES_DAILY_ADJUSTED'
+            url = (
+                f"https://www.alphavantage.co/query?function={func}"
+                f"&symbol={symbol}&outputsize=compact"
+                f"&apikey={av_key}"
+            )
 
-        bars_req = StockBarsRequest(
-            symbol_or_symbols=[symbol],
-            timeframe=timeframe,
-            start=start,
-            end=end
-        )
-        bars = client.get_stock_bars(bars_req)[symbol]
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
 
-        data = [
-            {"date": bar.timestamp.strftime("%Y-%m-%d %H:%M:%S"), "price": bar.close}
-            for bar in bars
-        ]
-        return data
+        # pick the relevant key based on function
+        # For intraday: "Time Series (5min)"
+        # For daily: "Time Series (Daily)"
+        if func == 'TIME_SERIES_INTRADAY':
+            ts_key = f"Time Series ({interval})"
+        else:
+            ts_key = "Time Series (Daily)"
+
+        series = data.get(ts_key, {})
+        result = []
+        for timestamp, values in series.items():
+            result.append({
+                "date": timestamp,
+                "price": float(values.get("4. close", 0))
+            })
+
+        # sort ascending if needed
+        result = sorted(result, key=lambda x: x["date"])
+        return result
+
     except Exception as e:
-        print(f"Error getting historical data (Alpaca): {e}")
+        print(f"Error getting historical data (AV): {e}")
         return []
-    
+
+
+
 def get_news_articles(stock_symbol, num_articles=10):
     """Get news articles using Google News"""
     try:
@@ -143,7 +184,8 @@ def get_news_articles(stock_symbol, num_articles=10):
     except Exception as e:
         print(f"Error getting news: {e}")
         return []
-    
+
+
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemini"""
     try:
@@ -185,11 +227,17 @@ def search_stock():
         use_cache = request.json.get('use_cache', False)
 
         # Search for stock symbol
-        results = search(company_name)
-        if not results.get('quotes') or len(results['quotes']) == 0:
+        search_url = (
+        f"https://www.alphavantage.co/query?function=SYMBOL_SEARCH"
+        f"&keywords={company_name}&apikey={av_key}"
+)
+        r = requests.get(search_url)
+        r.raise_for_status()
+        search_res = r.json().get("bestMatches", [])
+        if not search_res:
             return jsonify({'error': 'Company not found'}), 404
+        stock_symbol = search_res[0].get("1. symbol")
 
-        stock_symbol = results['quotes'][0]['symbol']
 
         # Get stock information
         stock_info = get_stock_info(stock_symbol)
