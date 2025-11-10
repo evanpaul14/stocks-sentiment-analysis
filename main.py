@@ -166,7 +166,7 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
             f"to the company {company_name}.\n\n"
             f"Title: {article_title}\n"
             f"Description: {article_description}\n\n"
-            f"Respond with only one word: positive, negative, or neutral."
+            f"Respond with only one word and nothing else: positive, negative, or neutral."
         )
 
         response = client.models.generate_content(
