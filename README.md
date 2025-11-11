@@ -87,7 +87,7 @@ python main.py
 ```
 
 2. **Open your browser**
-Navigate to `https://127.0.0.1:8000`
+Navigate to `https://127.0.0.1:5000`
 
 3. **Search for a stock**
 - Enter a company name (e.g., "Apple", "Tesla", "Microsoft")
