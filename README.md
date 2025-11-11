@@ -33,7 +33,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 ## Prerequisites
 
 - Python 3.8 or higher
-- Google API Key (for Gemini AI)
+- Google API Key (for Gemma AI)
 - Internet connection for real-time data
 
 ## Installation
