@@ -12,7 +12,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **Interactive Charts**: View historical data across multiple timeframes (1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL)
 - **AI-Powered Sentiment Analysis**: Analyze news sentiment using Google Gemini AI
 - **News Aggregation**: Latest news articles from multiple sources
-- **Company Information**: CEO, employees, headquarters, founding year, and business description
+- **Company Information**: PE Ratio, dividend yield, market cap, average volume, and business description
 - **After-Hours Trading**: Track after-hours price movements
 - **Dark Mode UI**: Modern, responsive interface with Chart.js visualizations
 
@@ -52,7 +52,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. **Install dependencies**
 ```bash
-pip install flask google-genai pygooglenews yahooquery yfinance python-dotenv
+pip install -r requirements.txt
 ```
 
 4. **Set up environment variables**
@@ -63,7 +63,7 @@ GOOGLE_API_KEY=your_google_api_key_here
 ```
 
 To obtain a Google API key:
-- Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Visit [Google AI Studio](https://aistudio.google.com/)
 - Create a new API key
 - Copy and paste it into your `.env` file
 
@@ -72,11 +72,14 @@ To obtain a Google API key:
 ```
 stock-sentiment-analyzer/
 │
-├── main.py                 # Flask backend application
+├── main.py               # Flask backend application
 ├── templates/
 │   └── index.html        # Frontend interface
+├── static/
+│   └── favicon.ico 
 ├── .env                  # Environment variables (create this)
-└── README.md            # This file
+├── .LICENSE              # MIT License
+└── README.md             # This file
 ```
 
 ## Usage
@@ -150,7 +153,7 @@ Each article is individually analyzed and categorized, with an overall sentiment
 ### Historical Data Visualization
 Interactive charts allow you to view price trends across different timeframes:
 - **1D**: 5-minute intervals (intraday)
-- **1W**: Hourly data
+- **1W**: Daily data
 - **1M**: 90-minute intervals
 - **3M, YTD, 1Y**: Daily data
 - **5Y, ALL**: Weekly/monthly aggregation
