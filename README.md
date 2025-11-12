@@ -40,8 +40,8 @@ A real-time stock analysis application that combines financial data with AI-powe
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/stock-sentiment-analyzer.git
-cd stock-sentiment-analyzer
+git clone https://github.com/yourusername/stocks-sentiment-analysis.git
+cd stocks-sentiment-analysis
 ```
 
 2. **Create a virtual environment**
