@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: flask-stock-analyzer
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app
-    envVars:
-      - key: GOOGLE_API_KEY
-        sync: false
