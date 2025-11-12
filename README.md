@@ -1,4 +1,4 @@
-# Stock Sentiment Analyzer
+# Stock Sentiment Analysis
 
 A real-time stock analysis application that combines financial data with AI-powered news sentiment analysis. Search for any publicly traded company to view live stock prices, historical charts, key statistics, and sentiment analysis of recent news articles.
 
