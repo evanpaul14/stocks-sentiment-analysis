@@ -13,6 +13,7 @@ from flask_limiter.util import get_remote_address
 
 load_dotenv()
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # set up rate limiting
 limiter = Limiter(
