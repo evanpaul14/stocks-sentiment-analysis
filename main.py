@@ -29,6 +29,55 @@ if not apikey:
 client = genai.Client(api_key=apikey)
 gemma_model = "gemma-3-27b-it"
 
+# Trending stocks API
+import requests
+import html
+APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
+
+def fetch_top_stocks():
+    """Fetch top trending stocks from ApeWisdom API"""
+    try:
+        resp = requests.get(APEWISDOM_API_URL, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        stocks_list = data.get("results", [])
+        top10 = sorted(stocks_list, key=lambda x: x.get("rank", 999))[:10]
+        return top10
+    except Exception as e:
+        print(f"Error fetching trending stocks: {e}")
+        return []
+
+def analyze_trending(top10):
+    """Analyze trending stocks for fast-rising tags and percent increase"""
+    results = []
+    for rec in top10:
+        ticker = rec.get("ticker")
+        name   = html.unescape(rec.get("name", ""))
+        mentions_now = rec.get("mentions", 0)
+        mentions_24h = rec.get("mentions_24h_ago", 0)
+        rank_24h     = rec.get("rank_24h_ago", None)
+        rank_now     = rec.get("rank", None)
+
+        # percent increase
+        if mentions_24h > 0:
+            pct_increase = ((mentions_now - mentions_24h) / mentions_24h) * 100
+        else:
+            pct_increase = 0
+
+        tag = ""
+        if mentions_24h > 0 and pct_increase > 50:
+            tag = "FAST-RISING"
+        elif rank_24h is not None and rank_now is not None and rank_now < rank_24h - 5:
+            tag = "FAST-RISING"
+
+        results.append({
+            "ticker": ticker,
+            "name": name,
+            "pct_increase": pct_increase,
+            "tag": tag
+        })
+    return results
+
 
 def get_stock_info(symbol):
     """Get stock information using yfinance"""
@@ -261,6 +310,19 @@ def get_historical(symbol, period):
     except Exception as e:
         print(f"Error getting historical data: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# Trending stocks API endpoint
+@app.route('/trending', methods=['GET'])
+@limiter.limit("30 per minute")
+def trending_stocks():
+    try:
+        top10 = fetch_top_stocks()
+        analyzed = analyze_trending(top10)
+        return jsonify({"trending": analyzed})
+    except Exception as e:
+        print(f"Error in trending_stocks: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':

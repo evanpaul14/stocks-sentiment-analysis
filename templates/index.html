@@ -319,18 +319,94 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+
+        .trending-section {
+            background-color: #0a0a0a;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+        }
+        .trending-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .trending-item {
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 16px 20px;
+            min-width: 180px;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .trending-item:hover {
+            background: #222;
+        }
+        .trending-rank {
+            font-size: 22px;
+            font-weight: 700;
+            color: #888;
+            margin-right: 18px;
+            width: 32px;
+            text-align: right;
+        }
+        .trending-ticker {
+            font-size: 20px;
+            font-weight: 700;
+            color: #9333ea;
+            margin-bottom: 2px;
+        }
+        .trending-name {
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .trending-pct {
+            font-size: 14px;
+            color: #33ea93;
+            font-weight: 600;
+        }
+        .trending-pct.negative {
+            color: #ef4444;
+        }
+        .trending-tag {
+            background: rgba(51,234,147,0.12);
+            color: #33ea93;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 8px;
+            padding: 2px 10px;
+            margin-left: 8px;
+            text-transform: uppercase;
+        }
+
+        #trendingBtn:hover {
+            background: #232136;
+            color: #c4b5fd;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="search-section">
-            <h1 style="margin-bottom: 20px; font-size: 32px;">Stock Sentiment Analysis</h1>
+            <div style="display:flex;align-items:center;gap:18px;margin-bottom:20px;">
+                <h1 style="font-size:32px;cursor:pointer;" id="homeTitle">Stock Sentiment Analysis</h1>
+                <button id="trendingBtn" style="background:#18181b;color:#b48be4;font-weight:500;font-size:15px;padding:7px 18px;border:none;border-radius:7px;cursor:pointer;transition:background 0.2s;box-shadow:none;">Trending</button>
+            </div>
             <div class="search-box">
                 <input type="text" id="companyInput" placeholder="Enter company name">
                 <button onclick="searchStock()" id="searchBtn">Search</button>
             </div>
             <div class="loading" id="loading">Getting stock market data...</div>
             <div id="errorMessage"></div>
+        </div>
+        <div class="trending-section" id="trendingSection" style="margin-bottom: 40px;">
+            <div class="section-title" style="margin-bottom: 15px;">Top 10 Trending Stocks on Reddit</div>
+            <div id="trendingStocks" class="trending-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
         </div>
 
         <div id="results">
@@ -589,6 +665,7 @@
                 document.querySelector('.chart-tab[data-period="1d"]').classList.add('active');
 
                 document.getElementById('results').style.display = 'block';
+                document.getElementById('trendingSection').style.display = 'none';
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -802,6 +879,8 @@
                     }
                 });
             });
+
+            loadTrendingStocks();
         });
 
         function formatDate(dateString) {
@@ -821,6 +900,74 @@
             if (e.key === 'Enter') {
                 searchStock();
             }
+        });
+
+        async function loadTrendingStocks() {
+            const container = document.getElementById('trendingStocks');
+            container.innerHTML = '<div style="color:#9333ea;">Loading trending stocks...</div>';
+            try {
+                const res = await fetch('/trending');
+                const data = await res.json();
+                if (!data.trending || !Array.isArray(data.trending)) {
+                    container.innerHTML = '<div style="color:#ef4444;">Failed to load trending stocks.</div>';
+                    return;
+                }
+                container.innerHTML = '';
+                data.trending.forEach((item, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'trending-item';
+                    div.onclick = () => {
+                        document.getElementById('companyInput').value = item.ticker;
+                        searchStock();
+                    };
+                    let pct = item.pct_increase;
+                    let pctClass = pct < 0 ? 'negative' : 'positive';
+                    let pctSign = pct > 0 ? '+' : '';
+                    div.innerHTML = `
+                        <span class="trending-rank">${idx + 1}.</span>
+                        <div style="flex:1;display:flex;flex-direction:column;">
+                            <span class="trending-ticker">${item.ticker}</span>
+                            <span class="trending-name">${item.name}</span>
+                            <span>
+                                <span class="trending-pct ${pctClass}">${pctSign}${pct.toFixed(0)}% mentions</span>
+                                ${item.tag ? `<span class='trending-tag'>${item.tag}</span>` : ''}
+                            </span>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (e) {
+                container.innerHTML = '<div style="color:#ef4444;">Failed to load trending stocks.</div>';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', loadTrendingStocks);
+
+        // Hide trending-section after a search, show on home
+        function showTrendingSection(show) {
+            document.getElementById('trendingSection').style.display = show ? '' : 'none';
+        }
+        // Patch searchStock to hide trending-section after search
+        const origSearchStock = searchStock;
+        searchStock = async function() {
+            showTrendingSection(false);
+            await origSearchStock();
+        };
+        // Make title clickable to reload home and show trending
+        document.getElementById('homeTitle').addEventListener('click', function() {
+            document.getElementById('companyInput').value = '';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('errorMessage').innerHTML = '';
+            showTrendingSection(true);
+            loadTrendingStocks();
+        });
+
+        // Trending button shows trending stocks and hides results
+        document.getElementById('trendingBtn').addEventListener('click', function() {
+            document.getElementById('companyInput').value = '';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('errorMessage').innerHTML = '';
+            showTrendingSection(true);
+            loadTrendingStocks();
         });
     </script>
 </body>

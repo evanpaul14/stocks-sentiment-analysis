@@ -1,9 +1,10 @@
 .env
 cert.pem
 key.pem
-test.py
-./idea
 *.iml
 ./__pycache__  
 *.pyc
 .vscode
+./sec_filings
+test.py
+
