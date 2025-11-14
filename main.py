@@ -41,8 +41,8 @@ def fetch_top_stocks():
         resp.raise_for_status()
         data = resp.json()
         stocks_list = data.get("results", [])
-        top10 = sorted(stocks_list, key=lambda x: x.get("rank", 999))[:10]
-        return top10
+        top20 = sorted(stocks_list, key=lambda x: x.get("rank", 999))[:20]
+        return top20
     except Exception as e:
         print(f"Error fetching trending stocks: {e}")
         return []
