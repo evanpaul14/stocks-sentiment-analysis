@@ -10,7 +10,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 
 - **Real-Time Stock Data**: Live prices, market cap, P/E ratio, volume, and more
 - **Interactive Charts**: View historical data across multiple timeframes (1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL)
-- **AI-Powered Sentiment Analysis**: Analyze news sentiment using Google Gemini AI
+- **AI-Powered Sentiment Analysis**: Analyze news sentiment using Google Gemma AI
 - **Trending Stocks**: View top 20 trending stocks from Reddit with "Fast Rising" indicators
 - **News Aggregation**: Latest news articles from multiple sources
 - **Smart Caching**: 12-hour cache for news and sentiment data to optimize API usage
@@ -27,7 +27,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **yfinance**: Real-time stock data
 - **yahooquery**: Company search functionality
 - **pygooglenews**: News article aggregation
-- **Google Gemma AI**: Sentiment analysis (Gemini 3 27B model)
+- **Google Gemma AI**: Sentiment analysis (Gemma 3 27B model)
 - **Requests**: HTTP library for trending stocks API
 - **python-dotenv**: Environment variable management
 
@@ -292,7 +292,7 @@ To optimize API usage and improve performance:
 - Cache duration: 12 hours
 - Stock price and historical data are always fetched fresh
 - Cache is automatically invalidated after expiration
-- Reduces unnecessary API calls to Google Gemini
+- Reduces unnecessary API calls to Google AI
 
 ### Historical Data Visualization
 Interactive Chart.js charts allow you to view price trends across different timeframes:
@@ -323,7 +323,7 @@ Built-in protection against API abuse:
 ## Configuration
 
 ### Sentiment Analysis Model
-The default model is `gemini-3-27b-it`. To change the model, edit `main.py`:
+The default model is `gemma-3-27b-it`. To change the model, edit `main.py`:
 ```python
 gemma_model = "your-preferred-model"
 ```
