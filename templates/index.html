@@ -390,6 +390,13 @@
             background: #232136;
             color: #c4b5fd;
         }
+
+        .about-text.truncated {
+            max-height: 20px; /* adjust based on your layout */
+            overflow: hidden;
+            position: relative;
+        }
+
     </style>
 </head>
 <body>
@@ -453,7 +460,7 @@
             <div class="info-section">
                 <div class="section-title">About <span id="aboutSymbol"></span></div>
                 <div class="about-text" id="aboutText"></div>
-
+                <button id="toggleAboutBtn" style="background:none;border:none;color:#9333ea;cursor:pointer;margin-top:8px;font-size:14px;display:none;">View More</button>
                 <div class="company-details">
                     <div class="detail-item">
                         <div class="detail-label">CEO</div>
@@ -713,7 +720,31 @@
             document.getElementById('aboutSymbol').textContent = stockInfo.symbol;
             document.getElementById('aboutText').textContent =
                 stockInfo.description || `${stockInfo.companyName} (${stockInfo.symbol}) engages in various business operations. Stock data is updated in real-time.`;
+            const aboutText = document.getElementById('aboutText');
+            const toggleBtn = document.getElementById('toggleAboutBtn');
 
+            aboutText.textContent = stockInfo.description || `${stockInfo.companyName} (${stockInfo.symbol}) engages in various business operations. Stock data is updated in real-time.`;
+
+            if (aboutText.textContent.length > 200) { // arbitrary length threshold
+                aboutText.classList.add('truncated');
+                toggleBtn.style.display = 'inline';
+                toggleBtn.textContent = 'View More';
+            } 
+            else {
+                aboutText.classList.remove('truncated');
+                toggleBtn.style.display = 'none';
+            }
+
+            toggleBtn.onclick = () => {
+                if (aboutText.classList.contains('truncated')) {
+                aboutText.classList.remove('truncated');
+                toggleBtn.textContent = 'View Less';
+            } 
+            else {
+                aboutText.classList.add('truncated');
+                toggleBtn.textContent = 'View More';
+            }
+            };
             document.getElementById('ceo').textContent = stockInfo.ceo || 'N/A';
             document.getElementById('employees').textContent = stockInfo.employees ? formatNumber(stockInfo.employees) : 'N/A';
 
