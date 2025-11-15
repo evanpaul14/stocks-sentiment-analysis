@@ -238,7 +238,7 @@ def index():
 
 
 @app.route('/search', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("10 per minute")
 def search_stock():
     '''Search for stock and return info, historical data, news, and sentiment analysis'''
     try:
