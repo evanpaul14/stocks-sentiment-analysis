@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /search
+Disallow: /historical
+Disallow: /trending
+Disallow: /static/
+Allow: /
+
+Sitemap: https://www.stocksentimentapp.com/sitemap.xml

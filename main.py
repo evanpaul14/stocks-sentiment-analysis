@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from google import genai
 from pygooglenews import GoogleNews
 from yahooquery import search
@@ -321,6 +321,15 @@ def trending_stocks():
         print(f"Error in trending_stocks: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/robots.txt', methods=['GET'])
+@limiter.limit("100 per minute")
+def robots_txt():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "robots.txt")
+
+@app.route('/sitemap.xml', methods=['GET'])
+@limiter.limit("100 per minute")
+def sitemap_xml():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 if __name__ == '__main__':
     app.run(
