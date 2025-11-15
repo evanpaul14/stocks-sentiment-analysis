@@ -6,5 +6,5 @@ key.pem
 *.pyc
 .vscode
 ./sec_filings
-test.py
 .DS_Store
+test.py
