@@ -100,7 +100,14 @@ def get_stock_info(symbol):
             match = re.search(r"in (\b(?:19|20)\d{2}\b)", description)
             if match:
                 year_founded = int(match.group(1))
-
+        #Get company officers to find CEO
+        ceo_name = 'N/A'
+        officers = info.get('companyOfficers', [])
+        for officer in officers:
+            title = officer.get('title', '').lower()
+            if 'ceo' in title:
+                ceo_name = officer.get('name', 'N/A')
+                break
         return {
             'symbol': symbol,
             'price': current_price,
@@ -120,7 +127,7 @@ def get_stock_info(symbol):
             'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh', 0),
             'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow', 0),
             'companyName': info.get('longName') or info.get('shortName', symbol),
-            'ceo': info.get('companyOfficers', [{}])[0].get('name', 'N/A') if info.get('companyOfficers') else 'N/A',
+            'ceo': ceo_name,
             'employees': info.get('fullTimeEmployees'),
             'city': info.get('city'),
             'state': info.get('state'),
@@ -282,7 +289,10 @@ def search_stock():
                 sentiment_summary[sentiment] += 1
 
             # Determine overall sentiment
-            most_common_sentiment = max(sentiment_summary, key=sentiment_summary.get)
+            if all(value == 0 for value in sentiment_summary.values()):
+                most_common_sentiment = 'neutral'
+            else:
+                most_common_sentiment = max(sentiment_summary, key=sentiment_summary.get)
 
             response_data['articles'] = articles
             response_data['sentiment_summary'] = sentiment_summary
