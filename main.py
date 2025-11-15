@@ -66,9 +66,9 @@ def analyze_trending(top10):
 
         tag = ""
         if mentions_24h > 0 and pct_increase > 50:
-            tag = "FAST RISING"
+            tag = "Trending"
         elif rank_24h is not None and rank_now is not None and rank_now < rank_24h - 5:
-            tag = "FAST RISING"
+            tag = f"Up {rank_24h - rank_now} Spots"
 
         results.append({
             "ticker": ticker,
