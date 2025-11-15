@@ -35,7 +35,7 @@ import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
 
 def fetch_top_stocks():
-    """Fetch top trending stocks from ApeWisdom API"""
+    """Fetch top trending Reddit stocks from ApeWisdom API"""
     try:
         resp = requests.get(APEWISDOM_API_URL, timeout=10)
         resp.raise_for_status()
@@ -48,7 +48,7 @@ def fetch_top_stocks():
         return []
 
 def analyze_trending(top10):
-    """Analyze trending stocks for fast-rising tags and percent increase"""
+    """Analyze trending stocks and apply tags based on percent increase and rank changes"""
     results = []
     for rec in top10:
         ticker = rec.get("ticker")
@@ -141,14 +141,12 @@ def get_historical_data(symbol, period='1d'):
     try:
         ticker = yf.Ticker(symbol)
 
-        # For intraday data (1d), keep your existing logic
         if period == '1d':
             hist = ticker.history(period='5d', interval='5m')
             if not hist.empty:
                 last_date = hist.index[-1].date()
                 hist = hist[hist.index.date == last_date]
 
-        # For 1 week, use explicit start/end dates and 1h interval
         elif period in ['7d', '1w']:
             end = datetime.now()
             start = end - timedelta(days=7)
@@ -162,7 +160,6 @@ def get_historical_data(symbol, period='1d'):
             )
 
         else:
-            # Default logic for other periods
             interval = None
             if period == '1mo':
                 interval = '90m'
@@ -209,7 +206,7 @@ def get_news_articles(stock_symbol, num_articles=10):
 
 
 def analyze_sentiment_gemma(article_title, article_description, company_name):
-    """Analyze sentiment using Google Gemini"""
+    """Analyze sentiment using Google Gemma AI"""
     try:
         prompt = (
             f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
