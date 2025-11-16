@@ -11,7 +11,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **Real-Time Stock Data**: Live prices, market cap, P/E ratio, volume, and more
 - **Interactive Charts**: View historical data across multiple timeframes (1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL)
 - **AI-Powered Sentiment Analysis**: Analyze news sentiment using Google Gemma AI
-- **Trending Stocks**: View top 20 trending stocks from Reddit with "Fast Rising" indicators
+- **Trending Stocks**: View top 20 trending stocks from Reddit with Trending indicators
 - **News Aggregation**: Latest news articles from multiple sources
 - **Smart Caching**: 12-hour cache for news and sentiment data to optimize API usage
 - **Company Information**: PE Ratio, dividend yield, market cap, average volume, and business description
