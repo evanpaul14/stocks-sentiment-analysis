@@ -8,3 +8,8 @@ key.pem
 ./sec_filings
 .DS_Store
 test.py
+sentiment_cache.db
+./tests
+main.py
+tests/test_smoke.py
+tests/__init__.py

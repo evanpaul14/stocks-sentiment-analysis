@@ -13,7 +13,7 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **AI-Powered Sentiment Analysis**: Analyze news sentiment using Google Gemma AI
 - **Trending Stocks**: View top 20 trending stocks from Reddit with Trending indicators
 - **News Aggregation**: Latest news articles from multiple sources
-- **Smart Caching**: 12-hour cache for news and sentiment data to optimize API usage
+- **Automated Sentiment Harvesting**: Hourly background worker precomputes news sentiment for trending and flagship tickers
 - **Company Information**: PE Ratio, dividend yield, market cap, average volume, and business description
 - **After-Hours Trading**: Track after-hours price movements
 - **Dark Mode UI**: Modern, responsive interface with Chart.js visualizations
@@ -30,12 +30,12 @@ A real-time stock analysis application that combines financial data with AI-powe
 - **Google Gemma AI**: Sentiment analysis (Gemma 3 27B model)
 - **Requests**: HTTP library for trending stocks API
 - **python-dotenv**: Environment variable management
+- **SQLite (built-in)**: Lightweight sentiment cache for precomputed news analysis
 
 ### Frontend
 - **HTML5/CSS3**: Modern responsive design
 - **Chart.js**: Interactive stock charts
 - **Vanilla JavaScript**: Dynamic UI updates
-- **LocalStorage API**: Client-side caching for news data
 
 ### External APIs
 - **ApeWisdom API**: Trending stocks data from Reddit
@@ -117,7 +117,7 @@ Navigate to `http://127.0.0.1:5000`
 - Enter a company name (e.g., "Apple", "Tesla", "Microsoft")
 - Click "Search" or press Enter
 - View stock data, charts, and sentiment analysis
-- News and sentiment data is cached for 12 hours to optimize performance
+- Tracked tickers load instantly thanks to the hourly backend sentiment cache
 
 ## API Endpoints
 
@@ -136,14 +136,12 @@ Search for a company and retrieve stock data with sentiment analysis.
 **Request Body:**
 ```json
 {
-  "company_name": "Apple",
-  "use_cache": false
+  "company_name": "Apple"
 }
 ```
 
 **Parameters:**
 - `company_name` (string, required): Company name or ticker symbol
-- `use_cache` (boolean, optional): If true, skip news fetching (frontend handles cache logic)
 
 **Response:**
 ```json
@@ -288,11 +286,11 @@ Each article is individually analyzed and categorized. The overall sentiment is 
 
 ### Smart Caching System
 To optimize API usage and improve performance:
-- News articles and sentiment analysis are cached in browser localStorage
-- Cache duration: 12 hours
-- Stock price and historical data are always fetched fresh
-- Cache is automatically invalidated after expiration
-- Reduces unnecessary API calls to Google AI
+- A background worker refreshes sentiment every hour for the top 20 Reddit tickers plus key large-cap symbols (Alphabet, Amazon, Apple, Meta, Microsoft, Nvidia, Tesla, SoFi)
+- News results and sentiment summaries are stored centrally in a SQLite cache so tracked symbols load instantly
+- Non-tracked tickers trigger an on-demand analysis, which is saved if that ticker later becomes tracked
+- A lightweight health check runs every 10 minutes to ensure all tracked tickers have a fresh entry and to purge symbols that fall off the tracked list
+- Stock price and historical data remain real-time, so you still see the freshest market moves
 
 ### Historical Data Visualization
 Interactive Chart.js charts allow you to view price trends across different timeframes:
@@ -334,11 +332,8 @@ To change the number of articles analyzed (default: 10), modify the `get_news_ar
 articles = get_news_articles(stock_symbol, 20)  # Analyze 20 articles
 ```
 
-### Cache Duration
-To adjust the news cache duration (default: 12 hours), edit the constant in `index.html`:
-```javascript
-const CACHE_DURATION_MS = 12 * 60 * 60 * 1000; // Change to desired milliseconds
-```
+### Cache Health Interval
+To change how frequently the worker verifies cache completeness (default: 10 minutes), update `CACHE_HEALTH_CHECK_SECONDS` in `main.py`.
 
 ### Rate Limiting
 To adjust rate limits, modify the limiter configuration in `main.py`:
@@ -349,3 +344,6 @@ limiter = Limiter(
     default_limits=["100 per hour"]  # Adjust as needed
 )
 ```
+
+### Background Worker
+To keep the hourly sentiment harvester from running (for example, during unit tests), set the environment variable `DISABLE_BACKGROUND_WORKER=1` before launching the app or importing `main`.

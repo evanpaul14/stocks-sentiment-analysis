@@ -10,10 +10,36 @@ from dotenv import load_dotenv
 import os
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import sqlite3
+import threading
+import time
+from collections import deque
 
 load_dotenv()
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sentiment_cache.db")
+BACKGROUND_REFRESH_SECONDS = 60 * 60  # 1 hour
+CACHE_HEALTH_CHECK_SECONDS = 10 * 60  # 10 minutes
+AI_RATE_LIMIT_PER_MINUTE = 25
+AI_RATE_WINDOW_SECONDS = 60
+STATIC_SYMBOLS = {
+    "GOOGL",  # Alphabet Class A
+    "GOOG",   # Alphabet Class C
+    "AMZN",   # Amazon
+    "AAPL",   # Apple
+    "META",   # Meta
+    "MSFT",   # Microsoft
+    "NVDA",   # Nvidia
+    "TSLA",   # Tesla
+    "SOFI"    # SoFi
+}
+tracked_trending_symbols = set()
+db_lock = threading.Lock()
+background_thread_started = False
+ai_rate_lock = threading.Lock()
+ai_rate_timestamps = deque()
 
 # set up rate limiting
 limiter = Limiter(
@@ -33,6 +59,131 @@ gemma_model = "gemma-3-27b-it"
 import requests
 import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    return conn
+
+
+def init_db():
+    with db_lock:
+        conn = get_db_connection()
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sentiment_cache (
+                symbol TEXT PRIMARY KEY,
+                articles TEXT NOT NULL,
+                sentiment_summary TEXT NOT NULL,
+                overall_sentiment TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+
+def wait_for_ai_rate_slot():
+    while True:
+        with ai_rate_lock:
+            now = time.time()
+            while ai_rate_timestamps and now - ai_rate_timestamps[0] >= AI_RATE_WINDOW_SECONDS:
+                ai_rate_timestamps.popleft()
+
+            if len(ai_rate_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
+                ai_rate_timestamps.append(now)
+                return
+
+            wait_seconds = AI_RATE_WINDOW_SECONDS - (now - ai_rate_timestamps[0])
+
+        time.sleep(max(wait_seconds, 0.1))
+
+
+def extract_retry_delay_seconds(error):
+    message = str(error)
+    patterns = [
+        r"retryDelay['\"]?:\s*'?(?P<delay>\d+(?:\.\d+)?)s",
+        r"Please retry in (?P<delay>\d+(?:\.\d+)?)s"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message)
+        if match:
+            try:
+                return float(match.group('delay'))
+            except (ValueError, TypeError):
+                continue
+    return None
+
+
+def save_sentiment_to_db(symbol, articles, summary, overall_sentiment):
+    payload = (
+        symbol.upper(),
+        json.dumps(articles),
+        json.dumps(summary),
+        overall_sentiment,
+        datetime.utcnow().isoformat()
+    )
+    with db_lock:
+        conn = get_db_connection()
+        conn.execute(
+            """
+            INSERT INTO sentiment_cache (symbol, articles, sentiment_summary, overall_sentiment, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(symbol) DO UPDATE SET
+                articles = excluded.articles,
+                sentiment_summary = excluded.sentiment_summary,
+                overall_sentiment = excluded.overall_sentiment,
+                updated_at = excluded.updated_at
+            """,
+            payload
+        )
+        conn.commit()
+        conn.close()
+
+
+def get_cached_sentiment(symbol):
+    with db_lock:
+        conn = get_db_connection()
+        row = conn.execute(
+            "SELECT articles, sentiment_summary, overall_sentiment, updated_at FROM sentiment_cache WHERE symbol = ?",
+            (symbol.upper(),)
+        ).fetchone()
+        conn.close()
+    if not row:
+        return None
+    return {
+        "articles": json.loads(row[0]),
+        "sentiment_summary": json.loads(row[1]),
+        "overall_sentiment": row[2],
+        "updated_at": row[3]
+    }
+
+
+def get_tracked_symbols():
+    return STATIC_SYMBOLS.union(tracked_trending_symbols)
+
+
+def get_cached_symbols():
+    with db_lock:
+        conn = get_db_connection()
+        rows = conn.execute("SELECT symbol FROM sentiment_cache").fetchall()
+        conn.close()
+    return {row[0] for row in rows}
+
+
+def purge_stale_sentiment_records(valid_symbols):
+    if not valid_symbols:
+        return
+    valid = {symbol.upper() for symbol in valid_symbols}
+    with db_lock:
+        conn = get_db_connection()
+        rows = conn.execute("SELECT symbol FROM sentiment_cache").fetchall()
+        stale = [row[0] for row in rows if row[0] not in valid]
+        for symbol in stale:
+            conn.execute("DELETE FROM sentiment_cache WHERE symbol = ?", (symbol,))
+        conn.commit()
+        conn.close()
 
 def fetch_top_stocks():
     """Fetch top trending Reddit stocks from ApeWisdom API"""
@@ -214,27 +365,138 @@ def get_news_articles(stock_symbol, num_articles=10):
 
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemma AI"""
-    try:
-        prompt = (
-            f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
-            f"to the company {company_name}.\n\n"
-            f"Title: {article_title}\n"
-            f"Description: {article_description}\n\n"
-            f"Respond with only one word and nothing else: positive, negative, or neutral."
-        )
+    prompt = (
+        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
+        f"to the company {company_name}.\n\n"
+        f"Title: {article_title}\n"
+        f"Description: {article_description}\n\n"
+        f"Respond with only one word and nothing else: positive, negative, or neutral."
+    )
 
-        response = client.models.generate_content(
-            model=gemma_model,
-            contents=prompt
-        )
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            wait_for_ai_rate_slot()
+            response = client.models.generate_content(
+                model=gemma_model,
+                contents=prompt
+            )
 
-        sentiment = response.text.strip().lower()
-        if sentiment not in ['positive', 'negative', 'neutral']:
-            sentiment = 'neutral'
-        return sentiment
-    except Exception as e:
-        print(f"Error analyzing sentiment: {e}")
-        return 'neutral'
+            sentiment = response.text.strip().lower()
+            if sentiment not in ['positive', 'negative', 'neutral']:
+                sentiment = 'neutral'
+            return sentiment
+        except Exception as e:
+            retry_delay = extract_retry_delay_seconds(e)
+            if retry_delay:
+                print(f"Gemma quota hit, waiting {retry_delay:.2f}s before retrying...")
+                time.sleep(retry_delay)
+                continue
+            print(f"Error analyzing sentiment: {e}")
+            break
+
+    return 'neutral'
+
+
+def build_sentiment_payload(symbol, company_name=None):
+    articles = get_news_articles(symbol, 10)
+    sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
+    for article in articles:
+        sentiment = analyze_sentiment_gemma(
+            article['title'],
+            article['description'],
+            company_name or symbol
+        )
+        article['sentiment'] = sentiment
+        if sentiment in sentiment_summary:
+            sentiment_summary[sentiment] += 1
+
+    if all(value == 0 for value in sentiment_summary.values()):
+        overall_sentiment = 'neutral'
+    else:
+        overall_sentiment = max(sentiment_summary, key=sentiment_summary.get)
+
+    return articles, sentiment_summary, overall_sentiment
+
+
+def refresh_sentiment_cache():
+    global tracked_trending_symbols
+    top20 = fetch_top_stocks()
+    tracked_trending_symbols = {
+        (record.get("ticker") or "").upper()
+        for record in top20
+        if record.get("ticker")
+    }
+
+    symbols_to_update = get_tracked_symbols()
+    for symbol in symbols_to_update:
+        if not symbol:
+            continue
+        try:
+            stock_info = get_stock_info(symbol)
+            company_name = stock_info['companyName'] if stock_info else symbol
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                symbol,
+                company_name
+            )
+            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
+        except Exception as e:
+            print(f"Error refreshing sentiment for {symbol}: {e}")
+
+    purge_stale_sentiment_records(symbols_to_update)
+
+
+def ensure_cache_completeness():
+    tracked_symbols = get_tracked_symbols()
+    if not tracked_symbols:
+        return
+
+    cached_symbols = get_cached_symbols()
+    missing_symbols = [symbol for symbol in tracked_symbols if symbol not in cached_symbols]
+
+    for symbol in missing_symbols:
+        try:
+            stock_info = get_stock_info(symbol)
+            company_name = stock_info['companyName'] if stock_info else symbol
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                symbol,
+                company_name
+            )
+            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
+        except Exception as e:
+            print(f"Error ensuring sentiment for {symbol}: {e}")
+
+    purge_stale_sentiment_records(tracked_symbols)
+
+
+def background_worker_loop():
+    last_full_refresh = 0
+    while True:
+        now = time.time()
+        if now - last_full_refresh >= BACKGROUND_REFRESH_SECONDS:
+            try:
+                refresh_sentiment_cache()
+            except Exception as e:
+                print(f"Background refresh error: {e}")
+            else:
+                last_full_refresh = now
+
+        try:
+            ensure_cache_completeness()
+        except Exception as e:
+            print(f"Cache health check error: {e}")
+
+        time.sleep(CACHE_HEALTH_CHECK_SECONDS)
+
+
+def start_background_worker():
+    global background_thread_started
+    if background_thread_started:
+        return
+    init_db()
+    thread = threading.Thread(target=background_worker_loop, daemon=True)
+    thread.start()
+    background_thread_started = True
 
 
 @app.route('/')
@@ -248,15 +510,16 @@ def index():
 def search_stock():
     '''Search for stock and return info, historical data, news, and sentiment analysis'''
     try:
-        company_name = request.json.get('company_name')
-        use_cache = request.json.get('use_cache', False)
+        company_name = request.json.get('company_name') if request.json else None
+        if not company_name:
+            return jsonify({'error': 'Company name is required'}), 400
 
         # Search for stock symbol
         results = search(company_name)
         if not results.get('quotes') or len(results['quotes']) == 0:
             return jsonify({'error': 'Company not found'}), 404
 
-        stock_symbol = results['quotes'][0]['symbol']
+        stock_symbol = results['quotes'][0]['symbol'].upper()
 
         # Get stock information
         stock_info = get_stock_info(stock_symbol)
@@ -266,36 +529,29 @@ def search_stock():
         # Get historical data for 1 day
         historical_data = get_historical_data(stock_symbol, '1d')
 
-        # Only fetch news if not using cache (frontend will handle cache logic)
         response_data = {
             'stock_info': stock_info,
             'historical_data': historical_data
         }
 
-        if not use_cache:
-            # Get news articles
-            articles = get_news_articles(stock_symbol, 10)
+        tracked_symbols = get_tracked_symbols()
+        cached_sentiment = get_cached_sentiment(stock_symbol) if stock_symbol in tracked_symbols else None
 
-            # Analyze sentiment for each article
-            sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
-            for article in articles:
-                sentiment = analyze_sentiment_gemma(
-                    article['title'],
-                    article['description'],
-                    stock_info['companyName']
-                )
-                article['sentiment'] = sentiment
-                sentiment_summary[sentiment] += 1
-
-            # Determine overall sentiment
-            if all(value == 0 for value in sentiment_summary.values()):
-                most_common_sentiment = 'neutral'
-            else:
-                most_common_sentiment = max(sentiment_summary, key=sentiment_summary.get)
-
+        if cached_sentiment:
+            response_data['articles'] = cached_sentiment['articles']
+            response_data['sentiment_summary'] = cached_sentiment['sentiment_summary']
+            response_data['overall_sentiment'] = cached_sentiment['overall_sentiment']
+        else:
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                stock_symbol,
+                stock_info['companyName']
+            )
             response_data['articles'] = articles
             response_data['sentiment_summary'] = sentiment_summary
-            response_data['overall_sentiment'] = most_common_sentiment
+            response_data['overall_sentiment'] = overall_sentiment
+
+            if stock_symbol in tracked_symbols:
+                save_sentiment_to_db(stock_symbol, articles, sentiment_summary, overall_sentiment)
 
         return jsonify(response_data)
 
@@ -339,6 +595,10 @@ def robots_txt():
 @limiter.limit("100 per minute")
 def sitemap_xml():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
+
+
+if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
+    start_background_worker()
 
 if __name__ == '__main__':
     app.run(
