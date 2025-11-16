@@ -243,6 +243,7 @@ def index():
     '''Render the main page'''
     return render_template('index.html')
 
+import deploy
 
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
