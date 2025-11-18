@@ -597,10 +597,11 @@ def sitemap_xml():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 
-if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
-    start_background_worker()
+
 
 if __name__ == '__main__':
+    if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
+        start_background_worker()
     app.run(
         host='0.0.0.0', 
         debug=False, 
