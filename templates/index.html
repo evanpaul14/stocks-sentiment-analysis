@@ -432,19 +432,24 @@
         }
 
         .trending-tabs {
-            display: none;
+            display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .trending-tab-btn {
-            flex: 1;
+            flex: 1 1 200px;
             background: #18181b;
             border-radius: 8px;
             border: 1px solid #2f2f37;
             padding: 10px 14px;
             font-size: 14px;
             color: #cbd5f5;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .trending-tab-btn.active {
