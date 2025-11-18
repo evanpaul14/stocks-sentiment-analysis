@@ -336,6 +336,24 @@ def fetch_alpaca_most_actives(limit=20):
         return []
 
 
+def get_trending_source_data(source):
+    """Return trending data for a specific source identifier."""
+    normalized = (source or "").lower()
+
+    if normalized == "stocktwits":
+        return fetch_stocktwits_trending()
+    if normalized == "reddit":
+        try:
+            return analyze_trending(fetch_top_stocks())
+        except Exception as e:
+            print(f"Error in reddit trending: {e}")
+            return []
+    if normalized == "volume":
+        return fetch_alpaca_most_actives()
+
+    return None
+
+
 def get_stock_info(symbol):
     """Get stock information using yfinance"""
     try:
@@ -684,28 +702,22 @@ def get_historical(symbol, period):
 @app.route('/trending', methods=['GET'])
 @limiter.limit("30 per minute")
 def trending_stocks():
-    try:
-        reddit_top = analyze_trending(fetch_top_stocks())
-    except Exception as e:
-        print(f"Error in reddit trending: {e}")
-        reddit_top = []
-
-    try:
-        stocktwits_top = fetch_stocktwits_trending()
-    except Exception as e:
-        print(f"Error in stocktwits trending: {e}")
-        stocktwits_top = []
-
-    try:
-        alpaca_top = fetch_alpaca_most_actives()
-    except Exception as e:
-        print(f"Error in alpaca trending: {e}")
-        alpaca_top = []
-
     return jsonify({
-        "stocktwits": stocktwits_top,
-        "reddit": reddit_top,
-        "volume": alpaca_top
+        "stocktwits": get_trending_source_data("stocktwits") or [],
+        "reddit": get_trending_source_data("reddit") or [],
+        "volume": get_trending_source_data("volume") or []
+    })
+
+
+@app.route('/trending/<source>', methods=['GET'])
+@limiter.limit("30 per minute")
+def trending_stocks_source(source):
+    data = get_trending_source_data(source)
+    if data is None:
+        return jsonify({"error": "Unknown trending source"}), 404
+    return jsonify({
+        "source": (source or "").lower(),
+        "data": data
     })
 
 @app.route('/robots.txt', methods=['GET'])

@@ -346,15 +346,16 @@
         }
         .trending-columns {
             display: flex;
-            gap: 20px;
             width: 100%;
         }
         .trending-column {
-            flex: 1 1 33.333%;
-            max-width: calc((100% - 40px) / 3);
-            display: flex;
+            display: none;
             flex-direction: column;
-            min-width: 0;
+            width: 100%;
+            max-width: 100%;
+        }
+        .trending-column.active {
+            display: flex;
         }
         .trending-column-title {
             font-size: 18px;
@@ -401,6 +402,13 @@
             font-weight: 700;
             color: #9333ea;
             margin-bottom: 2px;
+        }
+        .trending-ticker-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
         }
         .trending-name {
             font-size: 15px;
@@ -467,16 +475,6 @@
         @media (max-width: 900px) {
             .trending-columns {
                 flex-direction: column;
-            }
-
-            .trending-column {
-                display: none;
-                max-width: 100%;
-            }
-
-            .trending-column.active {
-                display: flex;
-                max-width: 100%;
             }
 
             .trending-tabs {
@@ -655,6 +653,7 @@
         reddit: document.getElementById('redditList'),
         volume: document.getElementById('volumeList')
     };
+    const TRENDING_SOURCES = ['stocktwits', 'reddit', 'volume'];
     const sentenceAbbreviations = new Set([
         'inc', 'incorporated', 'corp', 'corporation', 'co', 'ltd', 'llc', 'plc',
         'sr', 'jr', 'dr', 'mr', 'mrs', 'ms', 'prof', 'dept', 'st'
@@ -722,12 +721,11 @@
             return normalized;
         }
 
-        function setTrendingListsLoading() {
-            Object.values(trendingLists).forEach(list => {
-                if (list) {
-                    list.innerHTML = '<div class="trending-message" style="color:#9333ea;">Loading...</div>';
-                }
-            });
+        function setTrendingListLoading(source) {
+            const list = trendingLists[source];
+            if (list) {
+                list.innerHTML = '<div class="trending-message" style="color:#9333ea;">Loading...</div>';
+            }
         }
 
         function showTrendingMessage(source, message, isError = false) {
@@ -767,9 +765,11 @@
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <div class="trending-ticker-row">
+                            <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                            ${watchersTag}
+                        </div>
                         <span class="trending-name">${item.name || ''}</span>
-                        <span>${watchersTag}</span>
                     </div>
                 `;
                 list.appendChild(div);
@@ -800,12 +800,12 @@
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                        <span class="trending-name">${item.name || ''}</span>
-                        <span>
-                            <span class="trending-pct ${pctClass}">${pctLabel}</span>
+                        <div class="trending-ticker-row">
+                            <span class="trending-ticker">${item.ticker || 'N/A'}</span>
                             ${tag}
-                        </span>
+                        </div>
+                        <span class="trending-name">${item.name || ''}</span>
+                        <span class="trending-pct ${pctClass}">${pctLabel}</span>
                     </div>
                 `;
                 list.appendChild(div);
@@ -837,9 +837,11 @@
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <div class="trending-ticker-row">
+                            <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                            ${volumeTag}
+                        </div>
                         <span class="trending-name">${item.name || ''}</span>
-                        <span>${volumeTag}</span>
                     </div>
                 `;
                 list.appendChild(div);
@@ -1185,23 +1187,32 @@
             }
         });
 
-        async function loadTrendingStocks() {
-            setTrendingListsLoading();
+        async function loadTrendingSource(source) {
+            setTrendingListLoading(source);
             try {
-                const res = await fetch('/trending');
+                const res = await fetch(`/trending/${source}`);
                 if (!res.ok) {
-                    throw new Error('Failed to load trending data.');
+                    throw new Error(`Failed to load ${source} data.`);
                 }
                 const data = await res.json();
-                renderStocktwitsList(data.stocktwits || []);
-                renderRedditList(data.reddit || []);
-                renderVolumeList(data.volume || []);
+                const items = data.data || [];
+                if (source === 'stocktwits') {
+                    renderStocktwitsList(items);
+                } else if (source === 'reddit') {
+                    renderRedditList(items);
+                } else if (source === 'volume') {
+                    renderVolumeList(items);
+                }
             } catch (e) {
-                ['stocktwits', 'reddit', 'volume'].forEach(source =>
-                    showTrendingMessage(source, 'Failed to load data.', true)
-                );
-                console.error('Trending data error:', e);
+                console.error(`Trending ${source} error:`, e);
+                showTrendingMessage(source, 'Failed to load data.', true);
             }
+        }
+
+        function loadTrendingStocks() {
+            TRENDING_SOURCES.forEach(source => {
+                loadTrendingSource(source);
+            });
         }
         // Hide trending-section after a search, show on home
         function showTrendingSection(show) {
