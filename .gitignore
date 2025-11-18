@@ -11,3 +11,4 @@ test.py
 sentiment_cache.db
 tests/__init__.py
 tests/test_smoke.py
+experimentation.py

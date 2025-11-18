@@ -330,6 +330,24 @@
             padding: 30px;
             margin-bottom: 40px;
         }
+        .trending-columns {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+        .trending-column {
+            flex: 1 1 33.333%;
+            max-width: calc((100% - 40px) / 3);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .trending-column-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #c4b5fd;
+        }
         .trending-list {
             display: flex;
             flex-direction: column;
@@ -350,6 +368,12 @@
         .trending-item:hover {
             background: #222;
         }
+        .trending-card-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
         .trending-rank {
             font-size: 22px;
             font-weight: 700;
@@ -368,6 +392,11 @@
             font-size: 15px;
             color: #fff;
             margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+            max-width: 100%;
         }
         .trending-pct {
             font-size: 14px;
@@ -386,6 +415,54 @@
             padding: 2px 10px;
             margin-left: 8px;
             text-transform: uppercase;
+        }
+
+        .trending-tabs {
+            display: none;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .trending-tab-btn {
+            flex: 1;
+            background: #18181b;
+            border-radius: 8px;
+            border: 1px solid #2f2f37;
+            padding: 10px 14px;
+            font-size: 14px;
+            color: #cbd5f5;
+        }
+
+        .trending-tab-btn.active {
+            background: #312e81;
+            border-color: #6366f1;
+            color: #fff;
+        }
+
+        .trending-message {
+            color: #888;
+            font-size: 14px;
+            padding: 12px 0;
+        }
+
+        @media (max-width: 900px) {
+            .trending-columns {
+                flex-direction: column;
+            }
+
+            .trending-column {
+                display: none;
+                max-width: 100%;
+            }
+
+            .trending-column.active {
+                display: flex;
+                max-width: 100%;
+            }
+
+            .trending-tabs {
+                display: flex;
+            }
         }
 
         #trendingBtn:hover {
@@ -416,8 +493,26 @@
             <div id="errorMessage"></div>
         </div>
         <div class="trending-section" id="trendingSection" style="margin-bottom: 40px;">
-            <div class="section-title" style="margin-bottom: 15px;">Trending Stocks on Reddit</div>
-            <div id="trendingStocks" class="trending-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+            <div class="section-title" style="margin-bottom: 15px;">Live Trending Dashboards</div>
+            <div class="trending-tabs" id="trendingTabs">
+                <button class="trending-tab-btn active" data-source="stocktwits">StockTwits</button>
+                <button class="trending-tab-btn" data-source="reddit">Reddit</button>
+                <button class="trending-tab-btn" data-source="volume">Most Active by Volume</button>
+            </div>
+            <div class="trending-columns" id="trendingColumns">
+                <div class="trending-column active" data-source="stocktwits">
+                    <div class="trending-column-title">Trending on StockTwits</div>
+                    <div id="stocktwitsList" class="trending-list"></div>
+                </div>
+                <div class="trending-column" data-source="reddit">
+                    <div class="trending-column-title">Trending on Reddit</div>
+                    <div id="redditList" class="trending-list"></div>
+                </div>
+                <div class="trending-column" data-source="volume">
+                    <div class="trending-column-title">Most Active by Volume</div>
+                    <div id="volumeList" class="trending-list"></div>
+                </div>
+            </div>
         </div>
 
         <div id="results">
@@ -541,6 +636,11 @@
     let chart = null;
     let currentSymbol = null;
     let historicalData = {};
+    const trendingLists = {
+        stocktwits: document.getElementById('stocktwitsList'),
+        reddit: document.getElementById('redditList'),
+        volume: document.getElementById('volumeList')
+    };
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -556,6 +656,170 @@
 
         function formatPercentage(num) {
             return num.toFixed(2) + '%';
+        }
+
+        function formatOptionalCurrency(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return null;
+            return '$' + num.toFixed(2);
+        }
+
+        function formatTrendPercent(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return null;
+            const sign = num > 0 ? '+' : '';
+            return `${sign}${num.toFixed(1)}%`;
+        }
+
+        function setTrendingListsLoading() {
+            Object.values(trendingLists).forEach(list => {
+                if (list) {
+                    list.innerHTML = '<div class="trending-message" style="color:#9333ea;">Loading...</div>';
+                }
+            });
+        }
+
+        function showTrendingMessage(source, message, isError = false) {
+            const list = trendingLists[source];
+            if (!list) return;
+            const color = isError ? '#ef4444' : '#888';
+            list.innerHTML = `<div class="trending-message" style="color:${color};">${message}</div>`;
+        }
+
+        function renderStocktwitsList(items) {
+            const list = trendingLists.stocktwits;
+            if (!list) return;
+            if (!Array.isArray(items) || items.length === 0) {
+                showTrendingMessage('stocktwits', 'No StockTwits data available right now.');
+                return;
+            }
+
+            list.innerHTML = '';
+            items.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'trending-item';
+                div.onclick = () => {
+                    document.getElementById('companyInput').value = item.ticker;
+                    searchStock();
+                };
+                const summaryText = (item.summary || '').trim() || 'Trending now on StockTwits';
+                div.setAttribute('title', summaryText);
+
+                const watchersCount = Number(item.watchlist_count);
+                let watchersTag = '';
+                if (Number.isFinite(watchersCount) && watchersCount > 0) {
+                    watchersTag = `<span class="trending-tag">${formatNumber(watchersCount)} watchers</span>`;
+                } else {
+                    watchersTag = '<span class="trending-tag" style="background:rgba(88,28,135,0.25);color:#e9d5ff;">Watchers N/A</span>';
+                }
+
+                div.innerHTML = `
+                    <span class="trending-rank">${item.rank || idx + 1}.</span>
+                    <div class="trending-card-content">
+                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-name">${item.name || ''}</span>
+                        <span>${watchersTag}</span>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function renderRedditList(items) {
+            const list = trendingLists.reddit;
+            if (!list) return;
+            if (!Array.isArray(items) || items.length === 0) {
+                showTrendingMessage('reddit', 'No Reddit trending data available.');
+                return;
+            }
+
+            list.innerHTML = '';
+            items.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'trending-item';
+                div.onclick = () => {
+                    document.getElementById('companyInput').value = item.ticker;
+                    searchStock();
+                };
+                const pct = Number(item.pct_increase || 0);
+                const pctClass = pct < 0 ? 'negative' : 'positive';
+                const pctLabel = `${pct >= 0 ? '+' : ''}${Math.round(pct)}% mentions`;
+                const tag = item.tag ? `<span class="trending-tag">${item.tag}</span>` : '';
+
+                div.innerHTML = `
+                    <span class="trending-rank">${item.rank || idx + 1}.</span>
+                    <div class="trending-card-content">
+                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-name">${item.name || ''}</span>
+                        <span>
+                            <span class="trending-pct ${pctClass}">${pctLabel}</span>
+                            ${tag}
+                        </span>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function renderVolumeList(items) {
+            const list = trendingLists.volume;
+            if (!list) return;
+            if (!Array.isArray(items) || items.length === 0) {
+                showTrendingMessage('volume', 'No volume leaders available.');
+                return;
+            }
+
+            list.innerHTML = '';
+            items.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = 'trending-item';
+                div.onclick = () => {
+                    document.getElementById('companyInput').value = item.ticker;
+                    searchStock();
+                };
+                const volumeCount = Number(item.volume);
+                const volumeLabel = Number.isFinite(volumeCount) && volumeCount > 0
+                    ? `${formatNumber(volumeCount)} shares`
+                    : 'Volume unavailable';
+                const volumeTag = `<span class="trending-tag">${volumeLabel}</span>`;
+
+                div.innerHTML = `
+                    <span class="trending-rank">${item.rank || idx + 1}.</span>
+                    <div class="trending-card-content">
+                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-name">${item.name || ''}</span>
+                        <span>${volumeTag}</span>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function setActiveTrendingColumn(source) {
+            const columns = document.querySelectorAll('.trending-column');
+            columns.forEach(column => {
+                if (column.dataset.source === source) {
+                    column.classList.add('active');
+                } else {
+                    column.classList.remove('active');
+                }
+            });
+        }
+
+        function initializeTrendingTabs() {
+            const tabs = document.querySelectorAll('.trending-tab-btn');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    if (tab.classList.contains('active')) return;
+                    tabs.forEach(btn => btn.classList.remove('active'));
+                    tab.classList.add('active');
+                    setActiveTrendingColumn(tab.dataset.source);
+                });
+            });
+            const active = document.querySelector('.trending-tab-btn.active');
+            if (active) {
+                setActiveTrendingColumn(active.dataset.source);
+            }
         }
 
         async function searchStock() {
@@ -841,6 +1105,7 @@
                 });
             });
 
+            initializeTrendingTabs();
             loadTrendingStocks();
         });
 
@@ -864,41 +1129,21 @@
         });
 
         async function loadTrendingStocks() {
-            const container = document.getElementById('trendingStocks');
-            container.innerHTML = '<div style="color:#9333ea;">Loading trending stocks...</div>';
+            setTrendingListsLoading();
             try {
                 const res = await fetch('/trending');
-                const data = await res.json();
-                if (!data.trending || !Array.isArray(data.trending)) {
-                    container.innerHTML = '<div style="color:#ef4444;">Failed to load trending stocks.</div>';
-                    return;
+                if (!res.ok) {
+                    throw new Error('Failed to load trending data.');
                 }
-                container.innerHTML = '';
-                data.trending.forEach((item, idx) => {
-                    const div = document.createElement('div');
-                    div.className = 'trending-item';
-                    div.onclick = () => {
-                        document.getElementById('companyInput').value = item.ticker;
-                        searchStock();
-                    };
-                    let pct = item.pct_increase;
-                    let pctClass = pct < 0 ? 'negative' : 'positive';
-                    let pctSign = pct > 0 ? '+' : '';
-                    div.innerHTML = `
-                        <span class="trending-rank">${idx + 1}.</span>
-                        <div style="flex:1;display:flex;flex-direction:column;">
-                            <span class="trending-ticker">${item.ticker}</span>
-                            <span class="trending-name">${item.name}</span>
-                            <span>
-                                <span class="trending-pct ${pctClass}">${pctSign}${pct.toFixed(0)}% mentions</span>
-                                ${item.tag ? `<span class='trending-tag'>${item.tag}</span>` : ''}
-                            </span>
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
+                const data = await res.json();
+                renderStocktwitsList(data.stocktwits || []);
+                renderRedditList(data.reddit || []);
+                renderVolumeList(data.volume || []);
             } catch (e) {
-                container.innerHTML = '<div style="color:#ef4444;">Failed to load trending stocks.</div>';
+                ['stocktwits', 'reddit', 'volume'].forEach(source =>
+                    showTrendingMessage(source, 'Failed to load data.', true)
+                );
+                console.error('Trending data error:', e);
             }
         }
         // Hide trending-section after a search, show on home

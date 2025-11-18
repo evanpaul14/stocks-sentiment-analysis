@@ -14,6 +14,8 @@ import sqlite3
 import threading
 import time
 from collections import deque
+from functools import lru_cache
+import cloudscraper
 
 load_dotenv()
 app = Flask(__name__)
@@ -59,6 +61,8 @@ gemma_model = "gemma-3-27b-it"
 import requests
 import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
+STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json"
+ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=20"
 
 
 def get_db_connection():
@@ -228,6 +232,108 @@ def analyze_trending(top10):
             "tag": tag
         })
     return results
+
+
+@lru_cache(maxsize=256)
+def lookup_company_name(symbol):
+    """Resolve ticker to company name via yfinance"""
+    if not symbol:
+        return None
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info or {}
+        return info.get("longName") or info.get("shortName") or info.get("shortName")
+    except Exception as e:
+        print(f"Error looking up company name for {symbol}: {e}")
+        return None
+
+
+def fetch_stocktwits_trending(limit=20):
+    """Fetch trending symbols from StockTwits"""
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={
+                "browser": "chrome",
+                "platform": "darwin",
+                "mobile": False
+            }
+        )
+        resp = scraper.get(STOCKTWITS_TRENDING_URL, timeout=10)
+        resp.raise_for_status()
+        payload = resp.json()
+        symbols = payload.get("symbols", [])
+
+        non_crypto = [s for s in symbols if s.get("exchange") != "CRYPTO"]
+        trimmed = non_crypto[:limit]
+        results = []
+        for idx, sym in enumerate(trimmed, start=1):
+            price_info = sym.get("price")
+            if isinstance(price_info, dict):
+                last_price = price_info.get("last")
+                change_pct = price_info.get("change_percent")
+            else:
+                last_price = sym.get("price")
+                change_pct = sym.get("change_percent")
+
+            results.append({
+                "rank": idx,
+                "ticker": (sym.get("symbol") or "").upper(),
+                "name": sym.get("title") or sym.get("symbol") or "Unknown",
+                "watchlist_count": sym.get("watchlist_count"),
+                "change_percent": change_pct,
+                "price": last_price,
+                "summary": sym.get("summary")
+                    or sym.get("watchlist_description")
+                    or sym.get("body")
+                    or "Trending now on StockTwits"
+            })
+        return results
+    except Exception as e:
+        print(f"Error fetching StockTwits trending: {e}")
+        return []
+
+
+def fetch_alpaca_most_actives(limit=20):
+    """Fetch most active stocks by volume from Alpaca"""
+    headers = {}
+    alpaca_key = os.getenv("ALPACA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
+    alpaca_secret = os.getenv("ALPACA_API_SECRET_KEY") or os.getenv("ALPACA_SECRET_KEY")
+    if alpaca_key and alpaca_secret:
+        headers["Apca-Api-Key-Id"] = alpaca_key
+        headers["Apca-Api-Secret-Key"] = alpaca_secret
+
+    try:
+        resp = requests.get(ALPACA_MOST_ACTIVE_URL, headers=headers, timeout=10)
+        resp.raise_for_status()
+        payload = resp.json()
+        stocks = (
+            payload.get("most_actives")
+            or payload.get("stocks")
+            or payload.get("results")
+            or payload.get("data")
+            or []
+        )
+
+        trimmed = stocks[:limit]
+        results = []
+        for idx, rec in enumerate(trimmed, start=1):
+            change_pct = rec.get("change_percent") or rec.get("percent_change")
+            price = rec.get("price") or rec.get("last") or rec.get("close")
+            volume = rec.get("volume") or rec.get("volume_1d")
+            symbol = (rec.get("symbol") or "").upper()
+            resolved_name = rec.get("name") or lookup_company_name(symbol) or symbol or "Unknown"
+            results.append({
+                "rank": idx,
+                "ticker": symbol,
+                "name": resolved_name,
+                "volume": volume,
+                "price": price,
+                "change_percent": change_pct
+            })
+        return results
+    except Exception as e:
+        print(f"Error fetching Alpaca most actives: {e}")
+        return []
 
 
 def get_stock_info(symbol):
@@ -579,21 +685,39 @@ def get_historical(symbol, period):
 @limiter.limit("30 per minute")
 def trending_stocks():
     try:
-        top10 = fetch_top_stocks()
-        analyzed = analyze_trending(top10)
-        return jsonify({"trending": analyzed})
+        reddit_top = analyze_trending(fetch_top_stocks())
     except Exception as e:
-        print(f"Error in trending_stocks: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"Error in reddit trending: {e}")
+        reddit_top = []
+
+    try:
+        stocktwits_top = fetch_stocktwits_trending()
+    except Exception as e:
+        print(f"Error in stocktwits trending: {e}")
+        stocktwits_top = []
+
+    try:
+        alpaca_top = fetch_alpaca_most_actives()
+    except Exception as e:
+        print(f"Error in alpaca trending: {e}")
+        alpaca_top = []
+
+    return jsonify({
+        "stocktwits": stocktwits_top,
+        "reddit": reddit_top,
+        "volume": alpaca_top
+    })
 
 @app.route('/robots.txt', methods=['GET'])
 @limiter.limit("100 per minute")
 def robots_txt():
+    '''Serve robots.txt file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "robots.txt")
 
 @app.route('/sitemap.xml', methods=['GET'])
 @limiter.limit("100 per minute")
 def sitemap_xml():
+    '''Serve sitemap.xml file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 

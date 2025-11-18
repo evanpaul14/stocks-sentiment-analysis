@@ -6,3 +6,4 @@ yfinance
 python-dotenv
 Flask-Limiter
 gunicorn
+cloudscraper
