@@ -89,11 +89,14 @@ stocks-sentiment-analysis/
   python main.py
   ```
   The server will start on `http://0.0.0.0:5000`
+  
 2. **Open your browser**
   Navigate to `http://127.0.0.1:5000`
-3. **Explore Trending Dashboards**
+
+4. **Explore Trending Dashboards**
   - Home page shows three dashboards: StockTwits, Reddit, and Most Active by Volume (Alpaca)
   - Click any ticker to instantly search and analyze it
+
 4. **Search for a Stock**
   - Enter a company name (e.g., "Apple", "Tesla", "Microsoft")
   - Click "Search" or press Enter
