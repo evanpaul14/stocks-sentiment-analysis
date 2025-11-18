@@ -168,10 +168,24 @@
             border-bottom: 1px solid #333;
         }
 
-        .about-text {
+        .about-text-wrapper {
             color: #ccc;
             line-height: 1.6;
             margin-bottom: 20px;
+        }
+
+        .about-text {
+            display: inline;
+        }
+
+        #toggleAboutBtn {
+            background: none;
+            border: none;
+            color: #9333ea;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0;
+            margin-left: 6px;
         }
 
         .company-details {
@@ -470,12 +484,6 @@
             color: #c4b5fd;
         }
 
-        .about-text.truncated {
-            max-height: 20px; /* adjust based on your layout */
-            overflow: hidden;
-            position: relative;
-        }
-
     </style>
 </head>
 <body>
@@ -556,8 +564,9 @@
 
             <div class="info-section">
                 <div class="section-title">About <span id="aboutSymbol"></span></div>
-                <div class="about-text" id="aboutText"></div>
-                <button id="toggleAboutBtn" style="background:none;border:none;color:#9333ea;cursor:pointer;margin-top:8px;font-size:14px;display:none;">View More</button>
+                <div class="about-text-wrapper">
+                    <span class="about-text" id="aboutText"></span><button id="toggleAboutBtn" type="button" style="display:none;">View More</button>
+                </div>
                 <div class="company-details">
                     <div class="detail-item">
                         <div class="detail-label">CEO</div>
@@ -641,6 +650,10 @@
         reddit: document.getElementById('redditList'),
         volume: document.getElementById('volumeList')
     };
+    const sentenceAbbreviations = new Set([
+        'inc', 'incorporated', 'corp', 'corporation', 'co', 'ltd', 'llc', 'plc',
+        'sr', 'jr', 'dr', 'mr', 'mrs', 'ms', 'prof', 'dept', 'st'
+    ]);
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -669,6 +682,39 @@
             if (!Number.isFinite(num)) return null;
             const sign = num > 0 ? '+' : '';
             return `${sign}${num.toFixed(1)}%`;
+        }
+
+        function getFirstSentence(text) {
+            if (!text) return '';
+            const normalized = text.replace(/\s+/g, ' ').trim();
+            if (!normalized) return '';
+
+            for (let i = 0; i < normalized.length; i++) {
+                const char = normalized[i];
+                if (!'.!?'.includes(char)) continue;
+
+                const before = normalized.slice(0, i).trimEnd();
+                const wordMatch = before.match(/([A-Za-z]+)$/);
+                const lastWord = wordMatch ? wordMatch[1].toLowerCase() : '';
+                const remainder = normalized.slice(i + 1);
+                const hasMoreContent = /\S/.test(remainder);
+
+                if (char === '.' && lastWord && sentenceAbbreviations.has(lastWord) && hasMoreContent) {
+                    continue;
+                }
+
+                const sentence = normalized.slice(0, i + 1).trim();
+                if (sentence.length) {
+                    return sentence;
+                }
+            }
+
+            const newlineSplit = text.split(/\n+/).map(part => part.replace(/\s+/g, ' ').trim()).filter(Boolean);
+            if (newlineSplit.length > 0) {
+                return newlineSplit[0];
+            }
+
+            return normalized;
         }
 
         function setTrendingListsLoading() {
@@ -905,33 +951,39 @@
             }
 
             document.getElementById('aboutSymbol').textContent = stockInfo.symbol;
-            document.getElementById('aboutText').textContent =
-                stockInfo.description || `${stockInfo.companyName} (${stockInfo.symbol}) engages in various business operations. Stock data is updated in real-time.`;
-            const aboutText = document.getElementById('aboutText');
+            const aboutTextElement = document.getElementById('aboutText');
             const toggleBtn = document.getElementById('toggleAboutBtn');
+            const defaultDescription = `${stockInfo.companyName} (${stockInfo.symbol}) engages in various business operations. Stock data is updated in real-time.`;
+            const fullDescription = (stockInfo.description || defaultDescription).trim();
+            const shortText = getFirstSentence(fullDescription) || fullDescription;
+            const needsToggle = shortText.length < fullDescription.length;
 
-            aboutText.textContent = stockInfo.description || `${stockInfo.companyName} (${stockInfo.symbol}) engages in various business operations. Stock data is updated in real-time.`;
+            aboutTextElement.dataset.fullText = fullDescription;
+            aboutTextElement.dataset.shortText = shortText;
+            aboutTextElement.textContent = aboutTextElement.dataset.shortText;
 
-            if (aboutText.textContent.length > 200) { // arbitrary length threshold
-                aboutText.classList.add('truncated');
+            if (needsToggle) {
                 toggleBtn.style.display = 'inline';
                 toggleBtn.textContent = 'View More';
-            } 
-            else {
-                aboutText.classList.remove('truncated');
+                toggleBtn.dataset.expanded = 'false';
+                toggleBtn.onclick = () => {
+                    const expanded = toggleBtn.dataset.expanded === 'true';
+                    if (expanded) {
+                        aboutTextElement.textContent = aboutTextElement.dataset.shortText;
+                        toggleBtn.textContent = 'View More';
+                        toggleBtn.dataset.expanded = 'false';
+                    } else {
+                        aboutTextElement.textContent = aboutTextElement.dataset.fullText;
+                        toggleBtn.textContent = 'View Less';
+                        toggleBtn.dataset.expanded = 'true';
+                    }
+                };
+            } else {
                 toggleBtn.style.display = 'none';
+                toggleBtn.textContent = '';
+                toggleBtn.dataset.expanded = 'false';
+                toggleBtn.onclick = null;
             }
-
-            toggleBtn.onclick = () => {
-                if (aboutText.classList.contains('truncated')) {
-                aboutText.classList.remove('truncated');
-                toggleBtn.textContent = 'View Less';
-            } 
-            else {
-                aboutText.classList.add('truncated');
-                toggleBtn.textContent = 'View More';
-            }
-            };
             document.getElementById('ceo').textContent = stockInfo.ceo || 'N/A';
             document.getElementById('employees').textContent = stockInfo.employees ? formatNumber(stockInfo.employees) : 'N/A';
 
