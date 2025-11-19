@@ -723,6 +723,11 @@ def index():
     '''Render the main page'''
     return render_template('index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
 def search_stock():
