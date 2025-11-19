@@ -24,7 +24,7 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sentiment_cache.db")
 BACKGROUND_REFRESH_SECONDS = 60 * 60  # 1 hour
 CACHE_HEALTH_CHECK_SECONDS = 10 * 60  # 10 minutes
-AI_RATE_LIMIT_PER_MINUTE = 15
+AI_RATE_LIMIT_PER_MINUTE = 25
 AI_RATE_WINDOW_SECONDS = 60
 STATIC_SYMBOLS = {
     "GOOGL",  # Alphabet Class A
