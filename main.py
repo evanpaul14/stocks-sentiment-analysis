@@ -16,6 +16,7 @@ import time
 from collections import deque
 from functools import lru_cache
 import cloudscraper
+from openai import OpenAI
 
 load_dotenv()
 app = Flask(__name__)
@@ -24,7 +25,7 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sentiment_cache.db")
 BACKGROUND_REFRESH_SECONDS = 60 * 60  # 1 hour
 CACHE_HEALTH_CHECK_SECONDS = 10 * 60  # 10 minutes
-AI_RATE_LIMIT_PER_MINUTE = 25
+AI_RATE_LIMIT_PER_MINUTE = 50
 AI_RATE_WINDOW_SECONDS = 60
 STATIC_SYMBOLS = {
     "GOOGL",  # Alphabet Class A
@@ -42,6 +43,10 @@ db_lock = threading.Lock()
 background_thread_started = False
 ai_rate_lock = threading.Lock()
 ai_rate_timestamps = deque()
+llm7_client = None
+llm7_client_lock = threading.Lock()
+LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
+LLM7_MODEL = os.getenv("LLM7_MODEL_NAME", "gpt-4.1-nano-2025-04-14")
 
 # set up rate limiting
 limiter = Limiter(
@@ -354,6 +359,51 @@ def get_trending_source_data(source):
     return None
 
 
+def collect_trending_symbols_from_all_sources():
+    """Aggregate tickers appearing across all configured trending sources."""
+    symbol_set = set()
+
+    def _extract_symbols(records, source_name):
+        extracted = set()
+        for rec in records or []:
+            ticker = rec.get("ticker") or rec.get("symbol")
+            if ticker:
+                extracted.add(ticker.upper())
+        if not extracted:
+            print(f"No trending tickers extracted from {source_name} response")
+        return extracted
+
+    try:
+        reddit_records = fetch_top_stocks()
+        symbol_set |= _extract_symbols(reddit_records, "reddit")
+    except Exception as e:
+        print(f"Error collecting reddit trending symbols: {e}")
+
+    try:
+        stocktwits_records = fetch_stocktwits_trending()
+        symbol_set |= _extract_symbols(stocktwits_records, "stocktwits")
+    except Exception as e:
+        print(f"Error collecting stocktwits trending symbols: {e}")
+
+    try:
+        volume_records = fetch_alpaca_most_actives()
+        symbol_set |= _extract_symbols(volume_records, "volume")
+    except Exception as e:
+        print(f"Error collecting volume trending symbols: {e}")
+
+    return symbol_set
+
+
+def refresh_tracked_trending_symbols():
+    """Update the global tracked_trending_symbols set with current trending tickers."""
+    global tracked_trending_symbols
+    latest_symbols = collect_trending_symbols_from_all_sources()
+    if latest_symbols:
+        tracked_trending_symbols = latest_symbols
+    else:
+        print("Warning: Unable to refresh trending symbols; keeping previous tracked set")
+
+
 def get_stock_info(symbol):
     """Get stock information using yfinance"""
     try:
@@ -489,13 +539,7 @@ def get_news_articles(stock_symbol, num_articles=10):
 
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemma AI"""
-    prompt = (
-        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
-        f"to the company {company_name}.\n\n"
-        f"Title: {article_title}\n"
-        f"Description: {article_description}\n\n"
-        f"Respond with only one word and nothing else: positive, negative, or neutral."
-    )
+    prompt = build_sentiment_prompt(article_title, article_description, company_name)
 
     max_attempts = 3
     for attempt in range(max_attempts):
@@ -522,11 +566,65 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
     return 'neutral'
 
 
-def build_sentiment_payload(symbol, company_name=None):
+def build_sentiment_prompt(article_title, article_description, company_name):
+    return (
+        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
+        f"to the company {company_name}.\n\n"
+        f"Title: {article_title}\n"
+        f"Description: {article_description}\n\n"
+        f"Respond with only one word and nothing else: positive, negative, or neutral."
+    )
+
+
+def get_llm7_client():
+    global llm7_client
+    if not os.getenv("LLM7_API_KEY"):
+        raise ValueError("LLM7_API_KEY is not set. Unable to analyze sentiment for trending cache.")
+
+    with llm7_client_lock:
+        if llm7_client is None:
+            llm7_client = OpenAI(
+                base_url=LLM7_BASE_URL,
+                api_key=os.getenv("LLM7_API_KEY")
+            )
+    return llm7_client
+
+
+def analyze_sentiment_llm7(article_title, article_description, company_name):
+    """Analyze sentiment for cached trending stocks using the LLM7 API"""
+    prompt = build_sentiment_prompt(article_title, article_description, company_name)
+    max_attempts = 3
+    backoff_seconds = 1
+
+    for attempt in range(max_attempts):
+        try:
+            client = get_llm7_client()
+            response = client.chat.completions.create(
+                model=LLM7_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0
+            )
+            sentiment = (response.choices[0].message.content or "").strip().lower()
+            if sentiment not in ['positive', 'negative', 'neutral']:
+                sentiment = 'neutral'
+            return sentiment
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                print(f"LLM7 sentiment analysis failed permanently: {e}")
+                break
+            sleep_for = min(backoff_seconds * (2 ** attempt), 8)
+            print(f"LLM7 sentiment analysis failed (attempt {attempt + 1}); retrying in {sleep_for:.1f}s: {e}")
+            time.sleep(sleep_for)
+
+    return 'neutral'
+
+
+def build_sentiment_payload(symbol, company_name=None, sentiment_analyzer=None):
+    analyzer = sentiment_analyzer or analyze_sentiment_gemma
     articles = get_news_articles(symbol, 10)
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
     for article in articles:
-        sentiment = analyze_sentiment_gemma(
+        sentiment = analyzer(
             article['title'],
             article['description'],
             company_name or symbol
@@ -544,14 +642,7 @@ def build_sentiment_payload(symbol, company_name=None):
 
 
 def refresh_sentiment_cache():
-    global tracked_trending_symbols
-    top20 = fetch_top_stocks()
-    tracked_trending_symbols = {
-        (record.get("ticker") or "").upper()
-        for record in top20
-        if record.get("ticker")
-    }
-
+    refresh_tracked_trending_symbols()
     symbols_to_update = get_tracked_symbols()
     for symbol in symbols_to_update:
         if not symbol:
@@ -561,7 +652,8 @@ def refresh_sentiment_cache():
             company_name = stock_info['companyName'] if stock_info else symbol
             articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
                 symbol,
-                company_name
+                company_name,
+                sentiment_analyzer=analyze_sentiment_llm7
             )
             save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
         except Exception as e:
@@ -571,6 +663,7 @@ def refresh_sentiment_cache():
 
 
 def ensure_cache_completeness():
+    refresh_tracked_trending_symbols()
     tracked_symbols = get_tracked_symbols()
     if not tracked_symbols:
         return
@@ -584,7 +677,8 @@ def ensure_cache_completeness():
             company_name = stock_info['companyName'] if stock_info else symbol
             articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
                 symbol,
-                company_name
+                company_name,
+                sentiment_analyzer=analyze_sentiment_llm7
             )
             save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
         except Exception as e:

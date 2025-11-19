@@ -13,6 +13,7 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 - **Comprehensive Stock Data:** Real-time price, after-hours data, market cap, P/E, dividend yield, volume, daily/52-week high/low, open price, company info (CEO, employees, headquarters, year founded, industry, sector, website, description).
 - **Historical Data Visualization:** Interactive Chart.js charts for 1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL timeframes.
 - **AI-Powered News Sentiment:** News articles fetched via Google News and analyzed for sentiment using Google Gemma AI. Sentiment summary and badges shown for each article.
+  - Direct searches continue to call Google Gemma AI for per-request analysis, while the backend cache for trending symbols now uses the LLM7-compatible endpoint for higher throughput.
 - **Smart Sentiment Caching:** Sentiment for top trending and flagship tickers is cached in SQLite and refreshed hourly. Health checks run every 10 minutes.
 - **Rate Limiting:** All endpoints are rate-limited for abuse protection.
 - **Background Worker:** Sentiment cache is maintained in the background unless disabled.
@@ -30,6 +31,7 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 
 - Python 3.8 or higher
 - Google API Key (for Gemma AI)
+- LLM7 API Key (for background cache refreshes)
 - Alpaca API Key/Secret (for volume dashboard)
 - Internet connection for real-time data
 
@@ -57,11 +59,17 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 Create a `.env` file in the project root:
 ```
 GOOGLE_API_KEY=your_google_api_key_here
+LLM7_API_KEY=your_llm7_api_key_here
+LLM7_MODEL_NAME=gpt-4o-mini-2024-07-18
+LLM7_BASE_URL=https://api.llm7.io/v1
 ALPACA_API_KEY=your_alpaca_api_key_here
 ALPACA_SECRET_KEY=your_alpaca_secret_key_here
 ```
 **Descriptions:**
 - `GOOGLE_API_KEY`: Used for Google Gemma AI sentiment analysis. [Get your key here](https://aistudio.google.com/)
+- `LLM7_API_KEY`: Used by the background worker to refresh cached sentiment for trending stocks through the api.llm7.io endpoint. [Claim a token here](https://token.llm7.io/)
+- `LLM7_MODEL_NAME` (optional): Override the default `gpt-4o-mini-2024-07-18` deployment for the caching worker.
+- `LLM7_BASE_URL` (optional): Override the default `https://api.llm7.io/v1` base URL if you are proxying the service.
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`: Used for Alpaca stock data API (for volume dashboard).
 
 **Note:** Never share your `.env` file publicly. Keep your API keys secure.
