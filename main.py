@@ -16,8 +16,6 @@ import time
 from collections import deque
 from functools import lru_cache
 import cloudscraper
-from openai import OpenAI
-from worker import WorkerConfig, WorkerDependencies, start_background_worker
 
 load_dotenv()
 app = Flask(__name__)
@@ -26,7 +24,7 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sentiment_cache.db")
 BACKGROUND_REFRESH_SECONDS = 60 * 60  # 1 hour
 CACHE_HEALTH_CHECK_SECONDS = 10 * 60  # 10 minutes
-AI_RATE_LIMIT_PER_MINUTE = 50
+AI_RATE_LIMIT_PER_MINUTE = 25
 AI_RATE_WINDOW_SECONDS = 60
 STATIC_SYMBOLS = {
     "GOOGL",  # Alphabet Class A
@@ -41,14 +39,9 @@ STATIC_SYMBOLS = {
 }
 tracked_trending_symbols = set()
 db_lock = threading.Lock()
+background_thread_started = False
 ai_rate_lock = threading.Lock()
 ai_rate_timestamps = deque()
-llm7_client = None
-llm7_client_lock = threading.Lock()
-worker_init_lock = threading.Lock()
-worker_initialized = False
-LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
-LLM7_MODEL = os.getenv("LLM7_MODEL_NAME", "gpt-4.1-nano-2025-04-14")
 
 # set up rate limiting
 limiter = Limiter(
@@ -183,20 +176,6 @@ def get_cached_symbols():
     return {row[0] for row in rows}
 
 
-def delete_outdated_cache_entries(max_age_seconds=60 * 60):
-    cutoff_iso = (datetime.utcnow() - timedelta(seconds=max_age_seconds)).isoformat()
-    with db_lock:
-        conn = get_db_connection()
-        cursor = conn.execute(
-            "DELETE FROM sentiment_cache WHERE datetime(updated_at) <= datetime(?)",
-            (cutoff_iso,)
-        )
-        deleted = cursor.rowcount if cursor.rowcount not in (None, -1) else 0
-        conn.commit()
-        conn.close()
-    return deleted
-
-
 def purge_stale_sentiment_records(valid_symbols):
     if not valid_symbols:
         return
@@ -209,41 +188,6 @@ def purge_stale_sentiment_records(valid_symbols):
             conn.execute("DELETE FROM sentiment_cache WHERE symbol = ?", (symbol,))
         conn.commit()
         conn.close()
-
-
-def _build_worker_dependencies():
-    return WorkerDependencies(
-        init_db=init_db,
-        refresh_tracked_trending_symbols=refresh_tracked_trending_symbols,
-        get_tracked_symbols=get_tracked_symbols,
-        get_cached_symbols=get_cached_symbols,
-        get_stock_info=get_stock_info,
-        build_sentiment_payload=build_sentiment_payload,
-        sentiment_analyzer=analyze_sentiment_llm7,
-        save_sentiment_to_db=save_sentiment_to_db,
-        purge_stale_sentiment_records=purge_stale_sentiment_records,
-        delete_outdated_entries=delete_outdated_cache_entries
-    )
-
-
-def start_worker_if_enabled():
-    global worker_initialized
-    if os.getenv("DISABLE_BACKGROUND_WORKER") == "1":
-        app.logger.info("Background worker disabled via DISABLE_BACKGROUND_WORKER=1")
-        return
-
-    with worker_init_lock:
-        if worker_initialized:
-            return
-
-        worker_config = WorkerConfig(
-            refresh_interval_seconds=BACKGROUND_REFRESH_SECONDS,
-            health_check_seconds=CACHE_HEALTH_CHECK_SECONDS,
-            stale_entry_ttl_seconds=60 * 60
-        )
-        start_background_worker(_build_worker_dependencies(), worker_config)
-        worker_initialized = True
-        app.logger.info("Background worker started")
 
 def fetch_top_stocks():
     """Fetch top trending Reddit stocks from ApeWisdom API"""
@@ -410,51 +354,6 @@ def get_trending_source_data(source):
     return None
 
 
-def collect_trending_symbols_from_all_sources():
-    """Aggregate tickers appearing across all configured trending sources."""
-    symbol_set = set()
-
-    def _extract_symbols(records, source_name):
-        extracted = set()
-        for rec in records or []:
-            ticker = rec.get("ticker") or rec.get("symbol")
-            if ticker:
-                extracted.add(ticker.upper())
-        if not extracted:
-            print(f"No trending tickers extracted from {source_name} response")
-        return extracted
-
-    try:
-        reddit_records = fetch_top_stocks()
-        symbol_set |= _extract_symbols(reddit_records, "reddit")
-    except Exception as e:
-        print(f"Error collecting reddit trending symbols: {e}")
-
-    try:
-        stocktwits_records = fetch_stocktwits_trending()
-        symbol_set |= _extract_symbols(stocktwits_records, "stocktwits")
-    except Exception as e:
-        print(f"Error collecting stocktwits trending symbols: {e}")
-
-    try:
-        volume_records = fetch_alpaca_most_actives()
-        symbol_set |= _extract_symbols(volume_records, "volume")
-    except Exception as e:
-        print(f"Error collecting volume trending symbols: {e}")
-
-    return symbol_set
-
-
-def refresh_tracked_trending_symbols():
-    """Update the global tracked_trending_symbols set with current trending tickers."""
-    global tracked_trending_symbols
-    latest_symbols = collect_trending_symbols_from_all_sources()
-    if latest_symbols:
-        tracked_trending_symbols = latest_symbols
-    else:
-        print("Warning: Unable to refresh trending symbols; keeping previous tracked set")
-
-
 def get_stock_info(symbol):
     """Get stock information using yfinance"""
     try:
@@ -590,7 +489,13 @@ def get_news_articles(stock_symbol, num_articles=10):
 
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemma AI"""
-    prompt = build_sentiment_prompt(article_title, article_description, company_name)
+    prompt = (
+        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
+        f"to the company {company_name}.\n\n"
+        f"Title: {article_title}\n"
+        f"Description: {article_description}\n\n"
+        f"Respond with only one word and nothing else: positive, negative, or neutral."
+    )
 
     max_attempts = 3
     for attempt in range(max_attempts):
@@ -617,65 +522,11 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
     return 'neutral'
 
 
-def build_sentiment_prompt(article_title, article_description, company_name):
-    return (
-        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
-        f"to the company {company_name}.\n\n"
-        f"Title: {article_title}\n"
-        f"Description: {article_description}\n\n"
-        f"Respond with only one word and nothing else: positive, negative, or neutral."
-    )
-
-
-def get_llm7_client():
-    global llm7_client
-    if not os.getenv("LLM7_API_KEY"):
-        raise ValueError("LLM7_API_KEY is not set. Unable to analyze sentiment for trending cache.")
-
-    with llm7_client_lock:
-        if llm7_client is None:
-            llm7_client = OpenAI(
-                base_url=LLM7_BASE_URL,
-                api_key=os.getenv("LLM7_API_KEY")
-            )
-    return llm7_client
-
-
-def analyze_sentiment_llm7(article_title, article_description, company_name):
-    """Analyze sentiment for cached trending stocks using the LLM7 API"""
-    prompt = build_sentiment_prompt(article_title, article_description, company_name)
-    max_attempts = 3
-    backoff_seconds = 1
-
-    for attempt in range(max_attempts):
-        try:
-            client = get_llm7_client()
-            response = client.chat.completions.create(
-                model=LLM7_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-            sentiment = (response.choices[0].message.content or "").strip().lower()
-            if sentiment not in ['positive', 'negative', 'neutral']:
-                sentiment = 'neutral'
-            return sentiment
-        except Exception as e:
-            if attempt == max_attempts - 1:
-                print(f"LLM7 sentiment analysis failed permanently: {e}")
-                break
-            sleep_for = min(backoff_seconds * (2 ** attempt), 8)
-            print(f"LLM7 sentiment analysis failed (attempt {attempt + 1}); retrying in {sleep_for:.1f}s: {e}")
-            time.sleep(sleep_for)
-
-    return 'neutral'
-
-
-def build_sentiment_payload(symbol, company_name=None, sentiment_analyzer=None):
-    analyzer = sentiment_analyzer or analyze_sentiment_gemma
+def build_sentiment_payload(symbol, company_name=None):
     articles = get_news_articles(symbol, 10)
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
     for article in articles:
-        sentiment = analyzer(
+        sentiment = analyze_sentiment_gemma(
             article['title'],
             article['description'],
             company_name or symbol
@@ -692,16 +543,91 @@ def build_sentiment_payload(symbol, company_name=None, sentiment_analyzer=None):
     return articles, sentiment_summary, overall_sentiment
 
 
+def refresh_sentiment_cache():
+    global tracked_trending_symbols
+    top20 = fetch_top_stocks()
+    tracked_trending_symbols = {
+        (record.get("ticker") or "").upper()
+        for record in top20
+        if record.get("ticker")
+    }
+
+    symbols_to_update = get_tracked_symbols()
+    for symbol in symbols_to_update:
+        if not symbol:
+            continue
+        try:
+            stock_info = get_stock_info(symbol)
+            company_name = stock_info['companyName'] if stock_info else symbol
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                symbol,
+                company_name
+            )
+            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
+        except Exception as e:
+            print(f"Error refreshing sentiment for {symbol}: {e}")
+
+    purge_stale_sentiment_records(symbols_to_update)
+
+
+def ensure_cache_completeness():
+    tracked_symbols = get_tracked_symbols()
+    if not tracked_symbols:
+        return
+
+    cached_symbols = get_cached_symbols()
+    missing_symbols = [symbol for symbol in tracked_symbols if symbol not in cached_symbols]
+
+    for symbol in missing_symbols:
+        try:
+            stock_info = get_stock_info(symbol)
+            company_name = stock_info['companyName'] if stock_info else symbol
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                symbol,
+                company_name
+            )
+            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
+        except Exception as e:
+            print(f"Error ensuring sentiment for {symbol}: {e}")
+
+    purge_stale_sentiment_records(tracked_symbols)
+
+
+def background_worker_loop():
+    last_full_refresh = 0
+    while True:
+        now = time.time()
+        if now - last_full_refresh >= BACKGROUND_REFRESH_SECONDS:
+            try:
+                refresh_sentiment_cache()
+            except Exception as e:
+                print(f"Background refresh error: {e}")
+            else:
+                last_full_refresh = now
+
+        try:
+            ensure_cache_completeness()
+        except Exception as e:
+            print(f"Cache health check error: {e}")
+
+        time.sleep(CACHE_HEALTH_CHECK_SECONDS)
+
+
+def start_background_worker():
+    global background_thread_started
+    if background_thread_started:
+        return
+    init_db()
+    thread = threading.Thread(target=background_worker_loop, daemon=True)
+    thread.start()
+    background_thread_started = True
+
+
 @app.route('/')
 @limiter.limit("50 per minute")
 def index():
     '''Render the main page'''
     return render_template('index.html')
-
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
@@ -807,13 +733,11 @@ def sitemap_xml():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 
-@app.before_first_request
-def _start_worker_before_serving():
-    start_worker_if_enabled()
 
 
 if __name__ == '__main__':
-    start_worker_if_enabled()
+    if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
+        start_background_worker()
     app.run(
         host='0.0.0.0', 
         debug=False, 
