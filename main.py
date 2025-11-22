@@ -45,6 +45,8 @@ ai_rate_lock = threading.Lock()
 ai_rate_timestamps = deque()
 llm7_client = None
 llm7_client_lock = threading.Lock()
+worker_init_lock = threading.Lock()
+worker_initialized = False
 LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
 LLM7_MODEL = os.getenv("LLM7_MODEL_NAME", "gpt-4.1-nano-2025-04-14")
 
@@ -207,6 +209,41 @@ def purge_stale_sentiment_records(valid_symbols):
             conn.execute("DELETE FROM sentiment_cache WHERE symbol = ?", (symbol,))
         conn.commit()
         conn.close()
+
+
+def _build_worker_dependencies():
+    return WorkerDependencies(
+        init_db=init_db,
+        refresh_tracked_trending_symbols=refresh_tracked_trending_symbols,
+        get_tracked_symbols=get_tracked_symbols,
+        get_cached_symbols=get_cached_symbols,
+        get_stock_info=get_stock_info,
+        build_sentiment_payload=build_sentiment_payload,
+        sentiment_analyzer=analyze_sentiment_llm7,
+        save_sentiment_to_db=save_sentiment_to_db,
+        purge_stale_sentiment_records=purge_stale_sentiment_records,
+        delete_outdated_entries=delete_outdated_cache_entries
+    )
+
+
+def start_worker_if_enabled():
+    global worker_initialized
+    if os.getenv("DISABLE_BACKGROUND_WORKER") == "1":
+        app.logger.info("Background worker disabled via DISABLE_BACKGROUND_WORKER=1")
+        return
+
+    with worker_init_lock:
+        if worker_initialized:
+            return
+
+        worker_config = WorkerConfig(
+            refresh_interval_seconds=BACKGROUND_REFRESH_SECONDS,
+            health_check_seconds=CACHE_HEALTH_CHECK_SECONDS,
+            stale_entry_ttl_seconds=60 * 60
+        )
+        start_background_worker(_build_worker_dependencies(), worker_config)
+        worker_initialized = True
+        app.logger.info("Background worker started")
 
 def fetch_top_stocks():
     """Fetch top trending Reddit stocks from ApeWisdom API"""
@@ -770,28 +807,13 @@ def sitemap_xml():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 
+@app.before_first_request
+def _start_worker_before_serving():
+    start_worker_if_enabled()
 
 
 if __name__ == '__main__':
-    if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
-        worker_deps = WorkerDependencies(
-            init_db=init_db,
-            refresh_tracked_trending_symbols=refresh_tracked_trending_symbols,
-            get_tracked_symbols=get_tracked_symbols,
-            get_cached_symbols=get_cached_symbols,
-            get_stock_info=get_stock_info,
-            build_sentiment_payload=build_sentiment_payload,
-            sentiment_analyzer=analyze_sentiment_llm7,
-            save_sentiment_to_db=save_sentiment_to_db,
-            purge_stale_sentiment_records=purge_stale_sentiment_records,
-            delete_outdated_entries=delete_outdated_cache_entries
-        )
-        worker_config = WorkerConfig(
-            refresh_interval_seconds=BACKGROUND_REFRESH_SECONDS,
-            health_check_seconds=CACHE_HEALTH_CHECK_SECONDS,
-            stale_entry_ttl_seconds=60 * 60
-        )
-        start_background_worker(worker_deps, worker_config)
+    start_worker_if_enabled()
     app.run(
         host='0.0.0.0', 
         debug=False, 
