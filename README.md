@@ -13,15 +13,13 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 - **Comprehensive Stock Data:** Real-time price, after-hours data, market cap, P/E, dividend yield, volume, daily/52-week high/low, open price, company info (CEO, employees, headquarters, year founded, industry, sector, website, description).
 - **Historical Data Visualization:** Interactive Chart.js charts for 1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL timeframes.
 - **AI-Powered News Sentiment:** News articles fetched via Google News and analyzed for sentiment using Google Gemma AI. Sentiment summary and badges shown for each article.
-  - Direct searches continue to call Google Gemma AI for per-request analysis, while the backend cache for trending symbols now uses the LLM7-compatible endpoint for higher throughput.
-- **Smart Sentiment Caching:** Sentiment for top trending and flagship tickers is cached in SQLite and refreshed hourly. Health checks run every 10 minutes.
+- **On-Demand Sentiment:** Each request analyzes the freshest set of articles through Google Gemma AI—no stale cache to worry about.
 - **Rate Limiting:** All endpoints are rate-limited for abuse protection.
-- **Background Worker:** Sentiment cache is maintained in the background unless disabled.
 - **Modern Responsive UI:** Dark mode, trending dashboards, search, and detailed results.
 
 ## Technology Stack
 
-**Backend:** Flask, Flask-Limiter, yfinance, yahooquery, pygooglenews, Google Gemma AI, requests, python-dotenv, SQLite
+**Backend:** Flask, Flask-Limiter, yfinance, yahooquery, pygooglenews, Google Gemma AI, requests, python-dotenv
 
 **Frontend:** HTML5/CSS3, Chart.js, Vanilla JavaScript
 
@@ -31,7 +29,6 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 
 - Python 3.8 or higher
 - Google API Key (for Gemma AI)
-- LLM7 API Key (for background cache refreshes)
 - Alpaca API Key/Secret (for volume dashboard)
 - Internet connection for real-time data
 
@@ -59,17 +56,11 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 Create a `.env` file in the project root:
 ```
 GOOGLE_API_KEY=your_google_api_key_here
-LLM7_API_KEY=your_llm7_api_key_here
-LLM7_MODEL_NAME=gpt-4o-mini-2024-07-18
-LLM7_BASE_URL=https://api.llm7.io/v1
 ALPACA_API_KEY=your_alpaca_api_key_here
 ALPACA_SECRET_KEY=your_alpaca_secret_key_here
 ```
 **Descriptions:**
 - `GOOGLE_API_KEY`: Used for Google Gemma AI sentiment analysis. [Get your key here](https://aistudio.google.com/)
-- `LLM7_API_KEY`: Used by the background worker to refresh cached sentiment for trending stocks through the api.llm7.io endpoint. [Claim a token here](https://token.llm7.io/)
-- `LLM7_MODEL_NAME` (optional): Override the default `gpt-4o-mini-2024-07-18` deployment for the caching worker.
-- `LLM7_BASE_URL` (optional): Override the default `https://api.llm7.io/v1` base URL if you are proxying the service.
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`: Used for Alpaca stock data API (for volume dashboard).
 
 **Note:** Never share your `.env` file publicly. Keep your API keys secure.
@@ -108,7 +99,7 @@ stocks-sentiment-analysis/
   - Enter a company name (e.g., "Apple", "Tesla", "Microsoft")
   - Click "Search" or press Enter
   - View stock data, charts, and sentiment analysis
-  - Tracked tickers load instantly thanks to the hourly backend sentiment cache
+  - Every search runs fresh sentiment analysis to ensure the latest tone from the news cycle
 
 ## API Endpoints
 
@@ -177,20 +168,14 @@ Fetch trending stocks from Reddit, StockTwits, and Alpaca volume leaders.
 
 ### AI News Sentiment
 - News articles fetched via Google News
-- Sentiment analyzed using Google Gemma AI (Gemma 3 27B model)
+- Sentiment analyzed using Google Gemma AI (Gemma 3 27B model) on every request
 - Sentiment summary and badges for each article
-
-### Smart Sentiment Caching
-- Sentiment for top trending and flagship tickers cached in SQLite
-- Refreshed hourly by background worker
-- Health checks every 10 minutes
-- Tracked tickers load instantly; non-tracked tickers analyzed on-demand
 
 ### Rate Limiting
 - All endpoints are rate-limited for abuse protection
 
 ### Background Worker
-- Sentiment cache maintained in the background unless `DISABLE_BACKGROUND_WORKER=1` is set
+- No background worker is required now that caching has been removed. The application runs entirely on-demand.
 
 ## Configuration
 
@@ -206,9 +191,6 @@ Default: 10. To change, modify the `get_news_articles` call in `main.py`:
 articles = get_news_articles(stock_symbol, 20)  # Analyze 20 articles
 ```
 
-### Cache Health Interval
-Default: 10 minutes. Update `CACHE_HEALTH_CHECK_SECONDS` in `main.py`.
-
 ### Rate Limiting
 To adjust, modify the limiter configuration in `main.py`:
 ```python
@@ -218,6 +200,3 @@ limiter = Limiter(
    default_limits=["100 per hour"]  # Adjust as needed
 )
 ```
-
-### Background Worker
-To disable, set `DISABLE_BACKGROUND_WORKER=1` before launching the app or importing `main`.
