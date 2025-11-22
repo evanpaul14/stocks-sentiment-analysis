@@ -17,6 +17,7 @@ from collections import deque
 from functools import lru_cache
 import cloudscraper
 from openai import OpenAI
+from worker import WorkerConfig, WorkerDependencies, start_background_worker
 
 load_dotenv()
 app = Flask(__name__)
@@ -40,7 +41,6 @@ STATIC_SYMBOLS = {
 }
 tracked_trending_symbols = set()
 db_lock = threading.Lock()
-background_thread_started = False
 ai_rate_lock = threading.Lock()
 ai_rate_timestamps = deque()
 llm7_client = None
@@ -179,6 +179,20 @@ def get_cached_symbols():
         rows = conn.execute("SELECT symbol FROM sentiment_cache").fetchall()
         conn.close()
     return {row[0] for row in rows}
+
+
+def delete_outdated_cache_entries(max_age_seconds=60 * 60):
+    cutoff_iso = (datetime.utcnow() - timedelta(seconds=max_age_seconds)).isoformat()
+    with db_lock:
+        conn = get_db_connection()
+        cursor = conn.execute(
+            "DELETE FROM sentiment_cache WHERE datetime(updated_at) <= datetime(?)",
+            (cutoff_iso,)
+        )
+        deleted = cursor.rowcount if cursor.rowcount not in (None, -1) else 0
+        conn.commit()
+        conn.close()
+    return deleted
 
 
 def purge_stale_sentiment_records(valid_symbols):
@@ -641,82 +655,6 @@ def build_sentiment_payload(symbol, company_name=None, sentiment_analyzer=None):
     return articles, sentiment_summary, overall_sentiment
 
 
-def refresh_sentiment_cache():
-    refresh_tracked_trending_symbols()
-    symbols_to_update = get_tracked_symbols()
-    for symbol in symbols_to_update:
-        if not symbol:
-            continue
-        try:
-            stock_info = get_stock_info(symbol)
-            company_name = stock_info['companyName'] if stock_info else symbol
-            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
-                symbol,
-                company_name,
-                sentiment_analyzer=analyze_sentiment_llm7
-            )
-            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
-        except Exception as e:
-            print(f"Error refreshing sentiment for {symbol}: {e}")
-
-    purge_stale_sentiment_records(symbols_to_update)
-
-
-def ensure_cache_completeness():
-    refresh_tracked_trending_symbols()
-    tracked_symbols = get_tracked_symbols()
-    if not tracked_symbols:
-        return
-
-    cached_symbols = get_cached_symbols()
-    missing_symbols = [symbol for symbol in tracked_symbols if symbol not in cached_symbols]
-
-    for symbol in missing_symbols:
-        try:
-            stock_info = get_stock_info(symbol)
-            company_name = stock_info['companyName'] if stock_info else symbol
-            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
-                symbol,
-                company_name,
-                sentiment_analyzer=analyze_sentiment_llm7
-            )
-            save_sentiment_to_db(symbol, articles, sentiment_summary, overall_sentiment)
-        except Exception as e:
-            print(f"Error ensuring sentiment for {symbol}: {e}")
-
-    purge_stale_sentiment_records(tracked_symbols)
-
-
-def background_worker_loop():
-    last_full_refresh = 0
-    while True:
-        now = time.time()
-        if now - last_full_refresh >= BACKGROUND_REFRESH_SECONDS:
-            try:
-                refresh_sentiment_cache()
-            except Exception as e:
-                print(f"Background refresh error: {e}")
-            else:
-                last_full_refresh = now
-
-        try:
-            ensure_cache_completeness()
-        except Exception as e:
-            print(f"Cache health check error: {e}")
-
-        time.sleep(CACHE_HEALTH_CHECK_SECONDS)
-
-
-def start_background_worker():
-    global background_thread_started
-    if background_thread_started:
-        return
-    init_db()
-    thread = threading.Thread(target=background_worker_loop, daemon=True)
-    thread.start()
-    background_thread_started = True
-
-
 @app.route('/')
 @limiter.limit("50 per minute")
 def index():
@@ -836,7 +774,24 @@ def sitemap_xml():
 
 if __name__ == '__main__':
     if os.getenv("DISABLE_BACKGROUND_WORKER") != "1":
-        start_background_worker()
+        worker_deps = WorkerDependencies(
+            init_db=init_db,
+            refresh_tracked_trending_symbols=refresh_tracked_trending_symbols,
+            get_tracked_symbols=get_tracked_symbols,
+            get_cached_symbols=get_cached_symbols,
+            get_stock_info=get_stock_info,
+            build_sentiment_payload=build_sentiment_payload,
+            sentiment_analyzer=analyze_sentiment_llm7,
+            save_sentiment_to_db=save_sentiment_to_db,
+            purge_stale_sentiment_records=purge_stale_sentiment_records,
+            delete_outdated_entries=delete_outdated_cache_entries
+        )
+        worker_config = WorkerConfig(
+            refresh_interval_seconds=BACKGROUND_REFRESH_SECONDS,
+            health_check_seconds=CACHE_HEALTH_CHECK_SECONDS,
+            stale_entry_ttl_seconds=60 * 60
+        )
+        start_background_worker(worker_deps, worker_config)
     app.run(
         host='0.0.0.0', 
         debug=False, 
