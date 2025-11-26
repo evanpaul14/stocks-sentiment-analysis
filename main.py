@@ -5,7 +5,8 @@ from yahooquery import search
 import yfinance as yf
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
 import os
 from flask_limiter import Limiter
@@ -41,35 +42,84 @@ STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.jso
 ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=20"
 
 
+def _get_int_env(var_name, default):
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
+AI_RATE_WINDOW_SECONDS = max(1, _get_int_env("GEMMA_RATE_WINDOW_SECONDS", 60))
+_ai_call_timestamps = deque()
+
+
 def wait_for_ai_rate_slot():
+    """Respect a simple in-process rate limit for Gemma API calls."""
+    if AI_RATE_LIMIT_PER_MINUTE == 0:
+        return
+
     while True:
-        with ai_rate_lock:
-            now = time.time()
-            while ai_rate_timestamps and now - ai_rate_timestamps[0] >= AI_RATE_WINDOW_SECONDS:
-                ai_rate_timestamps.popleft()
+        now = time.time()
+        window_floor = now - AI_RATE_WINDOW_SECONDS
+        while _ai_call_timestamps and _ai_call_timestamps[0] < window_floor:
+            _ai_call_timestamps.popleft()
 
-            if len(ai_rate_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
-                ai_rate_timestamps.append(now)
-                return
+        if len(_ai_call_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
+            _ai_call_timestamps.append(now)
+            return
 
-            wait_seconds = AI_RATE_WINDOW_SECONDS - (now - ai_rate_timestamps[0])
+        wait_for = AI_RATE_WINDOW_SECONDS - (now - _ai_call_timestamps[0])
+        if wait_for <= 0:
+            _ai_call_timestamps.popleft()
+            continue
+        time.sleep(wait_for)
 
-        time.sleep(max(wait_seconds, 0.1))
+
+def _parse_retry_after_value(value):
+    try:
+        seconds = float(value)
+        return max(0.0, seconds)
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        retry_dt = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+
+    if retry_dt is None:
+        return None
+
+    if retry_dt.tzinfo is None:
+        retry_dt = retry_dt.replace(tzinfo=timezone.utc)
+
+    delta = (retry_dt - datetime.now(timezone.utc)).total_seconds()
+    return max(0.0, delta)
 
 
-def extract_retry_delay_seconds(error):
-    message = str(error)
-    patterns = [
-        r"retryDelay['\"]?:\s*'?(?P<delay>\d+(?:\.\d+)?)s",
-        r"Please retry in (?P<delay>\d+(?:\.\d+)?)s"
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, message)
-        if match:
-            try:
-                return float(match.group('delay'))
-            except (ValueError, TypeError):
-                continue
+def extract_retry_delay_seconds(exc):
+    """Extract retry delay from a Gemma API exception, if provided."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if isinstance(headers, dict):
+        retry_after = headers.get("Retry-After") or headers.get("retry-after")
+        if retry_after:
+            parsed = _parse_retry_after_value(retry_after)
+            if parsed is not None:
+                return parsed
+
+    message = str(exc).lower()
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:seconds|secs|s)", message)
+    if match:
+        try:
+            return max(0.0, float(match.group(1)))
+        except ValueError:
+            return None
+
     return None
 
 
