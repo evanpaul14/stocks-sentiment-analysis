@@ -188,9 +188,6 @@ Fetch trending stocks from Reddit, StockTwits, and Alpaca volume leaders.
 ### Rate Limiting
 - All endpoints are rate-limited for abuse protection
 
-### Background Worker
-- No background worker is required now that caching has been removed. The application runs entirely on-demand.
-
 ## Configuration
 
 ### Sentiment Analysis Model

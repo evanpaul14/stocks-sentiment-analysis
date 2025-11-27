@@ -1,36 +1,33 @@
-# Copilot Instructions for `stocks-sentiment-analysis`
+# Copilot Instructions
 
-## Project Architecture
+## Project snapshot
+- Single Flask app in `main.py` renders `templates/index.html`; no ORM or background workers—everything is on-demand HTTP + fetch()
+- Frontend expects JSON payloads shaped exactly like `search_stock()` returns (`stock_info`, `historical_data`, `articles`, `sentiment_summary`, `overall_sentiment`, optional `movement_insight`)
+- No database; every call fans out to third-party APIs (Yahoo Finance, ApeWisdom, StockTwits, Alpaca, Google News/Gemma, Finnhub, LLM7)
 
-- **Backend:** `main.py` (Flask app) is the entry point. It handles all API endpoints, sentiment analysis, trending stock aggregation, and background cache management.
-- **Background Worker:** Defined in `worker.py`, started via `start_worker_if_enabled()` (called on Flask startup and in `__main__`). It maintains a sentiment cache in SQLite, refreshing hourly and pruning old entries.
-- **Frontend:** `templates/index.html` (Jinja2/HTML) and static assets in `static/`.
-- **Data Sources:** Integrates with yfinance, Google News, ApeWisdom, StockTwits, Alpaca, and Google Gemma AI for data and sentiment.
-- **Database:** Uses SQLite (`sentiment_cache.db`) for caching sentiment summaries.
+## Architecture map
+1. **Search flow**: `/search` resolves tickers via `yahooquery.search`, hydrates metrics with `get_stock_info()`, charts via `get_historical_data()`, news from `get_news_articles()`, then sentiment via `build_sentiment_payload()` (Gemma).
+2. **Sentiment pipeline**: `build_sentiment_payload()` batches article scraping + `analyze_sentiment_gemma()`; respect `wait_for_ai_rate_slot()` and retry helpers before touching Gemma.
+3. **Movement insight**: `build_movement_insight()` gates on ±3% swings, fetches Finnhub (falls back to Google News) and summarizes through `summarize_stock_movement()` (LLM7) or `fallback_movement_summary()`.
+4. **Trending dashboards**: `/trending` + `/trending/<source>` fan into `get_trending_source_data()`, which delegates to ApeWisdom/StockTwits (via `cloudscraper`) /Alpaca helpers; `lookup_company_name()` is LRU-cached to avoid duplicate yfinance calls.
+5. **Frontend contract**: `templates/index.html` drives everything with vanilla JS + Chart.js; period tabs reuse cached `historicalData` map, and trending cards re-trigger `searchStock()` with their ticker symbol.
 
-## Deployment & Environment
+## Dev workflows
+- **Setup**: `python -m venv .venv && source .venv/bin/activate`, `pip install -r requirements.txt`, create `.env` matching the README (GOOGLE_API_KEY, LLM7 keys, Alpaca, Finnhub, etc.).
+- **Run**: `python main.py` (binds to `0.0.0.0:5000`). Use `curl http://127.0.0.1:5000/trending` or the browser UI to sanity check responses.
+- **API keys**: missing keys degrade gracefully (e.g., movement summaries return fallback text), but Gemma key is mandatory—raise early.
+- **Rate limits**: Flask-Limiter caps each route (see decorators in `main.py`); adjust via the `Limiter` config or per-route decorators when adding endpoints.
+- **Dependency changes**: add libraries to `requirements.txt`; nothing else manages deps.
 
-- **Production:** Must work on Ubuntu VPS with Gunicorn and systemctl. The background worker must start reliably in Gunicorn worker processes (see `@app.before_first_request` in `main.py`).
-- **Environment Variables:** All API keys and model configs are loaded from `.env` (see README for required keys).
+## Coding patterns & gotchas
+- Reuse existing helpers (e.g., `get_trending_source_data`, `build_sentiment_payload`) instead of duplicating HTTP logic; they already normalize payloads for the frontend expectations.
+- Keep responses small: the frontend renders everything client-side, so attach only serializable primitives (dicts/lists) and format numbers client-side (see `formatNumber`, `formatCurrency`).
+- AI calls must be throttled—if you add new Gemma/LLM7 usage, feed through `wait_for_ai_rate_slot()` or reuse existing queues to avoid quota bans.
+- Trending APIs sometimes rate-limit; wrap new integrations with short `timeout` and graceful `except` blocks returning `[]`, matching current UX.
+- Historical data uses mixed intervals (5m intraday, 1h weekly, etc.); extend by following the branching inside `get_historical_data()` so Chart.js keeps uniform `{date, price}` points.
+- When adding UI behaviors, edit `templates/index.html` directly—there’s no build step, but keep inline JS modular (helper per concern) and hook into existing DOM IDs to avoid breaking search/trending toggles.
 
-## Key Patterns & Conventions
-
-- **Background Tasks:** Use `start_worker_if_enabled()` and never block the main thread. Always ensure Flask and Gunicorn can start/stop cleanly.
-- **Rate Limiting:** All endpoints are rate-limited via Flask-Limiter.
-- **Sentiment Analysis:** Direct user queries use Google Gemma AI; background cache uses LLM7 API for higher throughput.
-- **Trending Aggregation:** Trending tickers are collected from multiple sources and merged.
-- **Testing:** Use `pytest`. The test suite expects the worker to be disabled (`DISABLE_BACKGROUND_WORKER=1`).
-- **Error Handling:** Log and gracefully handle all external API failures; never crash the server on third-party errors.
-
-## Examples
-
-- To add a new background task, extend `worker.py` and wire it via the dependency injection pattern used in `WorkerDependencies`.
-- To add a new API endpoint, define it in `main.py` and document its rate limit and usage in the README.
-
-## Do/Don't
-
-- **Do**: Ensure all code is compatible with Gunicorn/systemctl on Ubuntu VPS.
-- **Do**: Use dependency injection for background worker logic.
-- **Do**: Keep all API keys and secrets out of source control.
-- **Don't**: Use patterns that require a persistent main thread or block Gunicorn workers.
-- **Don't**: Assume a specific Flask server (must work with Gunicorn).
+## Verification
+- No automated tests; run the Flask server locally and exercise `/`, `/search`, `/historical/<symbol>/<period>`, and `/trending/<source>` manually.
+- Check server logs for "Error ..." prints—those are the primary debugging breadcrumbs today.
+- Confirm sentiment counts and movement highlights render in the UI after backend changes; mismatched keys immediately show as missing fields in the dashboard.
