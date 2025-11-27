@@ -123,6 +123,9 @@
             position: relative;
             display: flex;
             flex-direction: column;
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
         }
 
         .chart-container canvas {
@@ -189,6 +192,13 @@
             border-bottom: 1px solid #333;
             z-index: 2;
             position: relative;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .chart-tabs::-webkit-scrollbar {
+            display: none;
         }
 
         .chart-tab {
@@ -196,6 +206,7 @@
             cursor: pointer;
             padding: 5px 10px;
             border-bottom: 2px solid transparent;
+            white-space: nowrap;
         }
 
         .chart-tab.active {
@@ -263,8 +274,10 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 20px 40px;
+            max-width: 900px;
+            margin: 0 auto;
         }
 
         .stat-item {
@@ -289,26 +302,35 @@
 
         .sentiment-summary {
             display: flex;
-            gap: 20px;
+            gap: 12px;
             margin-bottom: 20px;
-            padding: 20px;
+            padding: 16px 18px;
             background-color: #0a0a0a;
             border-radius: 12px;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .sentiment-summary::-webkit-scrollbar {
+            display: none;
         }
 
         .sentiment-item {
             flex: 1;
             text-align: center;
+            min-width: 95px;
         }
 
         .sentiment-label {
             color: #e6e6e6;
-            font-size: 14px;
-            margin-bottom: 5px;
+            font-size: 12px;
+            margin-bottom: 4px;
+            font-weight: 600;
         }
 
         .sentiment-value {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
         }
 
@@ -530,11 +552,44 @@
             .trending-tabs {
                 display: flex;
             }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                max-width: 640px;
+            }
         }
 
         #trendingBtn:hover {
             background: #232136;
             color: #c4b5fd;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 16px;
+            }
+
+            .chart-container {
+                padding: 16px;
+                height: 320px;
+            }
+
+            .sentiment-summary {
+                padding: 12px 14px;
+                gap: 8px;
+            }
+
+            .sentiment-item {
+                min-width: 85px;
+            }
+
+            .sentiment-label {
+                font-size: 11px;
+            }
+
+            .sentiment-value {
+                font-size: 18px;
+            }
         }
 
     </style>
@@ -556,16 +611,16 @@
         <div class="trending-section" id="trendingSection" style="margin-bottom: 40px;">
             <div class="section-title" style="margin-bottom: 15px;">Live Trending Dashboards</div>
             <div class="trending-tabs" id="trendingTabs">
-                <button class="trending-tab-btn active" data-source="stocktwits">Top Stocks StockTwits</button>
-                <button class="trending-tab-btn" data-source="reddit">Top Stocks Reddit</button>
+                <button class="trending-tab-btn" data-source="stocktwits">Top Stocks StockTwits</button>
+                <button class="trending-tab-btn active" data-source="reddit">Top Stocks Reddit</button>
                 <button class="trending-tab-btn" data-source="volume">Top Stocks Volume</button>
             </div>
             <div class="trending-columns" id="trendingColumns">
-                <div class="trending-column active" data-source="stocktwits">
+                <div class="trending-column" data-source="stocktwits">
                     <div class="trending-column-title">Trending on StockTwits</div>
                     <div id="stocktwitsList" class="trending-list"></div>
                 </div>
-                <div class="trending-column" data-source="reddit">
+                <div class="trending-column active" data-source="reddit">
                     <div class="trending-column-title">Trending on Reddit</div>
                     <div id="redditList" class="trending-list"></div>
                 </div>
@@ -653,7 +708,7 @@
                         <div class="stat-value" id="marketCap">-</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-label">Price-Earnings ratio</div>
+                        <div class="stat-label">PE ratio</div>
                         <div class="stat-value" id="peRatio">-</div>
                     </div>
                     <div class="stat-item">
@@ -729,7 +784,9 @@
         }
 
         function formatCurrency(num) {
-            return '$' + num.toFixed(2);
+            if (!Number.isFinite(num)) return '$0.00';
+            const sign = num < 0 ? '-' : '';
+            return sign + '$' + Math.abs(num).toFixed(2);
         }
 
         function formatPercentage(num) {
@@ -936,10 +993,8 @@
                     setActiveTrendingColumn(tab.dataset.source);
                 });
             });
-            const active = document.querySelector('.trending-tab-btn.active');
-            if (active) {
-                setActiveTrendingColumn(active.dataset.source);
-            }
+            // Default to Reddit trending
+            setActiveTrendingColumn('reddit');
         }
 
         async function searchStock() {
@@ -1082,9 +1137,16 @@
             document.getElementById('fiftyTwoWeekHigh').textContent = stockInfo.fiftyTwoWeekHigh ? formatCurrency(stockInfo.fiftyTwoWeekHigh) : 'N/A';
             document.getElementById('fiftyTwoWeekLow').textContent = stockInfo.fiftyTwoWeekLow ? formatCurrency(stockInfo.fiftyTwoWeekLow) : 'N/A';
 
-            document.getElementById('positiveCount').textContent = sentimentSummary.positive || 0;
-            document.getElementById('negativeCount').textContent = sentimentSummary.negative || 0;
-            document.getElementById('neutralCount').textContent = sentimentSummary.neutral || 0;
+
+            // Calculate sentiment percentages
+            const totalSentiments = (sentimentSummary.positive || 0) + (sentimentSummary.negative || 0) + (sentimentSummary.neutral || 0);
+            function percent(val) {
+                if (!totalSentiments) return '0%';
+                return ((val / totalSentiments) * 100).toFixed(0) + '%';
+            }
+            document.getElementById('positiveCount').textContent = percent(sentimentSummary.positive || 0);
+            document.getElementById('negativeCount').textContent = percent(sentimentSummary.negative || 0);
+            document.getElementById('neutralCount').textContent = percent(sentimentSummary.neutral || 0);
 
             const overallElement = document.getElementById('overallSentiment');
             overallElement.textContent = overallSentimentValue;

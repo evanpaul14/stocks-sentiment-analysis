@@ -12,7 +12,6 @@
 
 - **Production:** Must work on Ubuntu VPS with Gunicorn and systemctl. The background worker must start reliably in Gunicorn worker processes (see `@app.before_first_request` in `main.py`).
 - **Environment Variables:** All API keys and model configs are loaded from `.env` (see README for required keys).
-- **Disabling Worker:** Set `DISABLE_BACKGROUND_WORKER=1` to skip background tasks (important for tests and some deployments).
 
 ## Key Patterns & Conventions
 
