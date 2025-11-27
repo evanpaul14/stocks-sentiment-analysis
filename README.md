@@ -14,6 +14,7 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 - **Historical Data Visualization:** Interactive Chart.js charts for 1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL timeframes.
 - **AI-Powered News Sentiment:** News articles fetched via Google News and analyzed for sentiment using Google Gemma AI. Sentiment summary and badges shown for each article.
 - **On-Demand Sentiment:** Each request analyzes the freshest set of articles through Google Gemma AI—no stale cache to worry about.
+- **Intraday Movement Insights:** When a stock moves more than 3%, the dashboard summarizes "What's happening" using Finnhub headlines distilled through the LLM7 API.
 - **Rate Limiting:** All endpoints are rate-limited for abuse protection.
 - **Modern Responsive UI:** Dark mode, trending dashboards, search, and detailed results.
 
@@ -23,13 +24,15 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 
 **Frontend:** HTML5/CSS3, Chart.js, Vanilla JavaScript
 
-**External APIs:** ApeWisdom (Reddit), StockTwits, Alpaca, Yahoo Finance, Google News, Google Gemma AI
+**External APIs:** ApeWisdom (Reddit), StockTwits, Alpaca, Yahoo Finance, Google News, Google Gemma AI, Finnhub, LLM7
 
 ## Prerequisites
 
 - Python 3.8 or higher
 - Google API Key (for Gemma AI)
 - Alpaca API Key/Secret (for volume dashboard)
+- Finnhub API Key (for movement explanations)
+- LLM7 API Key (for movement summaries)
 - Internet connection for real-time data
 
 ## Installation
@@ -58,10 +61,16 @@ Create a `.env` file in the project root:
 GOOGLE_API_KEY=your_google_api_key_here
 ALPACA_API_KEY=your_alpaca_api_key_here
 ALPACA_SECRET_KEY=your_alpaca_secret_key_here
+FINNHUB_API_KEY=your_finnhub_api_key_here
+LLM7_API_KEY=your_llm7_api_key_here
+LLM7_BASE_URL=https://api.llm7.io/v1  # optional override
+LLM7_MODEL=fast                      # optional override
 ```
 **Descriptions:**
 - `GOOGLE_API_KEY`: Used for Google Gemma AI sentiment analysis. [Get your key here](https://aistudio.google.com/)
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`: Used for Alpaca stock data API (for volume dashboard).
+- `FINNHUB_API_KEY`: Unlocks Finnhub company news used to explain price moves.
+- `LLM7_API_KEY`: Authenticates LLM7 summarization used for the "What's happening" box. `LLM7_BASE_URL` and `LLM7_MODEL` can fine-tune which endpoint/model to use.
 
 **Note:** Never share your `.env` file publicly. Keep your API keys secure.
 
@@ -123,7 +132,12 @@ Search for a company and retrieve stock data with sentiment analysis.
   "historical_data": [ ... ],
   "articles": [ ... ],
   "sentiment_summary": { ... },
-  "overall_sentiment": "positive"
+  "overall_sentiment": "positive",
+  "movement_insight": {
+    "summary": "Tesla rallied after ...",
+    "changePercent": 4.1,
+    "sources": [ { "headline": "...", "source": "Finnhub", "url": "..." } ]
+  }
 }
 ```
 

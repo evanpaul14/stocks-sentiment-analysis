@@ -15,8 +15,11 @@ import time
 from collections import deque
 from functools import lru_cache
 import cloudscraper
+from openai import OpenAI
+import finnhub
 
 load_dotenv()
+
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
@@ -33,6 +36,27 @@ if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
 gemma_model = "gemma-3-27b-it"
+
+LLM7_API_KEY = os.getenv("LLM7_API_KEY")
+LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
+LLM7_MODEL = os.getenv("LLM7_MODEL", "fast")
+llm7_client = None
+if LLM7_API_KEY:
+    try:
+        llm7_client = OpenAI(
+            base_url=LLM7_BASE_URL,
+            api_key=LLM7_API_KEY
+        )
+    except Exception as e:
+        print(f"Error initializing LLM7 client: {e}")
+
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+finnhub_client = None
+if FINNHUB_API_KEY:
+    try:
+        finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
+    except Exception as e:
+        print(f"Error initializing Finnhub client: {e}")
 
 # Trending stocks API
 import requests
@@ -421,6 +445,176 @@ def get_news_articles(stock_symbol, num_articles=10):
         return []
 
 
+def fetch_finnhub_company_news(symbol, max_articles=6, lookback_days=5):
+    if not finnhub_client or not symbol:
+        return []
+
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=lookback_days)
+
+    try:
+        raw_articles = finnhub_client.company_news(
+            symbol,
+            _from=start_date.isoformat(),
+            to=end_date.isoformat()
+        ) or []
+    except Exception as e:
+        print(f"Error fetching Finnhub news for {symbol}: {e}")
+        return []
+
+    sanitized = []
+    seen = set()
+    for article in raw_articles:
+        ts = article.get("datetime")
+        iso_time = None
+        if isinstance(ts, (int, float)):
+            try:
+                iso_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            except Exception:
+                iso_time = None
+
+        headline = (article.get("headline") or "").strip()
+        url = (article.get("url") or "").strip()
+        if not headline:
+            continue
+        dedupe_key = (headline.lower(), url.lower())
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        sanitized.append({
+            "headline": headline,
+            "summary": article.get("summary", ""),
+            "source": article.get("source", ""),
+            "url": url,
+            "publishedAt": iso_time,
+            "datetime": ts
+        })
+
+    sanitized.sort(key=lambda item: item.get("datetime") or 0, reverse=True)
+    trimmed = [s for s in sanitized if s["headline"]][:max_articles]
+    return trimmed
+
+
+def convert_google_news_for_movement(symbol, max_articles=6):
+    google_articles = get_news_articles(symbol, max_articles)
+    normalized = []
+    for entry in google_articles:
+        headline = (entry.get('title') or '').strip()
+        if not headline:
+            continue
+        normalized.append({
+            "headline": headline,
+            "summary": entry.get('description', ''),
+            "source": entry.get('source', 'Google News'),
+            "url": entry.get('link'),
+            "publishedAt": entry.get('publishedAt') or entry.get('published')
+        })
+    return normalized
+
+
+def summarize_stock_movement(symbol, company_name, change_percent, articles):
+    if not llm7_client or not articles:
+        return None
+
+    bullet_lines = []
+    for idx, article in enumerate(articles, start=1):
+        published = article.get("publishedAt") or "Unknown time"
+        summary = article.get("summary") or ""
+        bullet_lines.append(
+            f"{idx}. {article.get('headline')} ({article.get('source')}) on {published}: {summary}"
+        )
+
+    change_direction = "up" if change_percent >= 0 else "down"
+    change_abs = abs(change_percent)
+    prompt = (
+        f"Company: {company_name} ({symbol})\n"
+        f"Intraday move: {change_direction} {change_abs:.2f}% today.\n\n"
+        "Recent catalysts:\n"
+        + "\n".join(bullet_lines)
+        + "\n\n"
+          "Write a concise 2-3 sentence summary explaining the most likely reasons for the move. "
+          "Blend the headlines into a cohesive narrative and mention key drivers."
+          "Try to incorporate quantitative details where possible."
+          "If the articles do not explain the move, clearly state that."
+          "Avoid speculation and do not invent any facts."
+          "Do not include a headline or summary section indicators, just give the summary."
+          "Do not specifically mention the stock price or percentage change in the summary."
+          "Do not mention any specific articles."
+          "Refer to the company by its ticker symbol rather than by name"
+          "Do not directly refer to what the articles say or do not say."
+    )
+
+    try:
+        response = llm7_client.chat.completions.create(
+            model=LLM7_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a sharp markets reporter who explains price action using headlines."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=220
+        )
+        summary = response.choices[0].message.content.strip()
+        return summary
+    except Exception as e:
+        print(f"Error generating movement summary: {e}")
+        return None
+
+
+def fallback_movement_summary(company_name, change_percent, articles, source_label):
+    direction = "higher" if change_percent >= 0 else "lower"
+    base = f"{company_name} is trading {direction} by roughly {abs(change_percent):.2f}% today."
+
+    if articles:
+        highlights = [article.get('headline') for article in articles[:3] if article.get('headline')]
+        if highlights:
+            joined = "; ".join(highlights)
+            return f"{base} Recent {source_label} headlines include {joined}."
+
+    return f"{base} No fresh {source_label} headlines surfaced yet, so keep an eye on upcoming catalysts or filings."
+
+
+def build_movement_insight(stock_info):
+    change_percent = stock_info.get('changePercent')
+    if change_percent is None or abs(change_percent) < 3:
+        return None
+
+    symbol = stock_info.get('symbol')
+    company_name = stock_info.get('companyName') or symbol
+    articles = fetch_finnhub_company_news(symbol)
+    article_source_label = "Finnhub"
+    if not articles:
+        articles = convert_google_news_for_movement(symbol)
+        article_source_label = "news"
+
+    summary = summarize_stock_movement(symbol, company_name, change_percent, articles)
+    if not summary:
+        summary = fallback_movement_summary(company_name, change_percent, articles, article_source_label)
+    if not summary:
+        summary = f"{company_name} is moving sharply today, but no catalysts were found."
+
+    sources = []
+    for article in articles:
+        if not article.get('headline'):
+            continue
+        sources.append({
+            "headline": article.get('headline'),
+            "source": article.get('source'),
+            "url": article.get('url'),
+            "publishedAt": article.get('publishedAt')
+        })
+
+    return {
+        "summary": summary,
+        "changePercent": change_percent,
+        "sources": sources
+    }
+
+
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemma AI"""
     prompt = (
@@ -519,6 +713,10 @@ def search_stock():
         response_data['articles'] = articles
         response_data['sentiment_summary'] = sentiment_summary
         response_data['overall_sentiment'] = overall_sentiment
+
+        movement_insight = build_movement_insight(stock_info)
+        if movement_insight:
+            response_data['movement_insight'] = movement_insight
 
         return jsonify(response_data)
 

@@ -131,6 +131,56 @@
             min-height: 0;
         }
 
+        .movement-box {
+            background-color: #11111a;
+            border: 1px solid rgba(147, 51, 234, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .movement-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #c4b5fd;
+            margin-bottom: 10px;
+        }
+
+        .movement-summary {
+            color: #e4e4e7;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        .movement-meta {
+            color: #a1a1aa;
+            font-size: 13px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .movement-sources {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .movement-sources li {
+            font-size: 14px;
+            color: #cbd5f5;
+        }
+
+        .movement-sources a {
+            color: #8b5cf6;
+            text-decoration: none;
+        }
+
+        .movement-sources a:hover {
+            text-decoration: underline;
+        }
+
         .chart-tabs {
             display: flex;
             gap: 20px;
@@ -565,6 +615,13 @@
                 <canvas id="stockChart"></canvas>
             </div>
 
+            <div class="movement-box" id="movementBox" style="display:none;">
+                <div class="movement-title">What's Happening:</div>
+                <div class="movement-meta" id="movementMeta"></div>
+                <p class="movement-summary" id="movementSummary"></p>
+                <ul class="movement-sources" id="movementSources"></ul>
+            </div>
+
             <div class="info-section">
                 <div class="section-title">About <span id="aboutSymbol"></span></div>
                 <div class="about-text-wrapper">
@@ -648,6 +705,10 @@
     let chart = null;
     let currentSymbol = null;
     let historicalData = {};
+    const movementBox = document.getElementById('movementBox');
+    const movementSummaryEl = document.getElementById('movementSummary');
+    const movementMetaEl = document.getElementById('movementMeta');
+    const movementSourcesEl = document.getElementById('movementSources');
     const trendingLists = {
         stocktwits: document.getElementById('stocktwitsList'),
         reddit: document.getElementById('redditList'),
@@ -673,6 +734,12 @@
 
         function formatPercentage(num) {
             return num.toFixed(2) + '%';
+        }
+
+        function formatSignedPercentage(num) {
+            if (!Number.isFinite(num)) return '0.00%';
+            const sign = num >= 0 ? '+' : '';
+            return `${sign}${num.toFixed(2)}%`;
         }
 
         function formatOptionalCurrency(value) {
@@ -934,6 +1001,8 @@
             const overallSentimentValue = (data.overall_sentiment || 'neutral').toUpperCase();
             const overallSentimentClass = data.overall_sentiment || 'neutral';
 
+            renderMovementInsight(data.movement_insight);
+
             document.getElementById('companyName').textContent = stockInfo.companyName;
             document.getElementById('stockPrice').textContent = formatCurrency(stockInfo.price);
 
@@ -1046,6 +1115,57 @@
 
                 newsContainer.appendChild(articleDiv);
             });
+        }
+
+        function renderMovementInsight(insight) {
+            if (!insight || !insight.summary) {
+                movementBox.style.display = 'none';
+                movementSummaryEl.textContent = '';
+                movementMetaEl.textContent = '';
+                movementSourcesEl.innerHTML = '';
+                return;
+            }
+
+            movementBox.style.display = 'block';
+            const changePercent = Number(insight.changePercent);
+            movementMetaEl.textContent = Number.isFinite(changePercent)
+                ? `Moved ${formatSignedPercentage(changePercent)} today`
+                : 'Intraday move > 3%';
+            movementSummaryEl.textContent = insight.summary;
+
+            movementSourcesEl.innerHTML = '';
+            const sources = Array.isArray(insight.sources) ? insight.sources : [];
+            sources.forEach(source => {
+                const li = document.createElement('li');
+                const headline = source.headline || 'View source';
+                const metaBits = [];
+                if (source.source) metaBits.push(source.source);
+                if (source.publishedAt) metaBits.push(formatDate(source.publishedAt));
+
+                if (source.url) {
+                    const link = document.createElement('a');
+                    link.href = source.url;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = headline;
+                    li.appendChild(link);
+                } else {
+                    li.textContent = headline;
+                }
+
+                if (metaBits.length) {
+                    const metaSpan = document.createElement('span');
+                    metaSpan.style.color = '#a1a1aa';
+                    metaSpan.style.fontSize = '12px';
+                    metaSpan.style.marginLeft = '6px';
+                    metaSpan.textContent = `• ${metaBits.join(' • ')}`;
+                    li.appendChild(metaSpan);
+                }
+
+                movementSourcesEl.appendChild(li);
+            });
+
+            movementSourcesEl.style.display = movementSourcesEl.children.length ? 'flex' : 'none';
         }
 
         function createChart(data) {
