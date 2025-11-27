@@ -3,7 +3,6 @@ from google import genai
 from pygooglenews import GoogleNews
 from yahooquery import search
 import yfinance as yf
-import json
 import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
