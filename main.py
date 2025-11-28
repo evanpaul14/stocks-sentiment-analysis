@@ -751,7 +751,14 @@ def build_sentiment_payload(symbol, company_name=None):
 @limiter.limit("50 per minute")
 def index():
     '''Render the main page'''
-    return render_template('index.html')
+    return render_template('index.html', page_view='home')
+
+
+@app.route('/watchlist')
+@limiter.limit("50 per minute")
+def watchlist_page():
+    """Render the watchlist page"""
+    return render_template('index.html', page_view='watchlist')
 
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
