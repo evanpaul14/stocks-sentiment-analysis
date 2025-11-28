@@ -71,6 +71,11 @@
             color: #fff;
         }
 
+        .trending-page #trendingBtn {
+            background: #9333ea;
+            color: #fff;
+        }
+
         .watchlist-page #trendingSection {
             display: none;
         }
@@ -817,7 +822,9 @@
 
     </style>
 </head>
-    <body class="{{ 'watchlist-page' if page_view == 'watchlist' else 'home-page' }}" data-page="{{ page_view or 'home' }}">
+    {% set resolved_page = page_view or 'home' %}
+    {% set body_class = resolved_page + '-page' %}
+    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}">
     <div class="container">
         <div class="search-section">
             <div class="page-title-row">
@@ -1018,13 +1025,17 @@
     const watchlistEmptyStateEl = document.getElementById('watchlistEmptyState');
     const watchlistSectionEl = document.getElementById('watchlistSection');
     const pageVariant = document.body.dataset.page || 'home';
+    const initialSearchQuery = document.body.dataset.searchQuery || '';
+    const isHomePage = pageVariant === 'home';
     const isWatchlistPage = pageVariant === 'watchlist';
+    const isTrendingPage = pageVariant === 'trending';
+    const isSearchPage = pageVariant === 'search';
     const homeTitleEl = document.getElementById('homeTitle');
     const trendingBtnEl = document.getElementById('trendingBtn');
     const watchlistNavBtnEl = document.getElementById('watchlistNavBtn');
     let watchlistStorageAvailable = true;
     let watchlistHasEntries = false;
-    let homePrimaryPanel = 'trending';
+    let homePrimaryPanel = 'watchlist';
     let homePanelInitialized = false;
     let watchlistPriceRefreshPromise = null;
 
@@ -1373,6 +1384,10 @@
                 watchlistSectionEl.style.display = show === false ? 'none' : '';
                 return;
             }
+            if (isTrendingPage || isSearchPage) {
+                watchlistSectionEl.style.display = 'none';
+                return;
+            }
             if (!watchlistHasEntries) {
                 watchlistSectionEl.style.display = 'none';
                 return;
@@ -1381,27 +1396,21 @@
         }
 
         function setHomePrimaryPanel(panel) {
-            if (isWatchlistPage) return;
-            if (panel === 'watchlist' && !watchlistHasEntries) {
-                panel = 'trending';
-            }
-            homePrimaryPanel = panel === 'watchlist' ? 'watchlist' : 'trending';
-            const shouldShowWatchlist = homePrimaryPanel === 'watchlist';
+            if (!isHomePage) return;
+            homePrimaryPanel = panel === 'watchlist' ? 'watchlist' : 'watchlist';
+            const shouldShowWatchlist = watchlistHasEntries && homePrimaryPanel === 'watchlist';
             showWatchlistSection(shouldShowWatchlist);
-            showTrendingSection(!shouldShowWatchlist);
+            showTrendingSection(false);
             if (shouldShowWatchlist) {
                 refreshWatchlistPrices();
             }
         }
 
         function initializeHomePanel(watchlistCount) {
-            if (isWatchlistPage || homePanelInitialized) return;
+            if (!isHomePage || homePanelInitialized) return;
             homePanelInitialized = true;
-            if (watchlistCount > 0) {
-                setHomePrimaryPanel('watchlist');
-            } else {
-                setHomePrimaryPanel('trending');
-            }
+            const targetPanel = watchlistCount > 0 ? 'watchlist' : 'watchlist';
+            setHomePrimaryPanel(targetPanel);
         }
 
         async function fetchQuote(symbol) {
@@ -1621,11 +1630,17 @@
             setActiveTrendingColumn('reddit');
         }
 
-        async function searchStock() {
-            const companyName = document.getElementById('companyInput').value.trim();
+        async function searchStock(forcedQuery = null) {
+            const inputEl = document.getElementById('companyInput');
+            const companyName = (forcedQuery !== null ? forcedQuery : (inputEl ? inputEl.value : '')).trim();
 
             if (!companyName) {
                 showError('Please enter a company name');
+                return;
+            }
+
+            if (!isSearchPage) {
+                window.location.href = `/results?q=${encodeURIComponent(companyName)}`;
                 return;
             }
 
@@ -1980,14 +1995,25 @@
             initializeTrendingTabs();
             const watchlistCount = renderWatchlist();
             initializeHomePanel(watchlistCount);
-            if (watchlistCount > 0) {
+
+            if ((isHomePage || isWatchlistPage) && watchlistCount > 0) {
                 refreshWatchlistPrices();
             }
-            if (!isWatchlistPage) {
+
+            if (isTrendingPage) {
+                showTrendingSection(true);
                 loadTrendingStocks();
             } else {
                 showTrendingSection(false);
             }
+
+            if (isSearchPage && initialSearchQuery) {
+                if (companyInputEl) {
+                    companyInputEl.value = initialSearchQuery;
+                }
+                searchStock(initialSearchQuery);
+            }
+
             if (watchlistToggleBtn) {
                 watchlistToggleBtn.addEventListener('click', handleWatchlistToggleClick);
             }
@@ -2006,11 +2032,14 @@
             }
         }
 
-        document.getElementById('companyInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                searchStock();
-            }
-        });
+        const companyInputEl = document.getElementById('companyInput');
+        if (companyInputEl) {
+            companyInputEl.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchStock();
+                }
+            });
+        }
 
         async function loadTrendingSource(source, options = {}) {
             const { forceRefresh = false } = options;
@@ -2063,14 +2092,18 @@
         function showTrendingSection(show) {
             const trendingSection = document.getElementById('trendingSection');
             if (!trendingSection) return;
-            if (isWatchlistPage) {
+            if (isTrendingPage) {
+                trendingSection.style.display = '';
+                return;
+            }
+            if (isWatchlistPage || isSearchPage) {
                 trendingSection.style.display = 'none';
                 return;
             }
             trendingSection.style.display = show ? '' : 'none';
         }
-        function resetToTrendingHomeView() {
-            if (isWatchlistPage) {
+        function resetHomeView() {
+            if (!isHomePage) {
                 window.location.href = '/';
                 return;
             }
@@ -2080,28 +2113,29 @@
             if (resultsEl) resultsEl.style.display = 'none';
             const errorEl = document.getElementById('errorMessage');
             if (errorEl) errorEl.innerHTML = '';
-            setHomePrimaryPanel('trending');
-            loadTrendingStocks();
+            showTrendingSection(false);
+            setHomePrimaryPanel('watchlist');
+        }
+
+        function openTrendingPage() {
+            window.location.href = '/trending-board';
         }
 
         if (homeTitleEl) {
             homeTitleEl.addEventListener('click', () => {
-                if (isWatchlistPage) {
+                if (!isHomePage) {
                     window.location.href = '/';
                     return;
                 }
-                resetToTrendingHomeView();
+                resetHomeView();
             });
         }
 
         if (trendingBtnEl) {
-            if (isWatchlistPage) {
-                trendingBtnEl.addEventListener('click', () => {
-                    window.location.href = '/';
-                });
-            } else {
-                trendingBtnEl.addEventListener('click', resetToTrendingHomeView);
-            }
+            trendingBtnEl.addEventListener('click', () => {
+                if (isTrendingPage) return;
+                openTrendingPage();
+            });
         }
 
         if (watchlistNavBtnEl) {

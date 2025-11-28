@@ -752,14 +752,29 @@ def build_sentiment_payload(symbol, company_name=None):
 @limiter.limit("50 per minute")
 def index():
     '''Render the main page'''
-    return render_template('index.html', page_view='home')
+    return render_template('index.html', page_view='home', initial_query='')
 
 
 @app.route('/watchlist')
 @limiter.limit("50 per minute")
 def watchlist_page():
     """Render the watchlist page"""
-    return render_template('index.html', page_view='watchlist')
+    return render_template('index.html', page_view='watchlist', initial_query='')
+
+
+@app.route('/results')
+@limiter.limit("50 per minute")
+def search_results_page():
+    """Render the dedicated search results page"""
+    query = (request.args.get('q') or '').strip()
+    return render_template('index.html', page_view='search', initial_query=query)
+
+
+@app.route('/trending-list')
+@limiter.limit("50 per minute")
+def trending_board_page():
+    """Render the dedicated trending dashboards page"""
+    return render_template('index.html', page_view='trending', initial_query='')
 
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
