@@ -1005,6 +1005,9 @@
         volume: document.getElementById('volumeList')
     };
     const TRENDING_SOURCES = ['stocktwits', 'reddit', 'volume'];
+    const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
+    const trendingCache = {};
+    const trendingFetchPromises = {};
     const sentenceAbbreviations = new Set([
         'inc', 'incorporated', 'corp', 'corporation', 'co', 'ltd', 'llc', 'plc',
         'sr', 'jr', 'dr', 'mr', 'mrs', 'ms', 'prof', 'dept', 'st'
@@ -1023,6 +1026,7 @@
     let watchlistHasEntries = false;
     let homePrimaryPanel = 'trending';
     let homePanelInitialized = false;
+    let watchlistPriceRefreshPromise = null;
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -1199,7 +1203,9 @@
                 if (watchlistEmptyStateEl) {
                     watchlistEmptyStateEl.style.display = 'block';
                 }
-                if (!isWatchlistPage) {
+                if (isWatchlistPage) {
+                    watchlistSectionEl.style.display = '';
+                } else {
                     showWatchlistSection(false);
                 }
                 return 0;
@@ -1261,7 +1267,9 @@
                 itemDiv.appendChild(meta);
                 watchlistListEl.appendChild(itemDiv);
             });
-            if (!isWatchlistPage) {
+            if (isWatchlistPage) {
+                watchlistSectionEl.style.display = '';
+            } else {
                 showWatchlistSection(homePrimaryPanel === 'watchlist');
             }
             return items.length;
@@ -1332,10 +1340,37 @@
             list.innerHTML = `<div class="trending-message" style="color:${color};">${message}</div>`;
         }
 
+        function isTrendingCacheFresh(entry) {
+            if (!entry) return false;
+            return (Date.now() - entry.timestamp) < TRENDING_CACHE_TTL_MS;
+        }
+
+        function getFreshTrendingCache(source) {
+            const entry = trendingCache[source];
+            return isTrendingCacheFresh(entry) ? entry : null;
+        }
+
+        function setTrendingCache(source, items) {
+            trendingCache[source] = {
+                data: Array.isArray(items) ? items : [],
+                timestamp: Date.now()
+            };
+        }
+
+        function renderTrendingData(source, items) {
+            if (source === 'stocktwits') {
+                renderStocktwitsList(items);
+            } else if (source === 'reddit') {
+                renderRedditList(items);
+            } else if (source === 'volume') {
+                renderVolumeList(items);
+            }
+        }
+
         function showWatchlistSection(show) {
             if (!watchlistSectionEl) return;
             if (isWatchlistPage) {
-                watchlistSectionEl.style.display = '';
+                watchlistSectionEl.style.display = show === false ? 'none' : '';
                 return;
             }
             if (!watchlistHasEntries) {
@@ -1354,6 +1389,9 @@
             const shouldShowWatchlist = homePrimaryPanel === 'watchlist';
             showWatchlistSection(shouldShowWatchlist);
             showTrendingSection(!shouldShowWatchlist);
+            if (shouldShowWatchlist) {
+                refreshWatchlistPrices();
+            }
         }
 
         function initializeHomePanel(watchlistCount) {
@@ -1363,6 +1401,62 @@
                 setHomePrimaryPanel('watchlist');
             } else {
                 setHomePrimaryPanel('trending');
+            }
+        }
+
+        async function fetchQuote(symbol) {
+            if (!symbol) return null;
+            try {
+                const res = await fetch(`/quote/${encodeURIComponent(symbol)}`);
+                if (!res.ok) {
+                    throw new Error(`Quote fetch failed for ${symbol}`);
+                }
+                return await res.json();
+            } catch (error) {
+                console.error('Quote fetch error:', error);
+                return null;
+            }
+        }
+
+        async function refreshWatchlistPrices() {
+            if (watchlistPriceRefreshPromise || !watchlistHasEntries) return;
+            const items = readWatchlist();
+            if (!items.length) return;
+            watchlistPriceRefreshPromise = (async () => {
+                try {
+                    const quotes = await Promise.all(items.map(item => fetchQuote(item.symbol)));
+                    let changed = false;
+                    const nextItems = items.map((item, idx) => {
+                        const quote = quotes[idx];
+                        if (quote && Number.isFinite(quote.price)) {
+                            changed = true;
+                            return {
+                                ...item,
+                                lastPrice: Number(quote.price),
+                                lastUpdated: quote.timestamp || new Date().toISOString()
+                            };
+                        }
+                        return item;
+                    });
+                    if (changed) {
+                        writeWatchlist(nextItems);
+                        renderWatchlist();
+                    }
+                } catch (err) {
+                    console.error('Watchlist refresh error:', err);
+                } finally {
+                    watchlistPriceRefreshPromise = null;
+                }
+            })();
+            return watchlistPriceRefreshPromise;
+        }
+
+        function hideWatchlistForStockView() {
+            if (!watchlistSectionEl) return;
+            if (isWatchlistPage) {
+                watchlistSectionEl.style.display = 'none';
+            } else {
+                showWatchlistSection(false);
             }
         }
 
@@ -1593,6 +1687,7 @@
             const overallSentimentClass = data.overall_sentiment || 'neutral';
 
             renderMovementInsight(data.movement_insight);
+            hideWatchlistForStockView();
 
             document.getElementById('companyName').textContent = stockInfo.companyName;
             document.getElementById('stockPrice').textContent = formatCurrency(stockInfo.price);
@@ -1885,6 +1980,9 @@
             initializeTrendingTabs();
             const watchlistCount = renderWatchlist();
             initializeHomePanel(watchlistCount);
+            if (watchlistCount > 0) {
+                refreshWatchlistPrices();
+            }
             if (!isWatchlistPage) {
                 loadTrendingStocks();
             } else {
@@ -1914,31 +2012,51 @@
             }
         });
 
-        async function loadTrendingSource(source) {
-            setTrendingListLoading(source);
-            try {
-                const res = await fetch(`/trending/${source}`);
-                if (!res.ok) {
-                    throw new Error(`Failed to load ${source} data.`);
-                }
-                const data = await res.json();
-                const items = data.data || [];
-                if (source === 'stocktwits') {
-                    renderStocktwitsList(items);
-                } else if (source === 'reddit') {
-                    renderRedditList(items);
-                } else if (source === 'volume') {
-                    renderVolumeList(items);
-                }
-            } catch (e) {
-                console.error(`Trending ${source} error:`, e);
-                showTrendingMessage(source, 'Failed to load data.', true);
+        async function loadTrendingSource(source, options = {}) {
+            const { forceRefresh = false } = options;
+            const cached = getFreshTrendingCache(source);
+            if (!forceRefresh && cached) {
+                renderTrendingData(source, cached.data);
+                return cached.data;
             }
+
+            if (trendingFetchPromises[source]) {
+                return trendingFetchPromises[source];
+            }
+
+            setTrendingListLoading(source);
+            const fetchPromise = (async () => {
+                try {
+                    const res = await fetch(`/trending/${source}`);
+                    if (!res.ok) {
+                        throw new Error(`Failed to load ${source} data.`);
+                    }
+                    const data = await res.json();
+                    const items = data.data || [];
+                    setTrendingCache(source, items);
+                    renderTrendingData(source, items);
+                    return items;
+                } catch (e) {
+                    console.error(`Trending ${source} error:`, e);
+                    const fallback = trendingCache[source];
+                    if (fallback && Array.isArray(fallback.data) && fallback.data.length) {
+                        renderTrendingData(source, fallback.data);
+                    } else {
+                        showTrendingMessage(source, 'Failed to load data.', true);
+                    }
+                    return null;
+                } finally {
+                    trendingFetchPromises[source] = null;
+                }
+            })();
+
+            trendingFetchPromises[source] = fetchPromise;
+            return fetchPromise;
         }
 
-        function loadTrendingStocks() {
+        function loadTrendingStocks(options = {}) {
             TRENDING_SOURCES.forEach(source => {
-                loadTrendingSource(source);
+                loadTrendingSource(source, options);
             });
         }
         // Hide trending-section after a search, show on home
@@ -1988,7 +2106,15 @@
 
         if (watchlistNavBtnEl) {
             watchlistNavBtnEl.addEventListener('click', () => {
-                if (!isWatchlistPage) {
+                if (isWatchlistPage) {
+                    if (watchlistSectionEl) {
+                        watchlistSectionEl.style.display = '';
+                    }
+                    const count = renderWatchlist();
+                    if (count > 0) {
+                        refreshWatchlistPrices();
+                    }
+                } else {
                     window.location.href = '/watchlist';
                 }
             });

@@ -834,6 +834,26 @@ def trending_stocks():
     })
 
 
+@app.route('/quote/<symbol>', methods=['GET'])
+@limiter.limit("50 per minute")
+def quote(symbol):
+    normalized = (symbol or "").strip().upper()
+    if not normalized:
+        return jsonify({"error": "Symbol is required"}), 400
+
+    snapshot = get_price_change_snapshot(normalized)
+    price = snapshot.get("price")
+    if price is None:
+        return jsonify({"error": "Price unavailable"}), 404
+
+    return jsonify({
+        "symbol": normalized,
+        "price": price,
+        "change_percent": snapshot.get("change_percent"),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+
 @app.route('/trending/<source>', methods=['GET'])
 @limiter.limit("30 per minute")
 def trending_stocks_source(source):
