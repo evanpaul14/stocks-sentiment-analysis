@@ -102,6 +102,60 @@ def wait_for_ai_rate_slot():
         time.sleep(wait_for)
 
 
+PRICE_CACHE_TTL_SECONDS = max(5, _get_int_env("TRENDING_PRICE_TTL_SECONDS", 120))
+_price_snapshot_cache = {}
+
+
+def get_price_change_snapshot(symbol):
+    if not symbol:
+        return {"price": None, "change_percent": None}
+
+    normalized = symbol.upper()
+    now = time.time()
+    cached = _price_snapshot_cache.get(normalized)
+    if cached and (now - cached["timestamp"]) < PRICE_CACHE_TTL_SECONDS:
+        return cached["data"]
+
+    current_price = None
+    previous_close = None
+
+    try:
+        ticker = yf.Ticker(normalized)
+        fast_info = getattr(ticker, "fast_info", None) or {}
+        current_price = (
+            fast_info.get("last_price")
+            or fast_info.get("lastPrice")
+            or fast_info.get("regular_market_price")
+            or fast_info.get("regularMarketPrice")
+        )
+        previous_close = (
+            fast_info.get("previous_close")
+            or fast_info.get("previousClose")
+            or fast_info.get("regular_market_previous_close")
+            or fast_info.get("regularMarketPreviousClose")
+        )
+
+        if current_price is None or previous_close is None:
+            info = ticker.info or {}
+            if current_price is None:
+                current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+            if previous_close is None:
+                previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+    except Exception as exc:
+        print(f"Error fetching realtime price for {normalized}: {exc}")
+
+    change_percent = None
+    if current_price is not None and previous_close not in (None, 0):
+        try:
+            change_percent = ((current_price - previous_close) / previous_close) * 100
+        except Exception:
+            change_percent = None
+
+    snapshot = {"price": current_price, "change_percent": change_percent}
+    _price_snapshot_cache[normalized] = {"timestamp": now, "data": snapshot}
+    return snapshot
+
+
 def _parse_retry_after_value(value):
     try:
         seconds = float(value)
@@ -164,6 +218,8 @@ def analyze_trending(top10):
     results = []
     for rec in top10:
         ticker = rec.get("ticker")
+        if not ticker:
+            continue
         name   = html.unescape(rec.get("name", ""))
         mentions_now = rec.get("mentions", 0)
         mentions_24h = rec.get("mentions_24h_ago", 0)
@@ -182,11 +238,14 @@ def analyze_trending(top10):
         elif rank_24h is not None and rank_now is not None and rank_now < rank_24h - 5:
             tag = f"Up {rank_24h - rank_now} Spots"
 
+        price_snapshot = get_price_change_snapshot(ticker)
         results.append({
             "ticker": ticker,
             "name": name,
             "pct_increase": pct_increase,
-            "tag": tag
+            "tag": tag,
+            "price_change_percent": price_snapshot.get("change_percent"),
+            "price": price_snapshot.get("price")
         })
     return results
 
@@ -232,13 +291,24 @@ def fetch_stocktwits_trending(limit=20):
                 last_price = sym.get("price")
                 change_pct = sym.get("change_percent")
 
+            symbol = (sym.get("symbol") or "").upper()
+            resolved_price = last_price
+            resolved_change_pct = change_pct
+            if resolved_price is None or resolved_change_pct is None:
+                snapshot = get_price_change_snapshot(symbol)
+                if resolved_price is None:
+                    resolved_price = snapshot.get("price")
+                if resolved_change_pct is None:
+                    resolved_change_pct = snapshot.get("change_percent")
+
             results.append({
                 "rank": idx,
-                "ticker": (sym.get("symbol") or "").upper(),
+                "ticker": symbol,
                 "name": sym.get("title") or sym.get("symbol") or "Unknown",
                 "watchlist_count": sym.get("watchlist_count"),
-                "change_percent": change_pct,
-                "price": last_price,
+                "change_percent": resolved_change_pct,
+                "price": resolved_price,
+                "price_change_percent": resolved_change_pct,
                 "summary": sym.get("summary")
                     or sym.get("watchlist_description")
                     or sym.get("body")
@@ -279,13 +349,20 @@ def fetch_alpaca_most_actives(limit=20):
             volume = rec.get("volume") or rec.get("volume_1d")
             symbol = (rec.get("symbol") or "").upper()
             resolved_name = rec.get("name") or lookup_company_name(symbol) or symbol or "Unknown"
+            if price is None or change_pct is None:
+                snapshot = get_price_change_snapshot(symbol)
+                if price is None:
+                    price = snapshot.get("price")
+                if change_pct is None:
+                    change_pct = snapshot.get("change_percent")
             results.append({
                 "rank": idx,
                 "ticker": symbol,
                 "name": resolved_name,
                 "volume": volume,
                 "price": price,
-                "change_percent": change_pct
+                "change_percent": change_pct,
+                "price_change_percent": change_pct
             })
         return results
     except Exception as e:

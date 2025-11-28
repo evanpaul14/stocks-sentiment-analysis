@@ -10,8 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3743637326749752"
-     crossorigin="anonymous"></script>
+    </script>
     <style>
         * {
             margin: 0;
@@ -448,6 +447,7 @@
             display: flex;
             flex-direction: row;
             align-items: center;
+            gap: 16px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             transition: background 0.2s;
             cursor: pointer;
@@ -507,8 +507,40 @@
             font-weight: 700;
             border-radius: 8px;
             padding: 2px 10px;
-            margin-left: 8px;
             text-transform: uppercase;
+        }
+
+        .trending-change {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 8px;
+            background: rgba(51, 234, 147, 0.12);
+            color: #33ea93;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .trending-change.negative {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .trending-change-inline {
+            display: none;
+        }
+
+        .trending-change-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+        }
+
+        .trending-metrics-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 6px;
         }
 
         .trending-tabs {
@@ -542,6 +574,27 @@
             color: #888;
             font-size: 14px;
             padding: 12px 0;
+        }
+
+        @media (min-width: 721px) {
+            .trending-change-inline {
+                display: none;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .trending-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .trending-change-inline {
+                display: inline-flex;
+            }
+
+            .trending-change-right {
+                display: none;
+            }
         }
 
         @media (max-width: 900px) {
@@ -812,6 +865,16 @@
             return `${sign}${num.toFixed(1)}%`;
         }
 
+        function buildTrendChangeBadge(value, extraClass = '') {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return '';
+            const direction = num >= 0 ? 'positive' : 'negative';
+            const classes = ['trending-change', direction];
+            if (extraClass) classes.push(extraClass);
+            const qualifier = num >= 0 ? 'up' : 'down';
+            return `<span class="${classes.join(' ')}">${qualifier} ${formatSignedPercentage(num)}</span>`;
+        }
+
         function getFirstSentence(text) {
             if (!text) return '';
             const normalized = text.replace(/\s+/g, ' ').trim();
@@ -885,16 +948,24 @@
                 } else {
                     watchersTag = '<span class="trending-tag" style="background:rgba(88,28,135,0.25);color:#e9d5ff;">Watchers N/A</span>';
                 }
+                const changeValue = item.price_change_percent ?? item.change_percent;
+                const changeInline = buildTrendChangeBadge(changeValue, 'trending-change-inline');
+                const changeRight = buildTrendChangeBadge(changeValue, 'trending-change-right');
+                const metricsPieces = [];
+                if (watchersTag) metricsPieces.push(watchersTag);
+                const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
 
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                            ${watchersTag}
+                            ${changeInline}
                         </div>
+                        ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                     </div>
+                    ${changeRight}
                 `;
                 list.appendChild(div);
             });
@@ -920,17 +991,24 @@
                 const pctClass = pct < 0 ? 'negative' : 'positive';
                 const pctLabel = `${pct >= 0 ? '+' : ''}${Math.round(pct)}% mentions`;
                 const tag = item.tag ? `<span class="trending-tag">${item.tag}</span>` : '';
+                const changeInline = buildTrendChangeBadge(item.price_change_percent, 'trending-change-inline');
+                const changeRight = buildTrendChangeBadge(item.price_change_percent, 'trending-change-right');
+                const metricsPieces = [];
+                if (tag) metricsPieces.push(tag);
+                const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
 
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                            ${tag}
+                            ${changeInline}
                         </div>
+                        ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                         <span class="trending-pct ${pctClass}">${pctLabel}</span>
                     </div>
+                    ${changeRight}
                 `;
                 list.appendChild(div);
             });
@@ -957,16 +1035,24 @@
                     ? `${formatNumber(volumeCount)} shares`
                     : 'Volume unavailable';
                 const volumeTag = `<span class="trending-tag">${volumeLabel}</span>`;
+                const changeValue = item.price_change_percent ?? item.change_percent;
+                const changeInline = buildTrendChangeBadge(changeValue, 'trending-change-inline');
+                const changeRight = buildTrendChangeBadge(changeValue, 'trending-change-right');
+                const metricsPieces = [];
+                if (volumeTag) metricsPieces.push(volumeTag);
+                const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
 
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                            ${volumeTag}
+                            ${changeInline}
                         </div>
+                        ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                     </div>
+                    ${changeRight}
                 `;
                 list.appendChild(div);
             });
