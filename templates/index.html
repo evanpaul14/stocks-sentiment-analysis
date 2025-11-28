@@ -71,14 +71,6 @@
             color: #fff;
         }
 
-        .home-page #watchlistSection {
-            display: none;
-        }
-
-        .watchlist-page #watchlistSection {
-            display: block;
-        }
-
         .watchlist-page #trendingSection {
             display: none;
         }
@@ -160,9 +152,13 @@
         }
 
         .watchlist-toggle-btn.saved {
-            background-color: rgba(51, 234, 147, 0.2);
-            border-color: rgba(51, 234, 147, 0.6);
-            color: #a7f3d0;
+            background-color: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.6);
+            color: #fecaca;
+        }
+
+        .watchlist-toggle-btn.saved:hover {
+            background-color: rgba(239, 68, 68, 0.35);
         }
 
         .company-name {
@@ -861,7 +857,7 @@
             </div>
         </div>
 
-        <div class="watchlist-section" id="watchlistSection">
+        <div class="watchlist-section" id="watchlistSection" {% if page_view != 'watchlist' %}style="display:none;"{% endif %}>
             <div class="section-title" style="margin-bottom: 15px;">Your Watchlist</div>
             <div id="watchlistEmptyState" class="watchlist-empty">Save tickers to build a personalized list you can revisit with one click.</div>
             <div id="watchlistList" class="watchlist-list"></div>
@@ -1017,12 +1013,16 @@
     const watchlistToggleBtn = document.getElementById('watchlistToggleBtn');
     const watchlistListEl = document.getElementById('watchlistList');
     const watchlistEmptyStateEl = document.getElementById('watchlistEmptyState');
+    const watchlistSectionEl = document.getElementById('watchlistSection');
     const pageVariant = document.body.dataset.page || 'home';
     const isWatchlistPage = pageVariant === 'watchlist';
     const homeTitleEl = document.getElementById('homeTitle');
     const trendingBtnEl = document.getElementById('trendingBtn');
     const watchlistNavBtnEl = document.getElementById('watchlistNavBtn');
     let watchlistStorageAvailable = true;
+    let watchlistHasEntries = false;
+    let homePrimaryPanel = 'trending';
+    let homePanelInitialized = false;
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -1191,14 +1191,18 @@
         }
 
         function renderWatchlist() {
-            if (!watchlistListEl) return;
+            if (!watchlistListEl) return 0;
             const items = readWatchlist();
+            watchlistHasEntries = items.length > 0;
             if (!items.length) {
                 watchlistListEl.innerHTML = '';
                 if (watchlistEmptyStateEl) {
                     watchlistEmptyStateEl.style.display = 'block';
                 }
-                return;
+                if (!isWatchlistPage) {
+                    showWatchlistSection(false);
+                }
+                return 0;
             }
             if (watchlistEmptyStateEl) {
                 watchlistEmptyStateEl.style.display = 'none';
@@ -1257,6 +1261,10 @@
                 itemDiv.appendChild(meta);
                 watchlistListEl.appendChild(itemDiv);
             });
+            if (!isWatchlistPage) {
+                showWatchlistSection(homePrimaryPanel === 'watchlist');
+            }
+            return items.length;
         }
 
         function handleWatchlistToggleClick() {
@@ -1322,6 +1330,40 @@
             if (!list) return;
             const color = isError ? '#ef4444' : '#888';
             list.innerHTML = `<div class="trending-message" style="color:${color};">${message}</div>`;
+        }
+
+        function showWatchlistSection(show) {
+            if (!watchlistSectionEl) return;
+            if (isWatchlistPage) {
+                watchlistSectionEl.style.display = '';
+                return;
+            }
+            if (!watchlistHasEntries) {
+                watchlistSectionEl.style.display = 'none';
+                return;
+            }
+            watchlistSectionEl.style.display = show ? '' : 'none';
+        }
+
+        function setHomePrimaryPanel(panel) {
+            if (isWatchlistPage) return;
+            if (panel === 'watchlist' && !watchlistHasEntries) {
+                panel = 'trending';
+            }
+            homePrimaryPanel = panel === 'watchlist' ? 'watchlist' : 'trending';
+            const shouldShowWatchlist = homePrimaryPanel === 'watchlist';
+            showWatchlistSection(shouldShowWatchlist);
+            showTrendingSection(!shouldShowWatchlist);
+        }
+
+        function initializeHomePanel(watchlistCount) {
+            if (isWatchlistPage || homePanelInitialized) return;
+            homePanelInitialized = true;
+            if (watchlistCount > 0) {
+                setHomePrimaryPanel('watchlist');
+            } else {
+                setHomePrimaryPanel('trending');
+            }
         }
 
         function renderStocktwitsList(items) {
@@ -1841,12 +1883,13 @@
             });
 
             initializeTrendingTabs();
+            const watchlistCount = renderWatchlist();
+            initializeHomePanel(watchlistCount);
             if (!isWatchlistPage) {
                 loadTrendingStocks();
             } else {
                 showTrendingSection(false);
             }
-            renderWatchlist();
             if (watchlistToggleBtn) {
                 watchlistToggleBtn.addEventListener('click', handleWatchlistToggleClick);
             }
@@ -1919,7 +1962,7 @@
             if (resultsEl) resultsEl.style.display = 'none';
             const errorEl = document.getElementById('errorMessage');
             if (errorEl) errorEl.innerHTML = '';
-            showTrendingSection(true);
+            setHomePrimaryPanel('trending');
             loadTrendingStocks();
         }
 
