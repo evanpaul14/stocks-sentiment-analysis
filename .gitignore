@@ -1,15 +1,7 @@
 .env
-cert.pem
-key.pem
-*.iml
 ./__pycache__  
 *.pyc
 .vscode
-./sec_filings
 .DS_Store
-test.py
-sentiment_cache.db
-tests/__init__.py
-tests/test_smoke.py
 experimentation.py
 experimentation2.py
