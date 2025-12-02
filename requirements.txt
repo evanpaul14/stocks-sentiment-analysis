@@ -9,3 +9,4 @@ gunicorn
 cloudscraper
 openai>=1.50.0
 finnhub-python
+flask_sqlalchemy
