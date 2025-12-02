@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
 from google import genai
 from pygooglenews import GoogleNews
 from yahooquery import search
@@ -19,8 +20,38 @@ import finnhub
 
 load_dotenv()
 
+
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ip_log.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# IP logging model
+class IPLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(64), unique=True, nullable=False)
+    first_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+with app.app_context():
+    db.create_all()
+@app.before_request
+def log_ip_address():
+    # Delete IPs older than 1 month
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    IPLog.query.filter(IPLog.first_seen < cutoff).delete()
+    db.session.commit()
+
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if not ip:
+        return
+    existing = IPLog.query.filter_by(ip_address=ip).first()
+    if not existing:
+        new_ip = IPLog()
+        new_ip.ip_address = ip
+        new_ip.first_seen = datetime.utcnow()
+        db.session.add(new_ip)
+        db.session.commit()
 
 # set up rate limiting
 limiter = Limiter(
