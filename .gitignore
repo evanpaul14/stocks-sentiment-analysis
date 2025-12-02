@@ -5,3 +5,5 @@
 .DS_Store
 experimentation.py
 experimentation2.py
+./instance
+./tests

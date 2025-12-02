@@ -27,31 +27,55 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ip_log.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+
+def _utcnow_naive():
+    """Return a timezone-naive UTC datetime without using deprecated utcnow."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 # IP logging model
 class IPLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip_address = db.Column(db.String(64), unique=True, nullable=False)
-    first_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    first_seen = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
 
 with app.app_context():
     db.create_all()
+
+_last_ip_cleanup_run = None
+IP_CLEANUP_INTERVAL = timedelta(days=1)
+
 @app.before_request
 def log_ip_address():
-    # Delete IPs older than 1 month
-    cutoff = datetime.utcnow() - timedelta(days=30)
-    IPLog.query.filter(IPLog.first_seen < cutoff).delete()
-    db.session.commit()
+    global _last_ip_cleanup_run
 
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if not ip:
+    # run cleanup once per day
+    now = _utcnow_naive()
+    if _last_ip_cleanup_run is None or (now - _last_ip_cleanup_run) >= IP_CLEANUP_INTERVAL:
+        cutoff = now - timedelta(days=30)
+        IPLog.query.filter(IPLog.first_seen < cutoff).delete()
+        db.session.commit()
+        _last_ip_cleanup_run = now
+
+    # determine client ip
+    raw_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if not raw_ip:
         return
+
+    # take first IP if multiple
+    ip = raw_ip.split(',')[0].strip()
+
     existing = IPLog.query.filter_by(ip_address=ip).first()
     if not existing:
-        new_ip = IPLog()
-        new_ip.ip_address = ip
-        new_ip.first_seen = datetime.utcnow()
-        db.session.add(new_ip)
-        db.session.commit()
+        log = IPLog()
+        log.ip_address = ip
+        log.first_seen = _utcnow_naive()
+        db.session.add(log)
+        try:
+            db.session.commit()
+        except Exception as e:
+            print(f"Error committing IPLog: {e}")
+            db.session.rollback()
+
 
 # set up rate limiting
 limiter = Limiter(
