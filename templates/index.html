@@ -2202,7 +2202,7 @@
             marketSummaryArchiveEl.innerHTML = '';
             const filtered = (items || []).filter(item => item.id !== latestId);
             if (!filtered.length) {
-                marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty">No earlier editions yet.</div>';
+                marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty">No earlier editions</div>';
                 return;
             }
             filtered.forEach((item, index) => {
