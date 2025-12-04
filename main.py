@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
 import os
+import logging
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import time
@@ -19,6 +20,11 @@ from openai import OpenAI
 import finnhub
 
 load_dotenv()
+
+
+log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO))
+summary_logger = logging.getLogger("stocktwits.summary")
 
 
 app = Flask(__name__)
@@ -159,6 +165,64 @@ def wait_for_ai_rate_slot():
 
 PRICE_CACHE_TTL_SECONDS = max(5, _get_int_env("TRENDING_PRICE_TTL_SECONDS", 120))
 _price_snapshot_cache = {}
+
+STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS = max(
+    60,
+    _get_int_env("STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS", 600)
+)
+_stocktwits_summary_cache = {}
+
+
+def _extract_stocktwits_summary_parts(symbol_payload):
+    """Return (summary_text, summary_meta, company_name) from a StockTwits payload."""
+    trends = symbol_payload.get("trends") or {}
+    raw_summary = (
+        trends.get("summary")
+        or symbol_payload.get("summary")
+        or symbol_payload.get("watchlist_description")
+        or symbol_payload.get("body")
+        or ""
+    )
+    summary_meta = {
+        "source": "stocktwits",
+        "summary_at": trends.get("summary_at") or symbol_payload.get("summary_at")
+    }
+    company_name = symbol_payload.get("title") or symbol_payload.get("symbol") or "Unknown"
+    return raw_summary, summary_meta, company_name
+
+
+def _normalize_stocktwits_summary(summary_payload):
+    """Coerce StockTwits summary payloads (string/dict/list) into clean text."""
+    if summary_payload is None:
+        return None
+
+    if isinstance(summary_payload, str):
+        normalized = summary_payload.strip()
+        return normalized or None
+
+    if isinstance(summary_payload, dict):
+        for key in ("text", "body", "summary", "content"):
+            value = summary_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    if isinstance(summary_payload, (list, tuple)):
+        parts = []
+        for part in summary_payload:
+            normalized = _normalize_stocktwits_summary(part)
+            if normalized:
+                parts.append(normalized)
+        if parts:
+            joined = " ".join(parts).strip()
+            return joined or None
+        return None
+
+    try:
+        normalized = str(summary_payload).strip()
+    except Exception:
+        return None
+    return normalized or None
 
 
 def get_price_change_snapshot(symbol):
@@ -319,23 +383,110 @@ def lookup_company_name(symbol):
         return None
 
 
+def _cache_stocktwits_summary(symbol, name, summary_text, summary_meta, watchlist_count=None):
+    normalized = (symbol or "").upper()
+    if not normalized:
+        return
+    normalized_summary = _normalize_stocktwits_summary(summary_text)
+    _stocktwits_summary_cache[normalized] = {
+        "ticker": normalized,
+        "name": name,
+        "summary": normalized_summary,
+        "summary_meta": summary_meta or {},
+        "watchlist_count": watchlist_count,
+        "timestamp": time.time()
+    }
+    return normalized_summary
+
+
+def get_stocktwits_summary_entry(symbol):
+    normalized = (symbol or "").upper()
+    if not normalized:
+        return None
+
+    cached = _stocktwits_summary_cache.get(normalized)
+    now = time.time()
+    if cached and (now - cached.get("timestamp", 0)) < STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS:
+        summary_logger.debug(
+            "[StockTwits] Serving cached summary for %s (age=%.1fs)",
+            normalized,
+            now - cached.get("timestamp", 0)
+        )
+        return cached
+
+    summary_logger.info(
+        "[StockTwits] Refreshing summary cache for %s (stale or missing)",
+        normalized
+    )
+    return _refresh_stocktwits_summary(normalized)
+
+
+def _fetch_stocktwits_symbols(limit=20):
+    scraper = cloudscraper.create_scraper(
+        browser={
+            "browser": "chrome",
+            "platform": "darwin",
+            "mobile": False
+        }
+    )
+    resp = scraper.get(STOCKTWITS_TRENDING_URL, timeout=10)
+    resp.raise_for_status()
+    payload = resp.json()
+    symbols = payload.get("symbols", [])
+
+    filtered = [
+        s for s in symbols
+        if (s.get("exchange") or "").upper() != "CRYPTO"
+        and (s.get("instrument_class") or "").lower() == "stock"
+    ]
+    return filtered[:limit]
+
+
+def _refresh_stocktwits_summary(symbol, *, limit=60):
+    normalized = (symbol or "").upper()
+    if not normalized:
+        return None
+
+    try:
+        summary_logger.info(
+            "[StockTwits] On-demand summary fetch for %s (limit=%d)",
+            normalized,
+            limit
+        )
+        symbols = _fetch_stocktwits_symbols(limit=limit)
+    except Exception as exc:
+        summary_logger.exception(
+            "[StockTwits] Error refreshing summary for %s: %s",
+            normalized,
+            exc
+        )
+        return None
+
+    for sym in symbols:
+        current_symbol = (sym.get("symbol") or "").upper()
+        if current_symbol != normalized:
+            continue
+        raw_summary, summary_meta, company_name = _extract_stocktwits_summary_parts(sym)
+        _cache_stocktwits_summary(
+            normalized,
+            company_name,
+            raw_summary,
+            summary_meta,
+            sym.get("watchlist_count")
+        )
+        return _stocktwits_summary_cache.get(normalized)
+
+    summary_logger.warning(
+        "[StockTwits] Summary refresh miss for %s (not in payload)",
+        normalized
+    )
+    return None
+
+
 def fetch_stocktwits_trending(limit=20):
     """Fetch trending symbols from StockTwits"""
     try:
-        scraper = cloudscraper.create_scraper(
-            browser={
-                "browser": "chrome",
-                "platform": "darwin",
-                "mobile": False
-            }
-        )
-        resp = scraper.get(STOCKTWITS_TRENDING_URL, timeout=10)
-        resp.raise_for_status()
-        payload = resp.json()
-        symbols = payload.get("symbols", [])
-
-        non_crypto = [s for s in symbols if s.get("exchange") != "CRYPTO"]
-        trimmed = non_crypto[:limit]
+        trimmed = _fetch_stocktwits_symbols(limit=limit)
         results = []
         for idx, sym in enumerate(trimmed, start=1):
             price_info = sym.get("price")
@@ -356,22 +507,31 @@ def fetch_stocktwits_trending(limit=20):
                 if resolved_change_pct is None:
                     resolved_change_pct = snapshot.get("change_percent")
 
+            raw_summary, summary_meta, company_name = _extract_stocktwits_summary_parts(sym)
+            cached_summary = None
+            has_summary = False
+            if idx <= 10:
+                cached_summary = _cache_stocktwits_summary(
+                    symbol,
+                    company_name,
+                    raw_summary,
+                    summary_meta,
+                    sym.get("watchlist_count")
+                )
+                has_summary = bool(cached_summary)
+
             results.append({
                 "rank": idx,
                 "ticker": symbol,
-                "name": sym.get("title") or sym.get("symbol") or "Unknown",
+                "name": company_name,
                 "watchlist_count": sym.get("watchlist_count"),
                 "change_percent": resolved_change_pct,
                 "price": resolved_price,
                 "price_change_percent": resolved_change_pct,
-                "summary": sym.get("summary")
-                    or sym.get("watchlist_description")
-                    or sym.get("body")
-                    or "Trending now on StockTwits"
+                "has_summary": has_summary
             })
         return results
-    except Exception as e:
-        print(f"Error fetching StockTwits trending: {e}")
+    except Exception:
         return []
 
 
@@ -933,6 +1093,36 @@ def trending_stocks_source(source):
     return jsonify({
         "source": (source or "").lower(),
         "data": data
+    })
+
+
+@app.route('/stocktwits/<symbol>/summary', methods=['GET'])
+@limiter.limit("30 per minute")
+def stocktwits_summary(symbol):
+    normalized = (symbol or "").upper()
+    entry = get_stocktwits_summary_entry(normalized)
+    if not entry:
+        summary_logger.warning(
+            "[StockTwits] Summary endpoint miss for %s (no cache entry)",
+            normalized
+        )
+        return jsonify({"error": "Summary unavailable"}), 404
+    summary_text = (entry.get("summary") or "").strip()
+    used_fallback = False
+    if not summary_text:
+        summary_text = "No StockTwits summary available yet."
+        used_fallback = True
+    summary_logger.info(
+        "[StockTwits] Served summary for %s (fallback=%s)",
+        normalized,
+        used_fallback
+    )
+    return jsonify({
+        "ticker": entry.get("ticker"),
+        "name": entry.get("name"),
+        "summary": summary_text,
+        "summary_meta": entry.get("summary_meta"),
+        "watchlist_count": entry.get("watchlist_count")
     })
 
 @app.route('/robots.txt', methods=['GET'])

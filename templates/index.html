@@ -539,6 +539,16 @@
             flex-direction: column;
             min-width: 0;
         }
+        .trending-card-aside {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            min-width: 40px;
+        }
+        .trending-card-aside:empty {
+            display: none;
+        }
         .trending-rank {
             font-size: 22px;
             font-weight: 700;
@@ -569,6 +579,84 @@
             text-overflow: ellipsis;
             display: block;
             max-width: 100%;
+        }
+        .trending-info-btn {
+            border: 1px solid rgba(196,181,253,0.4);
+            background: rgba(147,51,234,0.15);
+            color: #c4b5fd;
+            width: 22px;
+            height: 22px;
+            min-width: 22px;
+            min-height: 22px;
+            padding: 0;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+            flex-shrink: 0;
+        }
+        .trending-info-btn .icon {
+            pointer-events: none;
+        }
+        .trending-info-btn:hover,
+        .trending-info-btn:focus-visible {
+            background: rgba(196,181,253,0.3);
+            color: #fff;
+            border-color: rgba(196,181,253,0.65);
+            outline: none;
+        }
+        .trending-summary-popover {
+            position: absolute;
+            z-index: 30;
+            width: min(320px, calc(100vw - 40px));
+            background: #11111b;
+            border: 1px solid rgba(196,181,253,0.4);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+            padding: 14px 16px;
+            display: none;
+        }
+        .trending-summary-popover.visible {
+            display: block;
+        }
+        .trending-summary-popover::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #11111b;
+            border-left: 1px solid rgba(196,181,253,0.4);
+            border-bottom: 1px solid rgba(196,181,253,0.4);
+            transform: rotate(45deg);
+            bottom: -6px;
+            left: var(--popover-arrow-offset, 20px);
+        }
+        .trending-summary-popover-heading {
+            font-size: 14px;
+            font-weight: 600;
+            color: #c4b5fd;
+            margin-bottom: 6px;
+        }
+        .trending-summary-popover-body {
+            font-size: 13px;
+            color: #f3f4f6;
+            line-height: 1.45;
+            white-space: pre-line;
+            margin-bottom: 8px;
+        }
+        .trending-summary-popover-meta {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .trending-summary-popover.is-loading .trending-summary-popover-body {
+            color: #9ca3af;
+        }
+        .trending-summary-popover.is-error {
+            border-color: rgba(239,68,68,0.6);
         }
         .trending-pct {
             font-size: 14px;
@@ -1015,6 +1103,12 @@
     const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
     const trendingCache = {};
     const trendingFetchPromises = {};
+    const stocktwitsSummaryCache = new Map();
+    const stocktwitsSummaryPromises = new Map();
+    let stocktwitsSummaryPopover = null;
+    let stocktwitsPopoverHeading = null;
+    let stocktwitsPopoverBody = null;
+    let stocktwitsPopoverMeta = null;
     const sentenceAbbreviations = new Set([
         'inc', 'incorporated', 'corp', 'corporation', 'co', 'ltd', 'llc', 'plc',
         'sr', 'jr', 'dr', 'mr', 'mrs', 'ms', 'prof', 'dept', 'st'
@@ -1368,6 +1462,161 @@
             };
         }
 
+        function ensureStocktwitsSummaryPopover() {
+            if (stocktwitsSummaryPopover) {
+                return stocktwitsSummaryPopover;
+            }
+            const popover = document.createElement('div');
+            popover.className = 'trending-summary-popover';
+            popover.setAttribute('role', 'status');
+            popover.innerHTML = `
+                <div class="trending-summary-popover-heading" data-role="heading"></div>
+                <div class="trending-summary-popover-body" data-role="body"></div>
+                <div class="trending-summary-popover-meta" data-role="meta"></div>
+            `;
+            document.body.appendChild(popover);
+            stocktwitsSummaryPopover = popover;
+            stocktwitsPopoverHeading = popover.querySelector('[data-role="heading"]');
+            stocktwitsPopoverBody = popover.querySelector('[data-role="body"]');
+            stocktwitsPopoverMeta = popover.querySelector('[data-role="meta"]');
+            return popover;
+        }
+
+        function hideStocktwitsPopover() {
+            if (!stocktwitsSummaryPopover) return;
+            stocktwitsSummaryPopover.classList.remove('visible', 'is-loading', 'is-error');
+            stocktwitsSummaryPopover.style.display = 'none';
+            stocktwitsSummaryPopover.removeAttribute('data-ticker');
+        }
+
+        function positionStocktwitsPopover(anchorEl) {
+            const popover = ensureStocktwitsSummaryPopover();
+            if (!anchorEl) return;
+            popover.style.visibility = 'hidden';
+            popover.style.display = 'block';
+            const anchorRect = anchorEl.getBoundingClientRect();
+            const popRect = popover.getBoundingClientRect();
+            const top = window.scrollY + anchorRect.bottom + 10;
+            const minLeft = window.scrollX + 12;
+            const maxLeft = window.scrollX + window.innerWidth - popRect.width - 12;
+            let left = window.scrollX + anchorRect.left - (popRect.width / 2) + (anchorRect.width / 2);
+            left = Math.min(Math.max(left, minLeft), Math.max(minLeft, maxLeft));
+            popover.style.top = `${top}px`;
+            popover.style.left = `${left}px`;
+            const anchorCenter = window.scrollX + anchorRect.left + (anchorRect.width / 2);
+            const offsetWithinPopover = anchorCenter - left;
+            const arrowOffset = Math.min(Math.max(offsetWithinPopover, 16), popRect.width - 16);
+            popover.style.setProperty('--popover-arrow-offset', `${arrowOffset}px`);
+            popover.style.visibility = 'visible';
+        }
+
+        function setStocktwitsPopoverState({ heading, body, meta, modifier }) {
+            const popover = ensureStocktwitsSummaryPopover();
+            popover.classList.remove('is-loading', 'is-error');
+            if (modifier === 'loading') {
+                popover.classList.add('is-loading');
+            } else if (modifier === 'error') {
+                popover.classList.add('is-error');
+            }
+            if (stocktwitsPopoverHeading) {
+                stocktwitsPopoverHeading.textContent = heading || '';
+            }
+            if (stocktwitsPopoverBody) {
+                stocktwitsPopoverBody.textContent = body || '';
+            }
+            if (stocktwitsPopoverMeta) {
+                stocktwitsPopoverMeta.textContent = meta || '';
+            }
+        }
+
+        function showStocktwitsPopover(anchorEl, ticker, state) {
+            const popover = ensureStocktwitsSummaryPopover();
+            popover.dataset.ticker = ticker || '';
+            setStocktwitsPopoverState(state);
+            popover.classList.add('visible');
+            positionStocktwitsPopover(anchorEl);
+        }
+
+        function formatSummaryTimestamp(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) return '';
+            return date.toLocaleString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+        }
+
+        function fetchStocktwitsSummary(ticker) {
+            const normalized = (ticker || '').toUpperCase();
+            if (!normalized) {
+                return Promise.reject(new Error('Invalid ticker.'));
+            }
+            if (stocktwitsSummaryCache.has(normalized)) {
+                return Promise.resolve(stocktwitsSummaryCache.get(normalized));
+            }
+            if (stocktwitsSummaryPromises.has(normalized)) {
+                return stocktwitsSummaryPromises.get(normalized);
+            }
+            const promise = fetch(`/stocktwits/${encodeURIComponent(normalized)}/summary`)
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error('Summary unavailable right now.');
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    stocktwitsSummaryCache.set(normalized, data);
+                    stocktwitsSummaryPromises.delete(normalized);
+                    return data;
+                })
+                .catch(err => {
+                    stocktwitsSummaryPromises.delete(normalized);
+                    throw err;
+                });
+            stocktwitsSummaryPromises.set(normalized, promise);
+            return promise;
+        }
+
+        async function toggleStocktwitsSummaryPopover(anchorEl, ticker, name) {
+            if (!anchorEl || !ticker) return;
+            const normalized = ticker.toUpperCase();
+            const headingTitle = name
+                ? `${name} (${normalized}) on StockTwits`
+                : `${normalized} on StockTwits`;
+            const visiblePopover = stocktwitsSummaryPopover && stocktwitsSummaryPopover.classList.contains('visible');
+            if (visiblePopover && stocktwitsSummaryPopover.dataset.ticker === normalized) {
+                hideStocktwitsPopover();
+                return;
+            }
+            showStocktwitsPopover(anchorEl, normalized, {
+                heading: headingTitle,
+                body: 'Loading summary…',
+                meta: '',
+                modifier: 'loading'
+            });
+            try {
+                const data = await fetchStocktwitsSummary(normalized);
+                const summaryText = (data.summary || '').trim() || 'No StockTwits summary available yet.';
+                const timestampText = formatSummaryTimestamp(data.summary_meta && data.summary_meta.summary_at);
+                showStocktwitsPopover(anchorEl, normalized, {
+                    heading: headingTitle,
+                    body: summaryText,
+                    meta: timestampText ? `Updated ${timestampText}` : ''
+                });
+            } catch (error) {
+                const message = (error && error.message) || 'Summary unavailable.';
+                showStocktwitsPopover(anchorEl, normalized, {
+                    heading: headingTitle,
+                    body: message,
+                    meta: '',
+                    modifier: 'error'
+                });
+            }
+        }
+
         function renderTrendingData(source, items) {
             if (source === 'stocktwits') {
                 renderStocktwitsList(items);
@@ -1472,21 +1721,20 @@
         function renderStocktwitsList(items) {
             const list = trendingLists.stocktwits;
             if (!list) return;
+            hideStocktwitsPopover();
             if (!Array.isArray(items) || items.length === 0) {
                 showTrendingMessage('stocktwits', 'No StockTwits data available right now.');
                 return;
             }
 
             list.innerHTML = '';
-            items.forEach((item, idx) => {
+            items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
                 div.onclick = () => {
                     document.getElementById('companyInput').value = item.ticker;
                     searchStock();
                 };
-                const summaryText = (item.summary || '').trim() || 'Trending now on StockTwits';
-                div.setAttribute('title', summaryText);
 
                 const watchersCount = Number(item.watchlist_count);
                 let watchersTag = '';
@@ -1501,19 +1749,33 @@
                 const metricsPieces = [];
                 if (watchersTag) metricsPieces.push(watchersTag);
                 const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
+                const infoButtonHtml = item.ticker && (item.rank || idx + 1) <= 10
+                    ? '<button class="trending-info-btn" type="button" aria-label="View StockTwits summary"><span class="icon">i</span></button>'
+                    : '';
+                const asidePieces = [];
+                if (changeRight) asidePieces.push(changeRight);
+                const asideHtml = asidePieces.length ? `<div class="trending-card-aside">${asidePieces.join('')}</div>` : '';
 
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                            ${infoButtonHtml}
                             ${changeInline}
                         </div>
                         ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                     </div>
-                    ${changeRight}
+                    ${asideHtml}
                 `;
+                const infoBtn = div.querySelector('.trending-info-btn');
+                if (infoBtn) {
+                    infoBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        toggleStocktwitsSummaryPopover(infoBtn, item.ticker, item.name);
+                    });
+                }
                 list.appendChild(div);
             });
         }
@@ -1527,7 +1789,7 @@
             }
 
             list.innerHTML = '';
-            items.forEach((item, idx) => {
+            items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
                 div.onclick = () => {
@@ -1570,7 +1832,7 @@
             }
 
             list.innerHTML = '';
-            items.forEach((item, idx) => {
+            items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
                 div.onclick = () => {
@@ -2153,6 +2415,37 @@
                 }
             });
         }
+
+        document.addEventListener('click', (event) => {
+            if (!stocktwitsSummaryPopover || !stocktwitsSummaryPopover.classList.contains('visible')) {
+                return;
+            }
+            if (stocktwitsSummaryPopover.contains(event.target)) {
+                return;
+            }
+            if (event.target.closest && event.target.closest('.trending-info-btn')) {
+                return;
+            }
+            hideStocktwitsPopover();
+        }, true);
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                hideStocktwitsPopover();
+            }
+        });
+
+        window.addEventListener('scroll', () => {
+            if (stocktwitsSummaryPopover && stocktwitsSummaryPopover.classList.contains('visible')) {
+                hideStocktwitsPopover();
+            }
+        }, true);
+
+        window.addEventListener('resize', () => {
+            if (stocktwitsSummaryPopover && stocktwitsSummaryPopover.classList.contains('visible')) {
+                hideStocktwitsPopover();
+            }
+        });
     </script>
 </body>
 </html>
