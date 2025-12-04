@@ -1137,6 +1137,11 @@ def sitemap_xml():
     '''Serve sitemap.xml file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
+@app.route('/google-verification.html', methods=['GET'])
+@limiter.limit("100 per minute")
+def google_verification():
+    '''Serve google verification file'''
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "google-verification.html")
 
 
 
