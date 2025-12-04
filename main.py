@@ -18,6 +18,11 @@ from functools import lru_cache
 import cloudscraper
 from openai import OpenAI
 import finnhub
+import json
+import atexit
+from zoneinfo import ZoneInfo
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 load_dotenv()
 
@@ -25,6 +30,7 @@ load_dotenv()
 log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO))
 summary_logger = logging.getLogger("stocktwits.summary")
+market_summary_logger = logging.getLogger("market.summary")
 
 
 app = Flask(__name__)
@@ -38,11 +44,27 @@ def _utcnow_naive():
     """Return a timezone-naive UTC datetime without using deprecated utcnow."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
+
+EASTERN_TZ = ZoneInfo("America/New_York")
+
+
 # IP logging model
 class IPLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip_address = db.Column(db.String(64), unique=True, nullable=False)
     first_seen = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+
+
+class MarketSummary(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    summary_date = db.Column(db.Date, nullable=False, index=True)
+    published_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+    updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, onupdate=_utcnow_naive)
+    index_snapshot = db.Column(db.Text)
+    headline_sources = db.Column(db.Text)
 
 with app.app_context():
     db.create_all()
@@ -585,6 +607,333 @@ def fetch_alpaca_most_actives(limit=20):
         return []
 
 
+MARKET_SUMMARY_INDEXES = (
+    ("^GSPC", "S&P 500"),
+    ("^IXIC", "Nasdaq Composite"),
+    ("^DJI", "Dow Jones")
+)
+MARKET_SUMMARY_MAX_HEADLINES = max(3, _get_int_env("MARKET_SUMMARY_MAX_HEADLINES", 8))
+MARKET_SUMMARY_RELEASE_HOUR = max(0, min(23, _get_int_env("MARKET_SUMMARY_RELEASE_HOUR", 16)))
+MARKET_SUMMARY_RELEASE_MINUTE = max(0, min(59, _get_int_env("MARKET_SUMMARY_RELEASE_MINUTE", 15)))
+MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "false", "False"}
+
+
+def _fetch_index_snapshot(symbol, label):
+    ticker = yf.Ticker(symbol)
+    try:
+        hist = ticker.history(period="2d")
+    except Exception as exc:
+        market_summary_logger.warning("Index history error for %s: %s", symbol, exc)
+        hist = None
+
+    close = change = change_pct = None
+    if hist is not None and not hist.empty:
+        last_row = hist.tail(1)
+        prev_row = hist.tail(2).head(1)
+        try:
+            close = float(last_row["Close"].iloc[0])
+        except Exception:
+            close = None
+        if close is not None and prev_row is not None and not prev_row.empty:
+            try:
+                prev_close = float(prev_row["Close"].iloc[0])
+                change = close - prev_close
+                if prev_close:
+                    change_pct = (change / prev_close) * 100
+            except Exception:
+                change = change_pct = None
+    return {
+        "symbol": symbol,
+        "label": label,
+        "close": close,
+        "change": change,
+        "change_percent": change_pct
+    }
+
+
+def get_market_index_snapshots():
+    snapshots = []
+    for symbol, label in MARKET_SUMMARY_INDEXES:
+        snapshot = _fetch_index_snapshot(symbol, label)
+        if snapshot:
+            snapshots.append(snapshot)
+    return snapshots
+
+
+def get_market_news_digest(max_articles=None):
+    limit = max_articles or MARKET_SUMMARY_MAX_HEADLINES
+    articles = []
+    seen_titles = set()
+    try:
+        gn = GoogleNews(lang='en', country='US')
+    except Exception as exc:
+        market_summary_logger.error("Unable to initialize Google News: %s", exc)
+        return articles
+
+    queries = [
+        "stock market today",
+        "wall street wrap",
+        "us stocks closing bell"
+    ]
+
+    for query in queries:
+        try:
+            feed = gn.search(query)
+        except Exception as exc:
+            market_summary_logger.warning("Google News search failed for '%s': %s", query, exc)
+            continue
+
+        entries = feed.get('entries') or []
+        for entry in entries:
+            title = (entry.get('title') or '').strip()
+            if not title or title.lower() in seen_titles:
+                continue
+            seen_titles.add(title.lower())
+            summary = entry.get('summary') or entry.get('description') or ''
+            link = entry.get('link')
+            published_at = entry.get('published') or entry.get('updated')
+            source_block = entry.get('source')
+            source_title = 'Unknown'
+            if isinstance(source_block, dict):
+                source_title = source_block.get('title') or source_title
+            elif isinstance(source_block, list):
+                for item in source_block:
+                    if isinstance(item, dict) and item.get('title'):
+                        source_title = item['title']
+                        break
+
+            articles.append({
+                'title': title,
+                'description': summary,
+                'link': link,
+                'publishedAt': published_at,
+                'source': source_title
+            })
+
+            if len(articles) >= limit:
+                return articles
+
+    return articles
+
+
+def _format_index_line(snapshot):
+    close = snapshot.get('close')
+    change = snapshot.get('change')
+    change_pct = snapshot.get('change_percent')
+    if close is None or change is None or change_pct is None:
+        return f"{snapshot.get('label')}: data unavailable"
+    direction = "up" if change >= 0 else "down"
+    return (
+        f"{snapshot.get('label')} ({snapshot.get('symbol')}): closed at {close:,.2f}, "
+        f"{direction} {abs(change):,.2f} points ({change_pct:+.2f}%)."
+    )
+
+
+def fallback_market_summary_text(summary_date, snapshots, headlines):
+    date_str = summary_date.strftime('%A, %B %d, %Y')
+    paragraphs = [f"Markets wrap for {date_str}."]
+    if snapshots:
+        bullet_lines = ' '.join(_format_index_line(s) for s in snapshots)
+        paragraphs.append(bullet_lines)
+    if headlines:
+        headline_text = ' '.join(f"{item['title']} ({item['source']})" for item in headlines[:3])
+        paragraphs.append(f"Top stories included {headline_text}.")
+    return '\n\n'.join(paragraphs)
+
+
+def generate_market_summary_text(summary_date, snapshots, headlines):
+    if not llm7_client:
+        return fallback_market_summary_text(summary_date, snapshots, headlines)
+
+    index_lines = '\n'.join(_format_index_line(s) for s in snapshots) or 'No index data available.'
+    news_lines = '\n'.join(
+        f"- {item['title']} ({item['source']}): {item['description']}"
+        for item in headlines
+    ) or 'No major headlines captured.'
+
+    prompt = (
+        "Write a concise market wrap article (2-3 short paragraphs) for U.S. equities. "
+        "Mention how each major index moved and weave in the headlines when relevant. "
+        "Avoid hype, keep it factual, and stay under 180 words.\n\n"
+        f"Date: {summary_date.strftime('%A, %B %d, %Y')}\n"
+        "Index recap:\n"
+        f"{index_lines}\n\n"
+        "Headline digest:\n"
+        f"{news_lines}\n"
+        "Output plain text without markdown headings."
+    )
+
+    try:
+        response = llm7_client.chat.completions.create(
+            model=LLM7_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a sharp markets reporter."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=350
+        )
+        content = response.choices[0].message.content.strip()
+        if content:
+            return content
+    except Exception as exc:
+        market_summary_logger.error("LLM7 market summary failed: %s", exc)
+
+    return fallback_market_summary_text(summary_date, snapshots, headlines)
+
+
+def serialize_market_summary(record):
+    if not record:
+        return None
+    try:
+        indices = json.loads(record.index_snapshot or '[]')
+    except json.JSONDecodeError:
+        indices = []
+    try:
+        headlines = json.loads(record.headline_sources or '[]')
+    except json.JSONDecodeError:
+        headlines = []
+
+    def _serialize_datetime(value):
+        if not value:
+            return None
+        if value.tzinfo:
+            return value.isoformat()
+        return value.replace(tzinfo=timezone.utc).isoformat()
+
+    return {
+        'id': record.id,
+        'title': record.title,
+        'body': record.body,
+        'summary_date': record.summary_date.isoformat() if record.summary_date else None,
+        'published_at': _serialize_datetime(record.published_at),
+        'created_at': _serialize_datetime(record.created_at),
+        'updated_at': _serialize_datetime(record.updated_at),
+        'indices': indices,
+        'headlines': headlines
+    }
+
+
+def ensure_market_summary_for_date(target_date=None, force=False):
+    if not MARKET_SUMMARY_ENABLED:
+        return None
+
+    now_et = datetime.now(EASTERN_TZ)
+    summary_date = target_date or now_et.date()
+    if not force and summary_date.weekday() >= 5:
+        return None
+
+    existing = MarketSummary.query.filter_by(summary_date=summary_date).first()
+    if existing and not force:
+        return existing
+
+    snapshots = get_market_index_snapshots()
+    headlines = get_market_news_digest()
+    if not snapshots and not headlines:
+        raise RuntimeError("Insufficient data for market summary")
+
+    body = generate_market_summary_text(summary_date, snapshots, headlines)
+    title = f"Market Summary — {summary_date.strftime('%B %d, %Y')}"
+    timestamp = _utcnow_naive()
+
+    index_payload = json.dumps(snapshots)
+    headline_payload = json.dumps(headlines)
+
+    try:
+        if existing:
+            existing.title = title
+            existing.body = body
+            existing.published_at = timestamp
+            existing.index_snapshot = index_payload
+            existing.headline_sources = headline_payload
+        else:
+            new_record = MarketSummary(
+                title=title,
+                body=body,
+                summary_date=summary_date,
+                published_at=timestamp,
+                index_snapshot=index_payload,
+                headline_sources=headline_payload
+            )
+            db.session.add(new_record)
+            existing = new_record
+        db.session.commit()
+        return existing
+    except Exception as exc:
+        db.session.rollback()
+        market_summary_logger.error("Failed to persist market summary: %s", exc)
+        raise
+
+
+def run_market_summary_job():
+    with app.app_context():
+        try:
+            summary = ensure_market_summary_for_date()
+            if summary:
+                market_summary_logger.info(
+                    "Market summary refreshed for %s", summary.summary_date
+                )
+        except Exception as exc:
+            market_summary_logger.error("Market summary job failed: %s", exc)
+
+
+market_summary_scheduler = None
+_scheduler_started = False
+
+
+def _should_start_market_scheduler():
+    if not MARKET_SUMMARY_ENABLED:
+        return False
+    if os.getenv("FLASK_SKIP_SCHEDULER") == "1":
+        return False
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return False
+    return True
+
+
+def start_market_summary_scheduler():
+    global market_summary_scheduler, _scheduler_started
+    if _scheduler_started or not _should_start_market_scheduler():
+        return
+    if market_summary_scheduler and market_summary_scheduler.running:
+        return
+    market_summary_scheduler = BackgroundScheduler(timezone=EASTERN_TZ)
+    trigger = CronTrigger(
+        day_of_week="mon-fri",
+        hour=MARKET_SUMMARY_RELEASE_HOUR,
+        minute=MARKET_SUMMARY_RELEASE_MINUTE,
+        timezone=EASTERN_TZ
+    )
+    market_summary_scheduler.add_job(
+        run_market_summary_job,
+        trigger=trigger,
+        id="market_summary_job",
+        replace_existing=True
+    )
+    market_summary_scheduler.start()
+    atexit.register(lambda: market_summary_scheduler.shutdown(wait=False))
+    _scheduler_started = True
+
+
+def bootstrap_market_summary_if_needed():
+    if not MARKET_SUMMARY_ENABLED:
+        return
+    now_et = datetime.now(EASTERN_TZ)
+    if now_et.weekday() >= 5:
+        return
+    minutes_now = now_et.hour * 60 + now_et.minute
+    release_minutes = MARKET_SUMMARY_RELEASE_HOUR * 60 + MARKET_SUMMARY_RELEASE_MINUTE
+    if minutes_now < release_minutes:
+        return
+    existing = MarketSummary.query.filter_by(summary_date=now_et.date()).first()
+    if existing:
+        return
+    try:
+        ensure_market_summary_for_date()
+        market_summary_logger.info("Bootstrapped market summary for %s", now_et.date())
+    except Exception as exc:
+        market_summary_logger.error("Bootstrap market summary failed: %s", exc)
+
 def get_trending_source_data(source):
     """Return trending data for a specific source identifier."""
     normalized = (source or "").lower()
@@ -991,6 +1340,13 @@ def trending_board_page():
     """Render the dedicated trending dashboards page"""
     return render_template('index.html', page_view='trending', initial_query='')
 
+
+@app.route('/market-summary')
+@limiter.limit("50 per minute")
+def market_summary_page():
+    """Render the market summary landing page"""
+    return render_template('index.html', page_view='market', initial_query='')
+
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
 def search_stock():
@@ -1061,6 +1417,39 @@ def trending_stocks():
         "stocktwits": get_trending_source_data("stocktwits") or [],
         "reddit": get_trending_source_data("reddit") or [],
         "volume": get_trending_source_data("volume") or []
+    })
+
+
+@app.route('/api/market-summary/latest', methods=['GET'])
+@limiter.limit("30 per minute")
+def market_summary_latest():
+    latest = MarketSummary.query.order_by(MarketSummary.summary_date.desc()).first()
+    if not latest:
+        try:
+            latest = ensure_market_summary_for_date()
+        except Exception as exc:
+            market_summary_logger.error("On-demand market summary failed: %s", exc)
+    if not latest:
+        return jsonify({"error": "Market summary unavailable"}), 404
+    return jsonify({"article": serialize_market_summary(latest)})
+
+
+@app.route('/api/market-summary/archive', methods=['GET'])
+@limiter.limit("30 per minute")
+def market_summary_archive():
+    try:
+        limit = int(request.args.get('limit', 20))
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 60))
+    records = (
+        MarketSummary.query.order_by(MarketSummary.summary_date.desc())
+        .limit(limit)
+        .all()
+    )
+    return jsonify({
+        "count": len(records),
+        "articles": [serialize_market_summary(rec) for rec in records]
     })
 
 
@@ -1137,6 +1526,12 @@ def sitemap_xml():
     '''Serve sitemap.xml file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
+
+
+with app.app_context():
+    bootstrap_market_summary_if_needed()
+
+start_market_summary_scheduler()
 
 
 if __name__ == '__main__':

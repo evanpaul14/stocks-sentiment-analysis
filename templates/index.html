@@ -77,6 +77,11 @@
             color: #fff;
         }
 
+        .market-page #marketSummaryBtn {
+            background: #9333ea;
+            color: #fff;
+        }
+
         .watchlist-page #trendingSection {
             display: none;
         }
@@ -840,6 +845,174 @@
             background: rgba(239, 68, 68, 0.15);
         }
 
+        .market-summary-section {
+            background-color: #0a0a0a;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(147, 51, 234, 0.2);
+        }
+
+        .market-summary-note {
+            color: #a1a1aa;
+            font-size: 14px;
+            margin-bottom: 18px;
+        }
+
+        .market-summary-card {
+            background: #11111a;
+            border-radius: 12px;
+            border: 1px solid rgba(147, 51, 234, 0.15);
+            padding: 24px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+
+        .market-summary-title {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .market-summary-meta {
+            font-size: 13px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            color: #a1a1aa;
+            margin-bottom: 16px;
+        }
+
+        .market-summary-body {
+            color: #d1d5db;
+            line-height: 1.7;
+            margin-bottom: 18px;
+        }
+
+        .market-summary-body p + p {
+            margin-top: 12px;
+        }
+
+        .market-summary-indices {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .market-index-item {
+            background: #1c1b27;
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid rgba(99,102,241,0.25);
+        }
+
+        .market-index-label {
+            font-size: 14px;
+            color: #c4b5fd;
+            margin-bottom: 6px;
+        }
+
+        .market-index-price {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .market-index-change {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .market-index-change.positive {
+            color: #33ea93;
+        }
+
+        .market-index-change.negative {
+            color: #ef4444;
+        }
+
+        .market-summary-headlines {
+            background: #13131f;
+            border-radius: 10px;
+            padding: 18px;
+            border: 1px solid rgba(147, 51, 234, 0.15);
+        }
+
+        .market-summary-headlines h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #c4b5fd;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .market-summary-headlines ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .market-summary-headlines li a {
+            color: #e0e7ff;
+            text-decoration: none;
+        }
+
+        .market-summary-headlines li a:hover {
+            text-decoration: underline;
+        }
+
+        .market-summary-headlines li span {
+            display: block;
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        .market-summary-archive {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .market-summary-archive-item {
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 14px 18px;
+            background: #0f0f19;
+        }
+
+        .market-summary-archive-item summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            list-style: none;
+            font-weight: 600;
+        }
+
+        .market-summary-archive-item summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .market-summary-archive-item[open] summary {
+            margin-bottom: 12px;
+        }
+
+        .market-summary-empty {
+            color: #a1a1aa;
+            padding: 18px;
+            background: rgba(147,51,234,0.08);
+            border-radius: 10px;
+            border: 1px dashed rgba(147,51,234,0.4);
+        }
+
+        .market-summary-empty.error {
+            background: rgba(239,68,68,0.15);
+            border-color: rgba(239,68,68,0.5);
+            color: #fecaca;
+        }
+
         @media (min-width: 721px) {
             .trending-change-inline {
                 display: none;
@@ -921,6 +1094,7 @@
                 <div class="nav-button-row">
                     <button id="trendingBtn" class="nav-pill-btn" type="button">Trending</button>
                     <button id="watchlistNavBtn" class="nav-pill-btn" type="button">Watchlist</button>
+                    <button id="marketSummaryBtn" class="nav-pill-btn" type="button">Market Summary</button>
                 </div>
             </div>
             <div class="search-box">
@@ -957,6 +1131,16 @@
             <div class="section-title" style="margin-bottom: 15px;">Your Watchlist</div>
             <div id="watchlistEmptyState" class="watchlist-empty">Save tickers to build a personalized list you can revisit with one click.</div>
             <div id="watchlistList" class="watchlist-list"></div>
+        </div>
+
+        <div class="market-summary-section" id="marketSummarySection" {% if page_view != 'market' %}style="display:none;"{% endif %}>
+            <div class="section-title" style="margin-bottom: 10px;">Daily Market Summary</div>
+            <p class="market-summary-note">Fresh articles publish Monday–Friday at 4:15 PM ET.</p>
+            <div id="marketSummaryLatest" class="market-summary-latest">
+                <div class="market-summary-empty">Latest edition will appear here once published.</div>
+            </div>
+            <div class="section-title" style="margin: 20px 0 10px; font-size: 18px;">Recent Editions</div>
+            <div class="market-summary-archive" id="marketSummaryArchive"></div>
         </div>
 
         <div id="results">
@@ -1119,15 +1303,20 @@
     const watchlistListEl = document.getElementById('watchlistList');
     const watchlistEmptyStateEl = document.getElementById('watchlistEmptyState');
     const watchlistSectionEl = document.getElementById('watchlistSection');
+    const marketSummarySectionEl = document.getElementById('marketSummarySection');
+    const marketSummaryLatestEl = document.getElementById('marketSummaryLatest');
+    const marketSummaryArchiveEl = document.getElementById('marketSummaryArchive');
     const pageVariant = document.body.dataset.page || 'home';
     const initialSearchQuery = document.body.dataset.searchQuery || '';
     const isHomePage = pageVariant === 'home';
     const isWatchlistPage = pageVariant === 'watchlist';
     const isTrendingPage = pageVariant === 'trending';
     const isSearchPage = pageVariant === 'search';
+    const isMarketPage = pageVariant === 'market';
     const homeTitleEl = document.getElementById('homeTitle');
     const trendingBtnEl = document.getElementById('trendingBtn');
     const watchlistNavBtnEl = document.getElementById('watchlistNavBtn');
+    const marketSummaryBtnEl = document.getElementById('marketSummaryBtn');
     let watchlistStorageAvailable = true;
     let watchlistHasEntries = false;
     let homePrimaryPanel = 'watchlist';
@@ -1192,6 +1381,35 @@
             if (diffHours < 24) return `${diffHours}h ago`;
             const diffDays = Math.floor(diffHours / 24);
             return `${diffDays}d ago`;
+        }
+
+        function formatMarketSummaryTimestamp(isoString) {
+            if (!isoString) return 'Pending release';
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) return 'Pending release';
+            return date.toLocaleString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
+
+        function createParagraphNodes(container, text) {
+            const bodyText = (text || '').split(/\n+/).map(p => p.trim()).filter(Boolean);
+            if (!bodyText.length) {
+                const fallback = document.createElement('p');
+                fallback.textContent = 'Summary coming soon.';
+                container.appendChild(fallback);
+                return;
+            }
+            bodyText.forEach(chunk => {
+                const p = document.createElement('p');
+                p.textContent = chunk;
+                container.appendChild(p);
+            });
         }
 
         function readWatchlist() {
@@ -1634,7 +1852,7 @@
                 watchlistSectionEl.style.display = show === false ? 'none' : '';
                 return;
             }
-            if (isTrendingPage || isSearchPage) {
+            if (isTrendingPage || isSearchPage || isMarketPage) {
                 watchlistSectionEl.style.display = 'none';
                 return;
             }
@@ -1675,6 +1893,23 @@
                 console.error('Quote fetch error:', error);
                 return null;
             }
+        }
+
+        async function fetchJson(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                let message = 'Request failed';
+                try {
+                    const data = await response.json();
+                    if (data && data.error) {
+                        message = data.error;
+                    }
+                } catch (err) {
+                    // ignore parse errors
+                }
+                throw new Error(message);
+            }
+            return response.json();
         }
 
         async function refreshWatchlistPrices() {
@@ -1865,6 +2100,130 @@
                     ${changeRight}
                 `;
                 list.appendChild(div);
+            });
+        }
+
+        function renderMarketSummaryIndices(indices) {
+            if (!indices || !indices.length) return null;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'market-summary-indices';
+            indices.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'market-index-item';
+                const label = document.createElement('div');
+                label.className = 'market-index-label';
+                label.textContent = item.label || item.symbol || 'Index';
+                const price = document.createElement('div');
+                price.className = 'market-index-price';
+                price.textContent = Number.isFinite(item.close) ? formatCurrency(item.close) : '—';
+                const change = document.createElement('div');
+                change.className = 'market-index-change';
+                if (Number.isFinite(item.change_percent)) {
+                    change.textContent = formatSignedPercentage(item.change_percent);
+                    change.classList.add(item.change_percent >= 0 ? 'positive' : 'negative');
+                } else {
+                    change.textContent = '—';
+                }
+                card.appendChild(label);
+                card.appendChild(price);
+                card.appendChild(change);
+                wrapper.appendChild(card);
+            });
+            return wrapper;
+        }
+
+        function renderMarketSummaryHeadlines(headlines) {
+            if (!headlines || !headlines.length) return null;
+            const container = document.createElement('div');
+            container.className = 'market-summary-headlines';
+            const title = document.createElement('h3');
+            title.textContent = 'Headline drivers';
+            container.appendChild(title);
+            const list = document.createElement('ul');
+            headlines.forEach(item => {
+                const li = document.createElement('li');
+                const linkTarget = item.link && item.link.startsWith('http') ? item.link : null;
+                const headlineEl = linkTarget ? document.createElement('a') : document.createElement('span');
+                headlineEl.textContent = item.title || 'Story';
+                if (linkTarget) {
+                    headlineEl.href = linkTarget;
+                    headlineEl.target = '_blank';
+                    headlineEl.rel = 'noopener noreferrer';
+                }
+                const meta = document.createElement('span');
+                const metaParts = [];
+                if (item.source) metaParts.push(item.source);
+                if (item.publishedAt) metaParts.push(formatDate(item.publishedAt));
+                meta.textContent = metaParts.join(' • ');
+                li.appendChild(headlineEl);
+                if (metaParts.length) {
+                    li.appendChild(meta);
+                }
+                list.appendChild(li);
+            });
+            container.appendChild(list);
+            return container;
+        }
+
+        function renderMarketSummaryLatest(article) {
+            if (!marketSummaryLatestEl) return;
+            marketSummaryLatestEl.innerHTML = '';
+            if (!article) {
+                marketSummaryLatestEl.innerHTML = '<div class="market-summary-empty">Latest edition is not available yet. Check back after 4:15 PM ET.</div>';
+                return;
+            }
+            const card = document.createElement('article');
+            card.className = 'market-summary-card';
+            const titleEl = document.createElement('h2');
+            titleEl.className = 'market-summary-title';
+            titleEl.textContent = article.title || 'Market Summary';
+            const metaEl = document.createElement('div');
+            metaEl.className = 'market-summary-meta';
+            metaEl.textContent = `Published ${formatMarketSummaryTimestamp(article.published_at || article.created_at)}`;
+            const bodyEl = document.createElement('div');
+            bodyEl.className = 'market-summary-body';
+            createParagraphNodes(bodyEl, article.body);
+            card.appendChild(titleEl);
+            card.appendChild(metaEl);
+            card.appendChild(bodyEl);
+            const indicesEl = renderMarketSummaryIndices(article.indices || []);
+            if (indicesEl) {
+                card.appendChild(indicesEl);
+            }
+            const headlinesEl = renderMarketSummaryHeadlines(article.headlines || []);
+            if (headlinesEl) {
+                card.appendChild(headlinesEl);
+            }
+            marketSummaryLatestEl.appendChild(card);
+        }
+
+        function renderMarketSummaryArchive(items, latestId) {
+            if (!marketSummaryArchiveEl) return;
+            marketSummaryArchiveEl.innerHTML = '';
+            const filtered = (items || []).filter(item => item.id !== latestId);
+            if (!filtered.length) {
+                marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty">No earlier editions yet.</div>';
+                return;
+            }
+            filtered.forEach((item, index) => {
+                const details = document.createElement('details');
+                details.className = 'market-summary-archive-item';
+                if (index === 0) details.open = true;
+                const summary = document.createElement('summary');
+                const titleSpan = document.createElement('span');
+                titleSpan.textContent = item.title || 'Market Summary';
+                const dateSpan = document.createElement('span');
+                dateSpan.style.fontSize = '13px';
+                dateSpan.style.color = '#a1a1aa';
+                dateSpan.textContent = formatMarketSummaryTimestamp(item.published_at || item.created_at);
+                summary.appendChild(titleSpan);
+                summary.appendChild(dateSpan);
+                const bodyEl = document.createElement('div');
+                bodyEl.className = 'market-summary-body';
+                createParagraphNodes(bodyEl, item.body);
+                details.appendChild(summary);
+                details.appendChild(bodyEl);
+                marketSummaryArchiveEl.appendChild(details);
             });
         }
 
@@ -2263,7 +2622,11 @@
                 refreshWatchlistPrices();
             }
 
-            if (isTrendingPage) {
+            if (isMarketPage) {
+                showWatchlistSection(false);
+                showTrendingSection(false);
+                loadMarketSummaryContent();
+            } else if (isTrendingPage) {
                 showTrendingSection(true);
                 loadTrendingStocks();
             } else {
@@ -2351,6 +2714,28 @@
                 loadTrendingSource(source, options);
             });
         }
+
+        async function loadMarketSummaryContent() {
+            if (!marketSummarySectionEl) return;
+            try {
+                const [latestPayload, archivePayload] = await Promise.all([
+                    fetchJson('/api/market-summary/latest'),
+                    fetchJson('/api/market-summary/archive?limit=10')
+                ]);
+                const latestArticle = latestPayload && latestPayload.article;
+                const archiveItems = (archivePayload && archivePayload.articles) || [];
+                renderMarketSummaryLatest(latestArticle);
+                renderMarketSummaryArchive(archiveItems, latestArticle && latestArticle.id);
+            } catch (error) {
+                console.error('Market summary load error:', error);
+                if (marketSummaryLatestEl) {
+                    marketSummaryLatestEl.innerHTML = `<div class="market-summary-empty error">${error.message || 'Unable to load market summary.'}</div>`;
+                }
+                if (marketSummaryArchiveEl) {
+                    marketSummaryArchiveEl.innerHTML = '';
+                }
+            }
+        }
         // Hide trending-section after a search, show on home
         function showTrendingSection(show) {
             const trendingSection = document.getElementById('trendingSection');
@@ -2359,7 +2744,7 @@
                 trendingSection.style.display = '';
                 return;
             }
-            if (isWatchlistPage || isSearchPage) {
+            if (isWatchlistPage || isSearchPage || isMarketPage) {
                 trendingSection.style.display = 'none';
                 return;
             }
@@ -2414,6 +2799,13 @@
                 } else {
                     window.location.href = '/watchlist';
                 }
+            });
+        }
+
+        if (marketSummaryBtnEl) {
+            marketSummaryBtnEl.addEventListener('click', () => {
+                if (isMarketPage) return;
+                window.location.href = '/market-summary';
             });
         }
 

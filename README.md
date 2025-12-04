@@ -14,11 +14,12 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 - Interactive historical charts powered by Chart.js (1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL).
 - AI-powered news sentiment per article using Google Gemma (via google-genai) and a sentiment summary.
 - Intraday movement insights: when a stock moves more than 3% intraday, the app summarizes key catalysts using Finnhub headlines and LLM7 (if available).
+- Scheduled “Market Summary” page: every weekday at 4:15 PM ET the app captures top index moves + Google News headlines, runs them through LLM7, saves the article, and exposes a browsable archive.
 - Rate-limited endpoints to protect third-party quotas and avoid abuse.
 
 ## Technology Stack
 
-**Backend:** Flask, Flask-Limiter, yfinance, yahooquery, pygooglenews, google-genai (Gemma), openai (LLM7 client), finnhub-python, cloudscraper, requests, python-dotenv, gunicorn
+**Backend:** Flask, Flask-Limiter, Flask-SQLAlchemy (SQLite), yfinance, yahooquery, pygooglenews, google-genai (Gemma), openai (LLM7 client), finnhub-python, cloudscraper, requests, APScheduler, python-dotenv, gunicorn
 
 **Frontend:** HTML5/CSS3, Chart.js, Vanilla JavaScript (no build step)
 
@@ -84,6 +85,7 @@ This app exposes a small JSON API consumed by the front-end. All endpoints are r
 - `GET /watchlist` — same app with watchlist page view. Rate Limit: 50/min
 - `GET /results?q=<query>` — search results page (client-side flow). Rate Limit: 50/min
 - `GET /trending-list` — render the dedicated trending dashboards page. Rate Limit: 50/min
+- `GET /market-summary` — render the Market Summary page (archives + latest wrap). Rate Limit: 50/min
 - `POST /search` — search for a company name and return a combined payload containing `stock_info`, `historical_data`, `articles`, `sentiment_summary`, `overall_sentiment` and optional `movement_insight`. Rate Limit: 10/min
   Request JSON: `{ "company_name": "Apple" }`
 
@@ -92,6 +94,8 @@ This app exposes a small JSON API consumed by the front-end. All endpoints are r
 - `GET /trending` — return combined trending data for `stocktwits`, `reddit`, and `volume` (Alpaca). Rate Limit: 30/min
 - `GET /trending/<source>` — return a single source's trending data: `stocktwits`, `reddit`, or `volume`. Rate Limit: 30/min
 - `GET /quote/<symbol>` — small snapshot used by the frontend to refresh watchlist prices `{symbol, price, change_percent, timestamp}`. Rate Limit: 50/min
+- `GET /api/market-summary/latest` — latest published market summary article + metadata. Rate Limit: 30/min
+- `GET /api/market-summary/archive?limit=20` — most recent archived summaries (default 20, max 60). Rate Limit: 30/min
 
 ### Response shapes (high level)
 
@@ -112,6 +116,12 @@ The `POST /search` response includes the following shape:
 - Change the Gemma model in `main.py` by editing `gemma_model` (default `gemma-3-27b-it`).
 - Adjust in-process Gemma throttling with `GEMMA_MAX_CALLS_PER_MINUTE` and `GEMMA_RATE_WINDOW_SECONDS` in `.env`.
 - The number of news articles analyzed is controlled in code via `get_news_articles(symbol, num_articles)` (default is 10).
+
+### Market Summary automation
+
+- The Market Summary page uses APScheduler to run a background job each weekday at **4:15 PM Eastern**. The job collects S&P 500 / Nasdaq / Dow closing stats, scrapes Google News for “stock market today” style headlines, and asks LLM7 to write a short wrap. Articles are stored in SQLite and exposed via `/api/market-summary/latest` plus `/api/market-summary/archive`.
+- Set `ENABLE_MARKET_SUMMARY=0` to disable the feature entirely, or `FLASK_SKIP_SCHEDULER=1` to keep the scheduler from running (useful on secondary workers or during development). The publish slot and headline count can be tuned with `MARKET_SUMMARY_RELEASE_HOUR`, `MARKET_SUMMARY_RELEASE_MINUTE`, and `MARKET_SUMMARY_MAX_HEADLINES`.
+- Google News and LLM7 are both required for the richest article, but the job will fall back to a deterministic text summary if LLM7 is unavailable.
 
 ## Tips & Notes
 
