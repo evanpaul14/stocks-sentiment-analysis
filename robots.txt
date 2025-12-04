@@ -5,6 +5,7 @@ Disallow: /watchlist
 Disallow: /trending
 Disallow: /static/
 Disallow: /google-verification
+Disallow: /api/
 Allow: /
 
 Sitemap: https://stocksentimentapp.com/sitemap.xml

@@ -48,13 +48,6 @@ def _utcnow_naive():
 EASTERN_TZ = ZoneInfo("America/New_York")
 
 
-# IP logging model
-class IPLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    ip_address = db.Column(db.String(64), unique=True, nullable=False)
-    first_seen = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
-
-
 class MarketSummary(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
@@ -69,40 +62,6 @@ class MarketSummary(db.Model):
 with app.app_context():
     db.create_all()
 
-_last_ip_cleanup_run = None
-IP_CLEANUP_INTERVAL = timedelta(days=1)
-
-@app.before_request
-def log_ip_address():
-    global _last_ip_cleanup_run
-
-    # run cleanup once per day
-    now = _utcnow_naive()
-    if _last_ip_cleanup_run is None or (now - _last_ip_cleanup_run) >= IP_CLEANUP_INTERVAL:
-        cutoff = now - timedelta(days=30)
-        IPLog.query.filter(IPLog.first_seen < cutoff).delete()
-        db.session.commit()
-        _last_ip_cleanup_run = now
-
-    # determine client ip
-    raw_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if not raw_ip:
-        return
-
-    # take first IP if multiple
-    ip = raw_ip.split(',')[0].strip()
-
-    existing = IPLog.query.filter_by(ip_address=ip).first()
-    if not existing:
-        log = IPLog()
-        log.ip_address = ip
-        log.first_seen = _utcnow_naive()
-        db.session.add(log)
-        try:
-            db.session.commit()
-        except Exception as e:
-            print(f"Error committing IPLog: {e}")
-            db.session.rollback()
 
 
 # set up rate limiting
@@ -615,6 +574,7 @@ MARKET_SUMMARY_INDEXES = (
 MARKET_SUMMARY_MAX_HEADLINES = max(3, _get_int_env("MARKET_SUMMARY_MAX_HEADLINES", 8))
 MARKET_SUMMARY_RELEASE_HOUR = max(0, min(23, _get_int_env("MARKET_SUMMARY_RELEASE_HOUR", 16)))
 MARKET_SUMMARY_RELEASE_MINUTE = max(0, min(59, _get_int_env("MARKET_SUMMARY_RELEASE_MINUTE", 15)))
+MARKET_SUMMARY_RETENTION_DAYS = max(30, _get_int_env("MARKET_SUMMARY_RETENTION_DAYS", 90))
 MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "false", "False"}
 
 
@@ -814,6 +774,22 @@ def serialize_market_summary(record):
     }
 
 
+def prune_market_summary_history(cutoff_date=None):
+    if not MARKET_SUMMARY_ENABLED:
+        return 0
+
+    if cutoff_date is None:
+        cutoff_date = datetime.now(EASTERN_TZ).date() - timedelta(days=MARKET_SUMMARY_RETENTION_DAYS)
+
+    if cutoff_date > datetime.now(EASTERN_TZ).date():
+        return 0
+
+    deleted = MarketSummary.query.filter(MarketSummary.summary_date < cutoff_date).delete()
+    if deleted:
+        db.session.commit()
+    return deleted
+
+
 def ensure_market_summary_for_date(target_date=None, force=False):
     if not MARKET_SUMMARY_ENABLED:
         return None
@@ -858,11 +834,19 @@ def ensure_market_summary_for_date(target_date=None, force=False):
             db.session.add(new_record)
             existing = new_record
         db.session.commit()
-        return existing
     except Exception as exc:
         db.session.rollback()
         market_summary_logger.error("Failed to persist market summary: %s", exc)
         raise
+
+    try:
+        pruned = prune_market_summary_history()
+        if pruned:
+            market_summary_logger.info("Pruned %s stale market summaries", pruned)
+    except Exception as exc:
+        market_summary_logger.error("Failed to prune market summary history: %s", exc)
+
+    return existing
 
 
 def run_market_summary_job():
@@ -1425,12 +1409,9 @@ def trending_stocks():
 def market_summary_latest():
     latest = MarketSummary.query.order_by(MarketSummary.summary_date.desc()).first()
     if not latest:
-        try:
-            latest = ensure_market_summary_for_date()
-        except Exception as exc:
-            market_summary_logger.error("On-demand market summary failed: %s", exc)
-    if not latest:
-        return jsonify({"error": "Market summary unavailable"}), 404
+        return jsonify({
+            "error": "Market summary unavailable yet. New articles publish at 4:15 PM ET on trading days."
+        }), 404
     return jsonify({"article": serialize_market_summary(latest)})
 
 
