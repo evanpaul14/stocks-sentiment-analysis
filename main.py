@@ -23,6 +23,8 @@ import atexit
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 
 load_dotenv()
 
@@ -58,9 +60,76 @@ class MarketSummary(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, onupdate=_utcnow_naive)
     index_snapshot = db.Column(db.Text)
     headline_sources = db.Column(db.Text)
+    __table_args__ = (
+        db.UniqueConstraint('summary_date', name='uq_market_summary_summary_date'),
+    )
+
+
+def dedupe_market_summaries(summary_date=None):
+    """Ensure only one MarketSummary row exists per date."""
+    query = db.session.query(
+        MarketSummary.summary_date,
+        func.count(MarketSummary.id).label("row_count")
+    )
+    if summary_date is not None:
+        query = query.filter(MarketSummary.summary_date == summary_date)
+
+    duplicates = (
+        query.group_by(MarketSummary.summary_date)
+        .having(func.count(MarketSummary.id) > 1)
+        .all()
+    )
+
+    removed = 0
+    for duplicate_date, _ in duplicates:
+        rows = (
+            MarketSummary.query
+            .filter_by(summary_date=duplicate_date)
+            .order_by(MarketSummary.published_at.desc(), MarketSummary.id.desc())
+            .all()
+        )
+        keeper = rows[0]
+        for extra in rows[1:]:
+            db.session.delete(extra)
+            removed += 1
+        market_summary_logger.warning(
+            "Detected %s duplicate market summaries for %s; trimmed extras.",
+            len(rows) - 1,
+            duplicate_date
+        )
+
+    if removed:
+        db.session.commit()
+    return removed
+
+
+def ensure_market_summary_unique_index():
+    """Create a unique index on summary_date if the database allows it."""
+    try:
+        db.session.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_market_summary_summary_date "
+                "ON market_summary (summary_date)"
+            )
+        )
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        market_summary_logger.warning(
+            "Unable to enforce unique index for market summaries: %s",
+            exc
+        )
 
 with app.app_context():
     db.create_all()
+    try:
+        dedupe_market_summaries()
+        ensure_market_summary_unique_index()
+    except Exception as exc:
+        market_summary_logger.warning(
+            "Market summary uniqueness bootstrap failed: %s",
+            exc
+        )
 
 
 
@@ -799,6 +868,7 @@ def ensure_market_summary_for_date(target_date=None, force=False):
     if not force and summary_date.weekday() >= 5:
         return None
 
+    dedupe_market_summaries(summary_date)
     existing = MarketSummary.query.filter_by(summary_date=summary_date).first()
     if existing and not force:
         return existing
@@ -815,25 +885,38 @@ def ensure_market_summary_for_date(target_date=None, force=False):
     index_payload = json.dumps(snapshots)
     headline_payload = json.dumps(headlines)
 
+    def _apply_payload(record):
+        record.title = title
+        record.body = body
+        record.published_at = timestamp
+        record.index_snapshot = index_payload
+        record.headline_sources = headline_payload
+
     try:
-        if existing:
-            existing.title = title
-            existing.body = body
-            existing.published_at = timestamp
-            existing.index_snapshot = index_payload
-            existing.headline_sources = headline_payload
-        else:
-            new_record = MarketSummary(
-                title=title,
-                body=body,
-                summary_date=summary_date,
-                published_at=timestamp,
-                index_snapshot=index_payload,
-                headline_sources=headline_payload
-            )
-            db.session.add(new_record)
-            existing = new_record
+        target_record = existing or MarketSummary(summary_date=summary_date)
+        if not existing:
+            db.session.add(target_record)
+        _apply_payload(target_record)
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        dedupe_market_summaries(summary_date)
+        conflict_record = MarketSummary.query.filter_by(summary_date=summary_date).first()
+        if conflict_record and not force:
+            return conflict_record
+        if not conflict_record:
+            conflict_record = MarketSummary(summary_date=summary_date)
+            db.session.add(conflict_record)
+        _apply_payload(conflict_record)
+        try:
+            db.session.commit()
+            target_record = conflict_record
+        except Exception as exc:
+            db.session.rollback()
+            market_summary_logger.error(
+                "Failed to persist market summary after dedupe: %s", exc
+            )
+            raise
     except Exception as exc:
         db.session.rollback()
         market_summary_logger.error("Failed to persist market summary: %s", exc)
@@ -846,7 +929,7 @@ def ensure_market_summary_for_date(target_date=None, force=False):
     except Exception as exc:
         market_summary_logger.error("Failed to prune market summary history: %s", exc)
 
-    return existing
+    return target_record
 
 
 def run_market_summary_job():
