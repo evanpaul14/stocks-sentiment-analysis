@@ -230,7 +230,7 @@ _ai_call_timestamps = deque()
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 UNSPLASH_APP_NAME = os.getenv("UNSPLASH_APP_NAME", "stocks-sentiment-analysis")
-UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "stocks")
+UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "stock market")
 UNSPLASH_TIMEOUT_SECONDS = max(3, _get_int_env("UNSPLASH_TIMEOUT_SECONDS", 10))
 UNSPLASH_RANDOM_URL = "https://api.unsplash.com/photos/random"
 UNSPLASH_ENABLED = bool(UNSPLASH_ACCESS_KEY)
