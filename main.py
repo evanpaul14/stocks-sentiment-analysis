@@ -5,6 +5,7 @@ from pygooglenews import GoogleNews
 from yahooquery import search
 import yfinance as yf
 import re
+import hashlib
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
 load_dotenv()
 
@@ -33,6 +35,7 @@ log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO))
 summary_logger = logging.getLogger("stocktwits.summary")
 market_summary_logger = logging.getLogger("market.summary")
+unsplash_logger = logging.getLogger("unsplash")
 
 
 app = Flask(__name__)
@@ -42,12 +45,47 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 
+@app.context_processor
+def inject_unsplash_globals():
+    return {"unsplash_referral_url": _build_unsplash_referral_url()}
+
+
 def _utcnow_naive():
     """Return a timezone-naive UTC datetime without using deprecated utcnow."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 EASTERN_TZ = ZoneInfo("America/New_York")
+
+
+class ArticleImage(db.Model):
+    __tablename__ = "article_images"
+
+    id = db.Column(db.Integer, primary_key=True)
+    article_key = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    article_url = db.Column(db.Text, nullable=True)
+    query = db.Column(db.String(255), nullable=True)
+    image_url = db.Column(db.String(512), nullable=False)
+    thumbnail_url = db.Column(db.String(512), nullable=True)
+    description = db.Column(db.String(512), nullable=True)
+    photographer_name = db.Column(db.String(255), nullable=True)
+    photographer_username = db.Column(db.String(255), nullable=True)
+    photographer_profile_url = db.Column(db.String(512), nullable=True)
+    unsplash_photo_id = db.Column(db.String(64), nullable=True, index=True)
+    unsplash_photo_link = db.Column(db.String(512), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+    updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, onupdate=_utcnow_naive)
+
+    def as_payload(self):
+        return {
+            "url": self.image_url,
+            "thumbnail": self.thumbnail_url,
+            "description": self.description,
+            "photographer": self.photographer_name,
+            "photographer_username": self.photographer_username,
+            "photographer_profile": self.photographer_profile_url,
+            "unsplash_link": self.unsplash_photo_link,
+        }
 
 
 class MarketSummary(db.Model):
@@ -189,6 +227,18 @@ def _get_int_env(var_name, default):
 AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
 AI_RATE_WINDOW_SECONDS = max(1, _get_int_env("GEMMA_RATE_WINDOW_SECONDS", 60))
 _ai_call_timestamps = deque()
+
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+UNSPLASH_APP_NAME = os.getenv("UNSPLASH_APP_NAME", "stocks-sentiment-analysis")
+UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "finance trading stock market")
+UNSPLASH_TIMEOUT_SECONDS = max(3, _get_int_env("UNSPLASH_TIMEOUT_SECONDS", 10))
+UNSPLASH_RANDOM_URL = "https://api.unsplash.com/photos/random"
+UNSPLASH_ENABLED = bool(UNSPLASH_ACCESS_KEY)
+
+
+def _build_unsplash_referral_url():
+    source_value = (UNSPLASH_APP_NAME or 'stocks-sentiment-analysis').replace(' ', '-').lower()
+    return f"https://unsplash.com/?utm_source={source_value}&utm_medium=referral"
 
 
 def wait_for_ai_rate_slot():
@@ -1152,6 +1202,200 @@ def get_news_articles(stock_symbol, num_articles=10):
         return []
 
 
+def _build_article_locator(article):
+    if not article:
+        return None
+    for key in ('link', 'url'):
+        candidate = (article.get(key) or '').strip()
+        if candidate:
+            return candidate
+    title = (article.get('title') or '').strip()
+    if title:
+        return title
+    return None
+
+
+def _fingerprint_article(article):
+    locator = _build_article_locator(article)
+    if not locator:
+        return None
+    try:
+        return hashlib.sha256(locator.encode('utf-8')).hexdigest()
+    except Exception:
+        return None
+
+
+def _sanitize_unsplash_query_text(value):
+    if not value:
+        return None
+    cleaned = re.sub(r'[^A-Za-z0-9\s]', ' ', value)
+    cleaned = ' '.join(cleaned.split())
+    if not cleaned:
+        return None
+    return ' '.join(cleaned.split()[:6])
+
+
+def _resolve_unsplash_query(article, fallback_query=None):
+    candidates = [
+        article.get('title') if article else None,
+        article.get('description') if article else None,
+        fallback_query,
+        UNSPLASH_DEFAULT_QUERY
+    ]
+    for candidate in candidates:
+        normalized = _sanitize_unsplash_query_text(candidate)
+        if normalized:
+            return normalized
+    return UNSPLASH_DEFAULT_QUERY
+
+
+def _unsplash_headers():
+    if not UNSPLASH_ACCESS_KEY:
+        return {}
+    return {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
+
+
+def _append_utm_params(url):
+    if not url:
+        return url
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    source_value = (UNSPLASH_APP_NAME or 'stocks-sentiment-analysis').replace(' ', '-').lower()
+    query_items['utm_source'] = source_value
+    query_items['utm_medium'] = 'referral'
+    new_query = urlencode(query_items)
+    new_parts = parsed._replace(query=new_query)
+    return urlunparse(new_parts)
+
+
+def _request_unsplash_photo(query):
+    if not UNSPLASH_ENABLED:
+        return None
+    params = {
+        'query': query or UNSPLASH_DEFAULT_QUERY,
+        'orientation': 'landscape',
+        'count': 1,
+        'content_filter': 'high'
+    }
+    try:
+        resp = requests.get(
+            UNSPLASH_RANDOM_URL,
+            params=params,
+            headers=_unsplash_headers(),
+            timeout=UNSPLASH_TIMEOUT_SECONDS
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if isinstance(payload, list):
+            return payload[0] if payload else None
+        return payload
+    except Exception as exc:
+        unsplash_logger.warning("Unsplash lookup failed for '%s': %s", query, exc)
+        return None
+
+
+def _register_unsplash_download(download_url):
+    if not (UNSPLASH_ENABLED and download_url):
+        return
+    try:
+        requests.get(
+            download_url,
+            params={'client_id': UNSPLASH_ACCESS_KEY},
+            headers=_unsplash_headers(),
+            timeout=UNSPLASH_TIMEOUT_SECONDS
+        )
+    except Exception as exc:
+        unsplash_logger.debug("Unsplash download ping failed: %s", exc)
+
+
+def _persist_article_image(article_key, article_url, query, photo):
+    if not photo:
+        return None
+    urls = photo.get('urls') or {}
+    image_url = urls.get('regular') or urls.get('full')
+    if not image_url:
+        return None
+    user_info = photo.get('user') or {}
+    user_links = user_info.get('links') or {}
+    photo_links = photo.get('links') or {}
+
+    profile_link = user_links.get('html')
+    if not profile_link and user_info.get('username'):
+        profile_link = f"https://unsplash.com/@{user_info.get('username')}"
+    photo_link = photo_links.get('html')
+    if not photo_link and photo.get('id'):
+        photo_link = f"https://unsplash.com/photos/{photo.get('id')}"
+
+    record = ArticleImage(
+        article_key=article_key,
+        article_url=article_url,
+        query=query,
+        image_url=image_url,
+        thumbnail_url=urls.get('small') or urls.get('thumb'),
+        description=photo.get('description') or photo.get('alt_description'),
+        photographer_name=user_info.get('name'),
+        photographer_username=user_info.get('username'),
+        photographer_profile_url=_append_utm_params(profile_link or _build_unsplash_referral_url()),
+        unsplash_photo_id=photo.get('id'),
+        unsplash_photo_link=_append_utm_params(photo_link or _build_unsplash_referral_url())
+    )
+
+    db.session.add(record)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        existing = ArticleImage.query.filter_by(article_key=article_key).first()
+        return existing.as_payload() if existing else None
+    except Exception as exc:
+        db.session.rollback()
+        unsplash_logger.error("Unable to persist article image: %s", exc)
+        return None
+
+    return record.as_payload()
+
+
+def fetch_article_image_payload(article, fallback_query=None):
+    if not UNSPLASH_ENABLED:
+        return None
+    article_key = _fingerprint_article(article)
+    if not article_key:
+        return None
+
+    existing = ArticleImage.query.filter_by(article_key=article_key).first()
+    if existing:
+        return existing.as_payload()
+
+    query = _resolve_unsplash_query(article, fallback_query)
+    photo = _request_unsplash_photo(query)
+    if not photo:
+        return None
+
+    download_url = (photo.get('links') or {}).get('download_location')
+    _register_unsplash_download(download_url)
+
+    return _persist_article_image(
+        article_key,
+        _build_article_locator(article),
+        query,
+        photo
+    )
+
+
+def enrich_articles_with_unsplash_images(articles, fallback_query=None):
+    if not (UNSPLASH_ENABLED and articles):
+        return
+    for article in articles:
+        if article.get('image'):
+            continue
+        image_payload = fetch_article_image_payload(article, fallback_query)
+        if image_payload:
+            article['image'] = image_payload
+
+
 def fetch_finnhub_company_news(symbol, max_articles=6, lookback_days=5):
     if not finnhub_client or not symbol:
         return []
@@ -1360,6 +1604,8 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
 
 def build_sentiment_payload(symbol, company_name=None):
     articles = get_news_articles(symbol, 10)
+    fallback_query = f"{company_name or symbol} stock market"
+    enrich_articles_with_unsplash_images(articles, fallback_query)
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
     for article in articles:
         sentiment = analyze_sentiment_gemma(

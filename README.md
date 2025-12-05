@@ -13,6 +13,7 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 - Real-time price and after-hours information, market statistics, and a company overview.
 - Interactive historical charts powered by Chart.js (1D, 1W, 1M, 3M, YTD, 1Y, 5Y, ALL).
 - AI-powered news sentiment per article using Google Gemma (via google-genai) and a sentiment summary.
+- News cards show curated Unsplash photography with required attribution for each article.
 - Intraday movement insights: when a stock moves more than 3% intraday, the app summarizes key catalysts using Finnhub headlines and LLM7 (if available).
 - Scheduled “Market Summary” page: every weekday at 4:15 PM ET the app captures top index moves + Google News headlines, runs them through LLM7, saves the article, and exposes a browsable archive.
 - Rate-limited endpoints to protect third-party quotas and avoid abuse.
@@ -29,6 +30,7 @@ A real-time stock analysis dashboard combining financial data, AI-powered news s
 
 - Python 3.8 or higher
 - Google API Key (for Gemma AI) — REQUIRED. The application will raise a ValueError and refuse to start if this is not set.
+- Unsplash Access Key — required for article imagery. Set `UNSPLASH_ACCESS_KEY` (and optional `UNSPLASH_APP_NAME`) to keep credentials on the server side per Unsplash API policy.
 - Alpaca API Key/Secret — optional for the volume dashboard. The app accepts either `ALPACA_API_KEY_ID` (or `ALPACA_API_KEY`) and `ALPACA_API_SECRET_KEY` (or `ALPACA_SECRET_KEY`).
 - FINNHUB_API_KEY — optional; Finnhub headlines are used to explain moves when present (fallback to Google News if not set).
 - LLM7_API_KEY — optional; used to generate concise movement summaries. If missing the app will fall back to a shorter message.
@@ -63,6 +65,10 @@ LLM7_MODEL=fast                      # optional override
 GEMMA_MAX_CALLS_PER_MINUTE=45       # (optional) in-process throttle for Gemma calls
 GEMMA_RATE_WINDOW_SECONDS=60
 TRENDING_PRICE_TTL_SECONDS=120      # cache TTL for small price snapshots used on trending cards
+UNSPLASH_ACCESS_KEY=your_unsplash_access_key
+UNSPLASH_APP_NAME=stock-sentiment-analysis   # used for attribution links
+UNSPLASH_DEFAULT_QUERY=finance trading stock market
+UNSPLASH_TIMEOUT_SECONDS=10
 ```
 
 Note: The app requires a valid `GOOGLE_API_KEY`; it will raise an error if unset. Everything else is optional but enhances features.
@@ -116,6 +122,7 @@ The `POST /search` response includes the following shape:
 - Change the Gemma model in `main.py` by editing `gemma_model` (default `gemma-3-27b-it`).
 - Adjust in-process Gemma throttling with `GEMMA_MAX_CALLS_PER_MINUTE` and `GEMMA_RATE_WINDOW_SECONDS` in `.env`.
 - The number of news articles analyzed is controlled in code via `get_news_articles(symbol, num_articles)` (default is 10).
+- Unsplash integration respects their API guidelines: all article imagery is fetched server-side using `UNSPLASH_ACCESS_KEY`, every display uses URLs from `photo.urls.*`, download events are registered through `photo.links.download_location`, and attribution links carry the configured `UNSPLASH_APP_NAME` with `utm_medium=referral`. Update `UNSPLASH_DEFAULT_QUERY` and `UNSPLASH_TIMEOUT_SECONDS` to fine-tune behavior.
 
 ### Market Summary automation
 

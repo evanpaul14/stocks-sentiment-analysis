@@ -432,6 +432,38 @@
             background-color: #1a1a1a;
         }
 
+        .news-image-wrapper {
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 14px;
+            background: #050505;
+        }
+
+        .news-image-wrapper img {
+            width: 100%;
+            display: block;
+            object-fit: cover;
+            max-height: 280px;
+        }
+
+        .unsplash-attribution {
+            font-size: 11px;
+            color: #a1a1aa;
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .unsplash-attribution a {
+            color: #c4b5fd;
+            text-decoration: none;
+        }
+
+        .unsplash-attribution a:hover {
+            text-decoration: underline;
+        }
+
         .news-source {
             color: #888;
             font-size: 12px;
@@ -1088,7 +1120,7 @@
 </head>
     {% set resolved_page = page_view or 'home' %}
     {% set body_class = resolved_page + '-page' %}
-    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}">
+    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}">
     <div class="container">
         <div class="search-section">
             <div class="page-title-row">
@@ -1319,6 +1351,7 @@
     const trendingBtnEl = document.getElementById('trendingBtn');
     const watchlistNavBtnEl = document.getElementById('watchlistNavBtn');
     const marketSummaryBtnEl = document.getElementById('marketSummaryBtn');
+    const unsplashReferralFallback = document.body.dataset.unsplashRef || 'https://unsplash.com/?utm_source=stocks-sentiment-analysis&utm_medium=referral';
     let watchlistStorageAvailable = true;
     let watchlistHasEntries = false;
     let homePrimaryPanel = 'watchlist';
@@ -1331,6 +1364,13 @@
             if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
             if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
             return num.toFixed(2);
+        }
+
+        function escapeAttribute(value) {
+            if (value === undefined || value === null) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;');
         }
 
         function formatCurrency(num) {
@@ -2433,17 +2473,43 @@
             articles.forEach(article => {
                 const articleDiv = document.createElement('div');
                 articleDiv.className = 'news-article';
-                articleDiv.onclick = () => window.open(article.link, '_blank');
+                if (article.link) {
+                    articleDiv.addEventListener('click', () => window.open(article.link, '_blank'));
+                } else {
+                    articleDiv.style.cursor = 'default';
+                }
+
+                const imageData = article.image || {};
+                const hasImage = Boolean(imageData.url);
+                const photographerName = imageData.photographer || imageData.photographer_username || 'Unsplash photographer';
+                const photographerProfile = imageData.photographer_profile || unsplashReferralFallback;
+                const unsplashLink = imageData.unsplash_link || unsplashReferralFallback;
+                const imageAlt = imageData.description || `Market illustration for ${article.title || ''}`;
+                const safeAlt = escapeAttribute(imageAlt);
+
+                const imageBlock = hasImage ? `
+                    <div class="news-image-wrapper">
+                        <img src="${imageData.url}" alt="${safeAlt}" loading="lazy">
+                        <div class="unsplash-attribution">
+                            Photo by <a href="${photographerProfile}" target="_blank" rel="noopener noreferrer" data-unsplash-link>${photographerName}</a> on <a href="${unsplashLink}" target="_blank" rel="noopener noreferrer" data-unsplash-link>Unsplash</a>
+                        </div>
+                    </div>
+                ` : '';
 
                 articleDiv.innerHTML = `
+                    ${imageBlock}
                     <div class="news-source">${article.source} • ${formatDate(article.publishedAt)}</div>
                     <div class="news-title">${article.title}</div>
                     <div class="news-description">${article.description}</div>
                     <div class="news-meta">
-                        <span>Click to read more</span>
+                        <span>${article.link ? 'Click to read more' : 'Coverage updated recently'}</span>
                         <span class="sentiment-badge ${article.sentiment}">${article.sentiment}</span>
                     </div>
                 `;
+
+                articleDiv.querySelectorAll('[data-unsplash-link]').forEach(linkEl => {
+                    linkEl.addEventListener('click', event => event.stopPropagation());
+                });
 
                 newsContainer.appendChild(articleDiv);
             });
