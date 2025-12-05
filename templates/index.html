@@ -902,6 +902,32 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.25);
         }
 
+        .market-summary-hero {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+            background: #050505;
+        }
+
+        .market-summary-hero img {
+            width: 100%;
+            height: 260px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .market-summary-hero .unsplash-attribution {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            margin: 0;
+            background: rgba(0, 0, 0, 0.65);
+            padding: 6px 12px;
+            border-radius: 999px;
+        }
+
         .market-summary-title {
             font-size: 22px;
             font-weight: 600;
@@ -2207,6 +2233,27 @@
             return container;
         }
 
+        function renderMarketSummaryHero(imageData, titleText) {
+            if (!imageData || !imageData.url) return null;
+            const hero = document.createElement('div');
+            hero.className = 'market-summary-hero';
+            const img = document.createElement('img');
+            img.src = imageData.url;
+            img.alt = imageData.description || `Market illustration for ${titleText || 'market summary'}`;
+            img.loading = 'lazy';
+            hero.appendChild(img);
+
+            const photographerName = imageData.photographer || imageData.photographer_username || 'Unsplash photographer';
+            const photographerProfile = imageData.photographer_profile || unsplashReferralFallback;
+            const unsplashLink = imageData.unsplash_link || unsplashReferralFallback;
+            const attribution = document.createElement('div');
+            attribution.className = 'unsplash-attribution';
+            attribution.innerHTML = `Photo by <a href="${photographerProfile}" target="_blank" rel="noopener noreferrer">${photographerName}</a> on <a href="${unsplashLink}" target="_blank" rel="noopener noreferrer">Unsplash</a>`;
+            hero.appendChild(attribution);
+
+            return hero;
+        }
+
         function renderMarketSummaryLatest(article) {
             if (!marketSummaryLatestEl) return;
             marketSummaryLatestEl.innerHTML = '';
@@ -2222,11 +2269,15 @@
             const metaEl = document.createElement('div');
             metaEl.className = 'market-summary-meta';
             metaEl.textContent = `Published ${formatMarketSummaryTimestamp(article.published_at || article.created_at)}`;
+            const heroEl = renderMarketSummaryHero(article.image, article.title);
             const bodyEl = document.createElement('div');
             bodyEl.className = 'market-summary-body';
             createParagraphNodes(bodyEl, article.body);
             card.appendChild(titleEl);
             card.appendChild(metaEl);
+            if (heroEl) {
+                card.appendChild(heroEl);
+            }
             card.appendChild(bodyEl);
             const indicesEl = renderMarketSummaryIndices(article.indices || []);
             if (indicesEl) {
@@ -2264,6 +2315,10 @@
                 bodyEl.className = 'market-summary-body';
                 createParagraphNodes(bodyEl, item.body);
                 details.appendChild(summary);
+                const heroEl = renderMarketSummaryHero(item.image, item.title);
+                if (heroEl) {
+                    details.appendChild(heroEl);
+                }
                 details.appendChild(bodyEl);
                 marketSummaryArchiveEl.appendChild(details);
             });
@@ -2478,26 +2533,7 @@
                 } else {
                     articleDiv.style.cursor = 'default';
                 }
-
-                const imageData = article.image || {};
-                const hasImage = Boolean(imageData.url);
-                const photographerName = imageData.photographer || imageData.photographer_username || 'Unsplash photographer';
-                const photographerProfile = imageData.photographer_profile || unsplashReferralFallback;
-                const unsplashLink = imageData.unsplash_link || unsplashReferralFallback;
-                const imageAlt = imageData.description || `Market illustration for ${article.title || ''}`;
-                const safeAlt = escapeAttribute(imageAlt);
-
-                const imageBlock = hasImage ? `
-                    <div class="news-image-wrapper">
-                        <img src="${imageData.url}" alt="${safeAlt}" loading="lazy">
-                        <div class="unsplash-attribution">
-                            Photo by <a href="${photographerProfile}" target="_blank" rel="noopener noreferrer" data-unsplash-link>${photographerName}</a> on <a href="${unsplashLink}" target="_blank" rel="noopener noreferrer" data-unsplash-link>Unsplash</a>
-                        </div>
-                    </div>
-                ` : '';
-
                 articleDiv.innerHTML = `
-                    ${imageBlock}
                     <div class="news-source">${article.source} • ${formatDate(article.publishedAt)}</div>
                     <div class="news-title">${article.title}</div>
                     <div class="news-description">${article.description}</div>
@@ -2506,11 +2542,6 @@
                         <span class="sentiment-badge ${article.sentiment}">${article.sentiment}</span>
                     </div>
                 `;
-
-                articleDiv.querySelectorAll('[data-unsplash-link]').forEach(linkEl => {
-                    linkEl.addEventListener('click', event => event.stopPropagation());
-                });
-
                 newsContainer.appendChild(articleDiv);
             });
         }

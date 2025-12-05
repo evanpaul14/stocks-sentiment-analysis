@@ -230,7 +230,7 @@ _ai_call_timestamps = deque()
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 UNSPLASH_APP_NAME = os.getenv("UNSPLASH_APP_NAME", "stocks-sentiment-analysis")
-UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "finance trading stock market")
+UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "stocks")
 UNSPLASH_TIMEOUT_SECONDS = max(3, _get_int_env("UNSPLASH_TIMEOUT_SECONDS", 10))
 UNSPLASH_RANDOM_URL = "https://api.unsplash.com/photos/random"
 UNSPLASH_ENABLED = bool(UNSPLASH_ACCESS_KEY)
@@ -861,6 +861,40 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
     return fallback_market_summary_text(summary_date, snapshots, headlines)
 
 
+def build_market_summary_image_payload(record):
+    if not (record and UNSPLASH_ENABLED):
+        return None
+
+    summary_locator = None
+    summary_label = None
+    if record.summary_date:
+        summary_locator = record.summary_date.isoformat()
+        summary_label = record.summary_date.strftime('%B %d, %Y')
+    elif record.published_at:
+        try:
+            record_date = record.published_at.date()
+        except Exception:
+            record_date = None
+        if record_date:
+            summary_locator = record_date.isoformat()
+            summary_label = record_date.strftime('%B %d, %Y')
+    if not summary_locator:
+        summary_locator = f"id-{record.id or 'latest'}"
+
+    article_stub = {
+        "link": f"market-summary://{summary_locator}",
+        "title": record.title or "Market Summary",
+        "description": record.body or ""
+    }
+    fallback_query = f"stock market wrap {summary_label}" if summary_label else "stock market wrap"
+    try:
+        enrich_articles_with_unsplash_images([article_stub], fallback_query)
+    except Exception as exc:
+        unsplash_logger.error("Market summary image enrichment failed: %s", exc)
+        return None
+    return article_stub.get('image')
+
+
 def serialize_market_summary(record):
     if not record:
         return None
@@ -889,7 +923,8 @@ def serialize_market_summary(record):
         'created_at': _serialize_datetime(record.created_at),
         'updated_at': _serialize_datetime(record.updated_at),
         'indices': indices,
-        'headlines': headlines
+        'headlines': headlines,
+        'image': build_market_summary_image_payload(record)
     }
 
 
@@ -1236,17 +1271,7 @@ def _sanitize_unsplash_query_text(value):
 
 
 def _resolve_unsplash_query(article, fallback_query=None):
-    candidates = [
-        article.get('title') if article else None,
-        article.get('description') if article else None,
-        fallback_query,
-        UNSPLASH_DEFAULT_QUERY
-    ]
-    for candidate in candidates:
-        normalized = _sanitize_unsplash_query_text(candidate)
-        if normalized:
-            return normalized
-    return UNSPLASH_DEFAULT_QUERY
+    return _sanitize_unsplash_query_text(UNSPLASH_DEFAULT_QUERY) or UNSPLASH_DEFAULT_QUERY
 
 
 def _unsplash_headers():
@@ -1348,7 +1373,11 @@ def _persist_article_image(article_key, article_url, query, photo):
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        existing = ArticleImage.query.filter_by(article_key=article_key).first()
+        existing = (
+            db.session.query(ArticleImage)
+            .filter_by(article_key=article_key)
+            .first()
+        )
         return existing.as_payload() if existing else None
     except Exception as exc:
         db.session.rollback()
@@ -1365,7 +1394,11 @@ def fetch_article_image_payload(article, fallback_query=None):
     if not article_key:
         return None
 
-    existing = ArticleImage.query.filter_by(article_key=article_key).first()
+    existing = (
+        db.session.query(ArticleImage)
+        .filter_by(article_key=article_key)
+        .first()
+    )
     if existing:
         return existing.as_payload()
 
@@ -1605,7 +1638,6 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
 def build_sentiment_payload(symbol, company_name=None):
     articles = get_news_articles(symbol, 10)
     fallback_query = f"{company_name or symbol} stock market"
-    enrich_articles_with_unsplash_images(articles, fallback_query)
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
     for article in articles:
         sentiment = analyze_sentiment_gemma(
