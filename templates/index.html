@@ -1455,14 +1455,16 @@
             if (!isoString) return 'Pending release';
             const date = new Date(isoString);
             if (Number.isNaN(date.getTime())) return 'Pending release';
-            return date.toLocaleString(undefined, {
-                weekday: 'short',
-                month: 'short',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                timeZoneName: 'short'
-            });
+            // Detect US locale, use MM/DD/YYYY; else DD/MM/YYYY
+            const locale = navigator.language || 'en';
+            const isUS = locale.startsWith('en-US');
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const hour = String(date.getHours()).padStart(2, '0');
+            const min = String(date.getMinutes()).padStart(2, '0');
+            const dateStr = isUS ? `${m}/${d}/${y}` : `${d}/${m}/${y}`;
+            return `${dateStr}, ${hour}:${min}`;
         }
 
         function createParagraphNodes(container, text) {
