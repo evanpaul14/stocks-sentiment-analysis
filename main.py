@@ -426,7 +426,13 @@ def fetch_top_stocks():
         resp.raise_for_status()
         data = resp.json()
         stocks_list = data.get("results", [])
-        top20 = sorted(stocks_list, key=lambda x: x.get("rank", 999))[:20]
+        # Defensive: filter out entries with None rank or ticker
+        filtered = [s for s in stocks_list if s.get("rank") is not None and s.get("ticker")]
+        try:
+            top20 = sorted(filtered, key=lambda x: x.get("rank", 999))[:20]
+        except Exception as sort_exc:
+            print(f"Error sorting trending stocks: {sort_exc}")
+            top20 = []
         return top20
     except Exception as e:
         print(f"Error fetching trending stocks: {e}")
@@ -439,22 +445,49 @@ def analyze_trending(top10):
         ticker = rec.get("ticker")
         if not ticker:
             continue
-        name   = html.unescape(rec.get("name", ""))
+        name = html.unescape(rec.get("name", ""))
         mentions_now = rec.get("mentions", 0)
         mentions_24h = rec.get("mentions_24h_ago", 0)
-        rank_24h     = rec.get("rank_24h_ago", None)
-        rank_now     = rec.get("rank", None)
+        rank_24h = rec.get("rank_24h_ago", None)
+        rank_now = rec.get("rank", None)
+
+        # Defensive: ensure mentions are ints
+        try:
+            mentions_now = int(mentions_now) if mentions_now is not None else 0
+        except Exception:
+            mentions_now = 0
+        try:
+            mentions_24h = int(mentions_24h) if mentions_24h is not None else 0
+        except Exception:
+            mentions_24h = 0
+
+        # Defensive: ensure ranks are ints or None
+        try:
+            rank_24h = int(rank_24h) if rank_24h is not None else None
+        except Exception:
+            rank_24h = None
+        try:
+            rank_now = int(rank_now) if rank_now is not None else None
+        except Exception:
+            rank_now = None
 
         # percent increase
         if mentions_24h > 0:
-            pct_increase = ((mentions_now - mentions_24h) / mentions_24h) * 100
+            try:
+                pct_increase = ((mentions_now - mentions_24h) / mentions_24h) * 100
+            except Exception:
+                pct_increase = 0
         else:
             pct_increase = 0
 
         tag = ""
         if mentions_24h > 0 and pct_increase > 50:
             tag = "Trending"
-        elif rank_24h is not None and rank_now is not None and rank_now < rank_24h - 5:
+        elif (
+            rank_24h is not None and rank_now is not None
+            and isinstance(rank_24h, int) and isinstance(rank_now, int)
+            and rank_now < rank_24h - 5
+        ):
             tag = f"Up {rank_24h - rank_now} Spots"
 
         price_snapshot = get_price_change_snapshot(ticker)
