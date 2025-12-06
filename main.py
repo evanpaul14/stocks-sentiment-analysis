@@ -1696,6 +1696,11 @@ def index():
     '''Render the main page'''
     return render_template('index.html', page_view='home', initial_query='')
 
+@app.route('/privacy')
+@limiter.limit("50 per minute")
+def privacy_page():
+    """Render the privacy policy page"""
+    return render_template('privacy.html')
 
 @app.route('/watchlist')
 @limiter.limit("50 per minute")
