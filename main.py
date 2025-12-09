@@ -872,7 +872,8 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
         f"{index_lines}\n\n"
         "Headline digest:\n"
         f"{news_lines}\n"
-        "Output plain text without markdown headings."
+        "Do not use markdown headings."
+        "Do not add a title or start with Summary:"
     )
 
     try:
@@ -882,7 +883,7 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
                 {"role": "system", "content": "You are a sharp markets reporter."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
+            temperature=0.3,
             max_tokens=350
         )
         content = response.choices[0].message.content.strip()
