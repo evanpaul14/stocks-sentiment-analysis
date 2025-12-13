@@ -2,10 +2,10 @@ User-agent: *
 Disallow: /search
 Disallow: /historical
 Disallow: /watchlist
-Disallow: /trending
+Disallow: /trending-list
 Disallow: /static/
 Disallow: /google-verification
 Disallow: /api/
 Allow: /
-
+Allow: /market-summary
 Sitemap: https://stocksentimentapp.com/sitemap.xml
