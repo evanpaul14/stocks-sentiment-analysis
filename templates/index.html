@@ -2397,6 +2397,11 @@
                 const data = await response.json();
 
                 if (!response.ok) {
+                    // Special handling for model overloaded error
+                    if (response.status === 503 && data.error && data.error.toLowerCase().includes('overloaded')) {
+                        showError('The AI model is overloaded. Please try again later.');
+                        return;
+                    }
                     throw new Error(data.error || 'Failed to fetch data');
                 }
 

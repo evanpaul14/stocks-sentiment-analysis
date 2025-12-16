@@ -36,6 +36,7 @@ logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO))
 summary_logger = logging.getLogger("stocktwits.summary")
 market_summary_logger = logging.getLogger("market.summary")
 unsplash_logger = logging.getLogger("unsplash")
+app_logger = logging.getLogger("stocks.app")
 
 
 app = Flask(__name__)
@@ -183,7 +184,7 @@ apikey = os.getenv('GOOGLE_API_KEY')
 if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
-gemma_model = "gemma-3-27b-it"
+gemma_model = "gemma-3-12b-it"
 
 LLM7_API_KEY = os.getenv("LLM7_API_KEY")
 LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
@@ -1633,6 +1634,52 @@ def build_movement_insight(stock_info):
     }
 
 
+def _extract_sentiment_label(raw_text):
+    cleaned = (raw_text or '').strip()
+
+    def _normalize(value):
+        if not isinstance(value, str):
+            return None
+        lowered = value.strip().lower()
+        return lowered if lowered in {'positive', 'negative', 'neutral'} else None
+
+    if not cleaned:
+        return None
+
+    if cleaned[0] in {'{', '['}:
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            app_logger.warning(
+                "Gemma PI returned invalid JSON, defaulting to neutral (error=%s, snippet=%s)",
+                exc,
+                cleaned[:120]
+            )
+            return None
+
+        if isinstance(parsed, dict):
+            for key in ('sentiment', 'label', 'value'):
+                normalized = _normalize(parsed.get(key))
+                if normalized:
+                    return normalized
+            return None
+
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    for key in ('sentiment', 'label', 'value'):
+                        normalized = _normalize(item.get(key))
+                        if normalized:
+                            return normalized
+                else:
+                    normalized = _normalize(item)
+                    if normalized:
+                        return normalized
+            return None
+
+    return _normalize(cleaned)
+
+
 def analyze_sentiment_gemma(article_title, article_description, company_name):
     """Analyze sentiment using Google Gemma AI"""
     prompt = (
@@ -1653,11 +1700,21 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
                 contents=prompt
             )
 
-            sentiment = response.text.strip().lower()
-            if sentiment not in ['positive', 'negative', 'neutral']:
+            sentiment = _extract_sentiment_label(getattr(response, 'text', ''))
+            if not sentiment:
                 sentiment = 'neutral'
             return sentiment
         except Exception as e:
+            # Check for model overloaded error (503)
+            if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict):
+                err = e.args[0]
+                if (
+                    isinstance(err, dict)
+                    and 'error' in err
+                    and err['error'].get('code') == 503
+                    and 'model is overloaded' in err['error'].get('message', '').lower()
+                ):
+                    raise RuntimeError('MODEL_OVERLOADED')
             retry_delay = extract_retry_delay_seconds(e)
             if retry_delay:
                 print(f"Gemma quota hit, waiting {retry_delay:.2f}s before retrying...")
@@ -1735,14 +1792,24 @@ def market_summary_page():
 @limiter.limit("10 per minute")
 def search_stock():
     '''Search for stock and return info, historical data, news, and sentiment analysis'''
+    request_start = time.time()
     try:
-        company_name = request.json.get('company_name') if request.json else None
+        payload = request.get_json(silent=True)
+        if payload is None:
+            app_logger.warning("/search payload is not valid JSON")
+            return jsonify({'error': 'Request body must be valid JSON'}), 400
+
+        company_name = (payload.get('company_name') or '').strip()
         if not company_name:
+            app_logger.warning("/search missing company_name field")
             return jsonify({'error': 'Company name is required'}), 400
+
+        app_logger.info("/search requested for %s", company_name)
 
         # Search for stock symbol
         results = search(company_name)
         if not results.get('quotes') or len(results['quotes']) == 0:
+            app_logger.info("/search no ticker match for %s", company_name)
             return jsonify({'error': 'Company not found'}), 404
 
         stock_symbol = results['quotes'][0]['symbol'].upper()
@@ -1750,6 +1817,7 @@ def search_stock():
         # Get stock information
         stock_info = get_stock_info(stock_symbol)
         if not stock_info:
+            app_logger.error("/search unable to hydrate stock info for %s", stock_symbol)
             return jsonify({'error': 'Failed to retrieve stock information'}), 500
 
         # Get historical data for 1 day
@@ -1760,24 +1828,34 @@ def search_stock():
             'historical_data': historical_data
         }
 
-        articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
-            stock_symbol,
-            stock_info['companyName']
-        )
-        response_data['articles'] = articles
-        response_data['sentiment_summary'] = sentiment_summary
-        response_data['overall_sentiment'] = overall_sentiment
+        try:
+            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
+                stock_symbol,
+                stock_info['companyName']
+            )
+            response_data['articles'] = articles
+            response_data['sentiment_summary'] = sentiment_summary
+            response_data['overall_sentiment'] = overall_sentiment
+        except RuntimeError as sentiment_exc:
+            if str(sentiment_exc) == 'MODEL_OVERLOADED':
+                return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
+            raise
 
         movement_insight = build_movement_insight(stock_info)
         if movement_insight:
             response_data['movement_insight'] = movement_insight
-
+        app_logger.info(
+            "/search completed for %s (%s) in %.2fs",
+            company_name,
+            stock_symbol,
+            time.time() - request_start
+        )
         return jsonify(response_data)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"Error in search: {e}")
+        app_logger.exception("/search failed for %s", company_name if 'company_name' in locals() else 'unknown')
         return jsonify({'error': str(e)}), 500
 
 
