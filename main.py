@@ -183,7 +183,7 @@ apikey = os.getenv('GOOGLE_API_KEY')
 if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
-gemma_model = "gemma-3-12b-it"
+gemma_model = "gemma-3-27b-it"
 
 LLM7_API_KEY = os.getenv("LLM7_API_KEY")
 LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
@@ -242,8 +242,25 @@ def _build_unsplash_referral_url():
 
 
 def wait_for_ai_rate_slot():
-    """No-op: Gemma calls are unthrottled for search requests."""
-    return
+    """Respect a simple in-process rate limit for Gemma API calls."""
+    if AI_RATE_LIMIT_PER_MINUTE == 0:
+        return
+
+    while True:
+        now = time.time()
+        window_floor = now - AI_RATE_WINDOW_SECONDS
+        while _ai_call_timestamps and _ai_call_timestamps[0] < window_floor:
+            _ai_call_timestamps.popleft()
+
+        if len(_ai_call_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
+            _ai_call_timestamps.append(now)
+            return
+
+        wait_for = AI_RATE_WINDOW_SECONDS - (now - _ai_call_timestamps[0])
+        if wait_for <= 0:
+            _ai_call_timestamps.popleft()
+            continue
+        time.sleep(wait_for)
 
 
 PRICE_CACHE_TTL_SECONDS = max(5, _get_int_env("TRENDING_PRICE_TTL_SECONDS", 120))
