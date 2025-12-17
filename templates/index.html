@@ -135,6 +135,21 @@
             color: #9333ea;
         }
 
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
 
 
         .stock-header {
@@ -394,6 +409,45 @@
             flex-wrap: nowrap;
             overflow-x: auto;
             scrollbar-width: none;
+            position: relative;
+        }
+
+        .sentiment-summary.is-loading {
+            overflow: hidden;
+        }
+
+        .sentiment-summary.is-loading::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
+            background-size: 200% 100%;
+            animation: shimmer 2.2s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .sentiment-summary .sentiment-item,
+        .sentiment-summary .sentiment-summary-spinner {
+            position: relative;
+            z-index: 1;
+        }
+
+        .sentiment-summary-spinner {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid #2f2f37;
+            border-top-color: #c084fc;
+            animation: spin 0.9s linear infinite;
+            align-self: center;
+            margin-left: auto;
+            display: none;
+            flex-shrink: 0;
+        }
+
+        .sentiment-summary.is-loading .sentiment-summary-spinner {
+            display: inline-block;
         }
 
         .sentiment-summary::-webkit-scrollbar {
@@ -491,6 +545,9 @@
         }
 
         .sentiment-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             padding: 4px 12px;
             border-radius: 12px;
             font-weight: 600;
@@ -511,6 +568,34 @@
         .sentiment-badge.neutral {
             background-color: rgba(136, 136, 136, 0.2);
             color: #888;
+        }
+
+        .sentiment-badge.muted {
+            opacity: 0.7;
+        }
+
+        .sentiment-status {
+            color: #a1a1aa;
+            font-size: 13px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            display: none;
+        }
+
+        .sentiment-badge.loading {
+            position: relative;
+            background-color: #1f1f1f;
+            color: #a1a1aa;
+            overflow: hidden;
+        }
+
+        .sentiment-badge.loading::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+            background-size: 200% 100%;
+            animation: shimmer 1.9s linear infinite;
         }
 
         #results {
@@ -1229,7 +1314,9 @@
                         <div class="sentiment-label">OVERALL SENTIMENT</div>
                         <div class="sentiment-value" id="overallSentiment">-</div>
                     </div>
+                    <div class="sentiment-summary-spinner" aria-hidden="true"></div>
                 </div>
+                <div class="sentiment-status" id="sentimentStatus" aria-live="polite"></div>
                 <div class="chart-container">
                 <div class="chart-tabs">
                     <span class="chart-tab active" data-period="1d">1D</span>
@@ -1382,6 +1469,11 @@
     let homePrimaryPanel = 'watchlist';
     let homePanelInitialized = false;
     let watchlistPriceRefreshPromise = null;
+    let activeSentimentRunId = 0;
+    let latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+    const sentimentStatusEl = document.getElementById('sentimentStatus');
+    const SENTIMENT_REQUEST_TIMEOUT_MS = 25000;
+    const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
 
         function formatNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -1468,6 +1560,62 @@
             const hourStr = String(hour).padStart(2, '0');
             const dateStr = isUS ? `${m}/${d}/${y}` : `${d}/${m}/${y}`;
             return `${dateStr}, ${hourStr}:${min} ${ampm}`;
+        }
+
+        function renderSentimentSummaryUI(counts, completedTotal = 0, loading = false) {
+            const positive = counts.positive || 0;
+            const negative = counts.negative || 0;
+            const neutral = counts.neutral || 0;
+            const total = completedTotal || (positive + negative + neutral);
+
+            const summaryEl = document.querySelector('.sentiment-summary');
+            if (summaryEl) {
+                summaryEl.classList.toggle('is-loading', Boolean(loading));
+            }
+
+            function percent(val) {
+                 if (!total) return loading ? '...' : '0%';
+                return ((val / total) * 100).toFixed(0) + '%';
+            }
+
+            document.getElementById('positiveCount').textContent = percent(positive);
+            document.getElementById('negativeCount').textContent = percent(negative);
+            document.getElementById('neutralCount').textContent = percent(neutral);
+
+            const overallElement = document.getElementById('overallSentiment');
+            let overall = '—';
+            let overallClass = 'neutral';
+            if (total > 0) {
+                const entries = [
+                    ['positive', positive],
+                    ['negative', negative],
+                    ['neutral', neutral]
+                ];
+                entries.sort((a, b) => b[1] - a[1]);
+                overall = entries[0][0];
+                overallClass = overall;
+            } else if (loading) {
+                overall = '…';
+            }
+            overallElement.textContent = (overall || '—').toUpperCase();
+            overallElement.className = 'sentiment-value ' + overallClass;
+        }
+
+        function resetSentimentSummaryUI() {
+            latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+            renderSentimentSummaryUI(latestSentimentCounts, 0, true);
+        }
+
+        function setSentimentStatus(message, tone = 'default') {
+            if (!sentimentStatusEl) return;
+            const shouldHide = !message;
+            sentimentStatusEl.style.display = shouldHide ? 'none' : 'block';
+            if (shouldHide) {
+                sentimentStatusEl.textContent = '';
+                return;
+            }
+            sentimentStatusEl.textContent = message;
+            sentimentStatusEl.style.color = tone === 'error' ? '#ef4444' : '#a1a1aa';
         }
 
         function createParagraphNodes(container, text) {
@@ -2027,6 +2175,33 @@
             }
         }
 
+        async function fetchSentimentWithTimeout(article, companyName, idx, timeoutMs) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const res = await fetch('/sentiment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        title: article.title,
+                        description: article.description,
+                        company_name: companyName,
+                        article_id: idx
+                    }),
+                    signal: controller.signal
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Failed to analyze sentiment');
+                }
+                return payload.sentiment || 'neutral';
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         function renderStocktwitsList(items) {
             const list = trendingLists.stocktwits;
             if (!list) return;
@@ -2428,13 +2603,13 @@
 
         function displayResults(data) {
             const stockInfo = data.stock_info;
+            const sentimentRunId = ++activeSentimentRunId;
+            resetSentimentSummaryUI();
+            latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+            setSentimentStatus('Analyzing article sentiment...');
             updateWatchlistToggle(stockInfo.symbol, stockInfo.companyName, stockInfo.price);
             updateWatchlistSnapshot(stockInfo.symbol, stockInfo.price, stockInfo.companyName);
             const articles = data.articles || [];
-            const sentimentSummary = data.sentiment_summary || { positive: 0, negative: 0, neutral: 0 };
-            const overallSentimentValue = (data.overall_sentiment || 'neutral').toUpperCase();
-            const overallSentimentClass = data.overall_sentiment || 'neutral';
-
             renderMovementInsight(data.movement_insight);
             hideWatchlistForStockView();
 
@@ -2516,31 +2691,19 @@
             document.getElementById('volume').textContent = stockInfo.volume ? formatNumber(stockInfo.volume) : 'N/A';
             document.getElementById('fiftyTwoWeekHigh').textContent = stockInfo.fiftyTwoWeekHigh ? formatCurrency(stockInfo.fiftyTwoWeekHigh) : 'N/A';
             document.getElementById('fiftyTwoWeekLow').textContent = stockInfo.fiftyTwoWeekLow ? formatCurrency(stockInfo.fiftyTwoWeekLow) : 'N/A';
-
-
-            // Calculate sentiment percentages
-            const totalSentiments = (sentimentSummary.positive || 0) + (sentimentSummary.negative || 0) + (sentimentSummary.neutral || 0);
-            function percent(val) {
-                if (!totalSentiments) return '0%';
-                return ((val / totalSentiments) * 100).toFixed(0) + '%';
-            }
-            document.getElementById('positiveCount').textContent = percent(sentimentSummary.positive || 0);
-            document.getElementById('negativeCount').textContent = percent(sentimentSummary.negative || 0);
-            document.getElementById('neutralCount').textContent = percent(sentimentSummary.neutral || 0);
-
-            const overallElement = document.getElementById('overallSentiment');
-            overallElement.textContent = overallSentimentValue;
-            overallElement.className = 'sentiment-value ' + overallSentimentClass;
+            renderSentimentSummaryUI(latestSentimentCounts, 0, true);
 
             const newsContainer = document.getElementById('newsArticles');
             newsContainer.innerHTML = '';
 
             if (articles.length === 0) {
                 newsContainer.innerHTML = '<div style="color:#888;">No news articles available.</div>';
+                renderSentimentSummaryUI(latestSentimentCounts, 0, false);
+                setSentimentStatus('No articles to analyze.');
                 return;
             }
 
-            articles.forEach(article => {
+            articles.forEach((article, idx) => {
                 const articleDiv = document.createElement('div');
                 articleDiv.className = 'news-article';
                 if (article.link) {
@@ -2548,17 +2711,99 @@
                 } else {
                     articleDiv.style.cursor = 'default';
                 }
+
+                const badgeId = `sentiment-badge-${sentimentRunId}-${idx}`;
                 articleDiv.innerHTML = `
                     <div class="news-source">${article.source} • ${formatDate(article.publishedAt)}</div>
                     <div class="news-title">${article.title}</div>
                     <div class="news-description">${article.description}</div>
                     <div class="news-meta">
                         <span>${article.link ? 'Click to read more' : 'Coverage updated recently'}</span>
-                        <span class="sentiment-badge ${article.sentiment}">${article.sentiment}</span>
+                        <span class="sentiment-badge loading neutral" id="${badgeId}">Loading...</span>
                     </div>
                 `;
                 newsContainer.appendChild(articleDiv);
             });
+
+            progressivelyAnalyzeSentiment(articles, stockInfo.companyName || stockInfo.symbol, sentimentRunId);
+        }
+
+        async function progressivelyAnalyzeSentiment(articles, companyName, runId) {
+            if (!articles || !articles.length) {
+                renderSentimentSummaryUI(latestSentimentCounts, 0, false);
+                setSentimentStatus('No articles to analyze.');
+                return;
+            }
+
+            const total = articles.length;
+            let completed = 0;
+            setSentimentStatus(`Analyzing ${total} article${total === 1 ? '' : 's'}...`);
+
+            for (let idx = 0; idx < articles.length; idx++) {
+                if (runId !== activeSentimentRunId) return;
+
+                const article = articles[idx];
+                const badgeId = `sentiment-badge-${runId}-${idx}`;
+                const badgeEl = document.getElementById(badgeId);
+                if (badgeEl) {
+                    badgeEl.textContent = 'Loading...';
+                    badgeEl.classList.add('loading');
+                }
+
+                let sentiment = null;
+                let didTimeout = false;
+                try {
+                    sentiment = await fetchSentimentWithTimeout(
+                        article,
+                        companyName,
+                        idx,
+                        SENTIMENT_REQUEST_TIMEOUT_MS
+                    );
+                } catch (error) {
+                    didTimeout = error.name === 'AbortError';
+                    if (didTimeout) {
+                        setSentimentStatus('Sentiment is taking longer than usual. Retrying...', 'error');
+                        try {
+                            sentiment = await fetchSentimentWithTimeout(
+                                article,
+                                companyName,
+                                idx,
+                                SENTIMENT_RETRY_TIMEOUT_MS
+                            );
+                            didTimeout = false;
+                        } catch (retryError) {
+                            didTimeout = retryError.name === 'AbortError';
+                            console.error('Sentiment retry error:', retryError);
+                        }
+                    } else {
+                        console.error('Sentiment analysis error:', error);
+                    }
+                }
+
+                if (runId !== activeSentimentRunId) return;
+
+                if (didTimeout && !sentiment) {
+                    setSentimentStatus('Sentiment request timed out. Some articles may be missing sentiment.', 'error');
+                }
+
+                const normalized = (sentiment || '').toString().trim().toLowerCase();
+                if (['positive', 'negative', 'neutral'].includes(normalized)) {
+                    latestSentimentCounts[normalized] = (latestSentimentCounts[normalized] || 0) + 1;
+                    if (badgeEl) {
+                        badgeEl.textContent = normalized;
+                        badgeEl.className = `sentiment-badge ${normalized}`;
+                    }
+                } else {
+                    if (badgeEl) {
+                        badgeEl.textContent = 'No result';
+                        badgeEl.className = 'sentiment-badge neutral muted';
+                    }
+                }
+
+                completed += 1;
+                renderSentimentSummaryUI(latestSentimentCounts, completed, completed < total);
+                setSentimentStatus(completed < total ? `Analyzed ${completed}/${total} articles...` : '');
+            }
         }
 
         function renderMovementInsight(insight) {

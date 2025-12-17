@@ -1638,10 +1638,21 @@ def _extract_sentiment_label(raw_text):
     cleaned = (raw_text or '').strip()
 
     def _normalize(value):
-        if not isinstance(value, str):
+        if value is None:
             return None
+        if not isinstance(value, str):
+            try:
+                value = str(value)
+            except Exception:
+                return None
         lowered = value.strip().lower()
-        return lowered if lowered in {'positive', 'negative', 'neutral'} else None
+        lowered = lowered.strip(" .,!?:;'\"[]{}()")
+        if lowered in {'positive', 'negative', 'neutral'}:
+            return lowered
+        for target in ('positive', 'negative', 'neutral'):
+            if re.search(rf"\b{target}\b", lowered):
+                return target
+        return None
 
     if not cleaned:
         return None
@@ -1700,7 +1711,14 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
                 contents=prompt
             )
 
-            sentiment = _extract_sentiment_label(getattr(response, 'text', ''))
+            raw_text = getattr(response, 'text', '')
+            app_logger.info(
+                "[Gemma] Sentiment raw (attempt=%s, company=%s): %s",
+                attempt + 1,
+                company_name,
+                str(raw_text)[:240]
+            )
+            sentiment = _extract_sentiment_label(raw_text)
             if not sentiment:
                 sentiment = 'neutral'
             return sentiment
@@ -1825,21 +1843,9 @@ def search_stock():
 
         response_data = {
             'stock_info': stock_info,
-            'historical_data': historical_data
+            'historical_data': historical_data,
+            'articles': get_news_articles(stock_symbol, 10)
         }
-
-        try:
-            articles, sentiment_summary, overall_sentiment = build_sentiment_payload(
-                stock_symbol,
-                stock_info['companyName']
-            )
-            response_data['articles'] = articles
-            response_data['sentiment_summary'] = sentiment_summary
-            response_data['overall_sentiment'] = overall_sentiment
-        except RuntimeError as sentiment_exc:
-            if str(sentiment_exc) == 'MODEL_OVERLOADED':
-                return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
-            raise
 
         movement_insight = build_movement_insight(stock_info)
         if movement_insight:
@@ -1869,6 +1875,37 @@ def get_historical(symbol, period):
     except Exception as e:
         print(f"Error getting historical data: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/sentiment', methods=['POST'])
+@limiter.limit("30 per minute")
+def analyze_article_sentiment():
+    """Return sentiment for a single article so the UI can stream updates."""
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({'error': 'Request body must be valid JSON'}), 400
+
+    title = (payload.get('title') or '').strip()
+    description = payload.get('description') or ''
+    company_name = (payload.get('company_name') or payload.get('symbol') or '').strip()
+    article_id = payload.get('article_id')
+
+    if not title:
+        return jsonify({'error': 'Title is required for sentiment analysis'}), 400
+    if not company_name:
+        company_name = 'the company'
+
+    try:
+        sentiment = analyze_sentiment_gemma(title, description, company_name)
+    except RuntimeError as sentiment_exc:
+        if str(sentiment_exc) == 'MODEL_OVERLOADED':
+            return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
+        raise
+
+    response = {'sentiment': sentiment}
+    if article_id is not None:
+        response['article_id'] = article_id
+    return jsonify(response)
 
 
 # Trending stocks API endpoint
