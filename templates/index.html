@@ -135,6 +135,27 @@
             color: #9333ea;
         }
 
+        #errorMessage {
+            margin-top: 10px;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #fecdd3;
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .retry-button {
+            margin-top: 12px;
+            display: block;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
         @keyframes shimmer {
             0% {
                 background-position: -200% 0;
@@ -2572,12 +2593,10 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    // Special handling for model overloaded error
-                    if (response.status === 503 && data.error && data.error.toLowerCase().includes('overloaded')) {
-                        showError('The AI model is overloaded. Please try again later.');
-                        return;
-                    }
-                    throw new Error(data.error || 'Failed to fetch data');
+                    const errorMessage = (data && data.error) ? data.error : 'Failed to fetch data';
+                    const error = new Error(errorMessage);
+                    error.status = response.status;
+                    throw error;
                 }
 
                 displayResults(data);
@@ -2589,16 +2608,32 @@
 
                 document.getElementById('results').style.display = 'block';
             } catch (error) {
-                showError(error.message);
+                const consolePayload = {
+                    status: error && error.status,
+                    message: (error && error.message) || 'Unknown search error'
+                };
+                console.error('Search error:', consolePayload);
+                showError('An error ocurred while processing your request', { includeRetry: true });
             } finally {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('searchBtn').disabled = false;
             }
         }
 
-        function showError(message) {
-            document.getElementById('errorMessage').innerHTML =
-                `<div class="error-message">${message}</div>`;
+        function showError(message, options = {}) {
+            const { includeRetry = false } = options;
+            const container = document.getElementById('errorMessage');
+            if (!container) return;
+            const retryHtml = includeRetry
+                ? '<button class="retry-button" type="button" id="retrySearchBtn">Try again</button>'
+                : '';
+            container.innerHTML = `<div class="error-message">${message}</div>${retryHtml}`;
+            if (includeRetry) {
+                const retryBtn = document.getElementById('retrySearchBtn');
+                if (retryBtn) {
+                    retryBtn.onclick = () => window.location.reload();
+                }
+            }
         }
 
         function displayResults(data) {
