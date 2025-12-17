@@ -439,7 +439,7 @@ def fetch_top_stocks():
         print(f"Error fetching trending stocks: {e}")
         return []
 
-def analyze_trending(top10):
+def analyze_trending(top10, include_prices=True):
     """Analyze trending stocks and apply tags based on percent increase and rank changes"""
     results = []
     for rec in top10:
@@ -491,7 +491,7 @@ def analyze_trending(top10):
         ):
             tag = f"Up {rank_24h - rank_now} Spots"
 
-        price_snapshot = get_price_change_snapshot(ticker)
+        price_snapshot = get_price_change_snapshot(ticker) if include_prices else {}
         results.append({
             "ticker": ticker,
             "name": name,
@@ -617,7 +617,7 @@ def _refresh_stocktwits_summary(symbol, *, limit=60):
     return None
 
 
-def fetch_stocktwits_trending(limit=20):
+def fetch_stocktwits_trending(limit=20, include_prices=True):
     """Fetch trending symbols from StockTwits"""
     try:
         trimmed = _fetch_stocktwits_symbols(limit=limit)
@@ -634,7 +634,7 @@ def fetch_stocktwits_trending(limit=20):
             symbol = (sym.get("symbol") or "").upper()
             resolved_price = last_price
             resolved_change_pct = change_pct
-            if resolved_price is None or resolved_change_pct is None:
+            if include_prices and (resolved_price is None or resolved_change_pct is None):
                 snapshot = get_price_change_snapshot(symbol)
                 if resolved_price is None:
                     resolved_price = snapshot.get("price")
@@ -669,7 +669,7 @@ def fetch_stocktwits_trending(limit=20):
         return []
 
 
-def fetch_alpaca_most_actives(limit=20):
+def fetch_alpaca_most_actives(limit=20, include_prices=True):
     """Fetch most active stocks by volume from Alpaca"""
     headers = {}
     alpaca_key = os.getenv("ALPACA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
@@ -698,7 +698,7 @@ def fetch_alpaca_most_actives(limit=20):
             volume = rec.get("volume") or rec.get("volume_1d")
             symbol = (rec.get("symbol") or "").upper()
             resolved_name = rec.get("name") or lookup_company_name(symbol) or symbol or "Unknown"
-            if price is None or change_pct is None:
+            if include_prices and (price is None or change_pct is None):
                 snapshot = get_price_change_snapshot(symbol)
                 if price is None:
                     price = snapshot.get("price")
@@ -1121,22 +1121,29 @@ def bootstrap_market_summary_if_needed():
     except Exception as exc:
         market_summary_logger.error("Bootstrap market summary failed: %s", exc)
 
-def get_trending_source_data(source):
+def get_trending_source_data(source, include_prices=True):
     """Return trending data for a specific source identifier."""
     normalized = (source or "").lower()
 
     if normalized == "stocktwits":
-        return fetch_stocktwits_trending()
+        return fetch_stocktwits_trending(include_prices=include_prices)
     if normalized == "reddit":
         try:
-            return analyze_trending(fetch_top_stocks())
+            return analyze_trending(fetch_top_stocks(), include_prices=include_prices)
         except Exception as e:
             print(f"Error in reddit trending: {e}")
             return []
     if normalized == "volume":
-        return fetch_alpaca_most_actives()
+        return fetch_alpaca_most_actives(include_prices=include_prices)
 
     return None
+
+
+def _should_include_prices(arg_value):
+    if arg_value is None:
+        return True
+    normalized = str(arg_value).strip().lower()
+    return normalized not in {"0", "false", "no"}
 
 
 def get_stock_info(symbol):
@@ -1912,10 +1919,11 @@ def analyze_article_sentiment():
 @app.route('/trending', methods=['GET'])
 @limiter.limit("30 per minute")
 def trending_stocks():
+    include_prices = _should_include_prices(request.args.get('include_prices'))
     return jsonify({
-        "stocktwits": get_trending_source_data("stocktwits") or [],
-        "reddit": get_trending_source_data("reddit") or [],
-        "volume": get_trending_source_data("volume") or []
+        "stocktwits": get_trending_source_data("stocktwits", include_prices=include_prices) or [],
+        "reddit": get_trending_source_data("reddit", include_prices=include_prices) or [],
+        "volume": get_trending_source_data("volume", include_prices=include_prices) or []
     })
 
 
@@ -1950,7 +1958,7 @@ def market_summary_archive():
 
 
 @app.route('/quote/<symbol>', methods=['GET'])
-@limiter.limit("50 per minute")
+@limiter.limit("300 per minute")
 def quote(symbol):
     normalized = (symbol or "").strip().upper()
     if not normalized:
@@ -1972,7 +1980,8 @@ def quote(symbol):
 @app.route('/trending/<source>', methods=['GET'])
 @limiter.limit("30 per minute")
 def trending_stocks_source(source):
-    data = get_trending_source_data(source)
+    include_prices = _should_include_prices(request.args.get('include_prices'))
+    data = get_trending_source_data(source, include_prices=include_prices)
     if data is None:
         return jsonify({"error": "Unknown trending source"}), 404
     return jsonify({

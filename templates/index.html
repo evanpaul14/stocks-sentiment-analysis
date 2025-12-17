@@ -837,6 +837,12 @@
             color: #ef4444;
         }
 
+        .trending-change.neutral {
+            background: rgba(148, 163, 184, 0.18);
+            color: #d1d5db;
+            text-transform: none;
+        }
+
         .trending-change-inline {
             display: none;
         }
@@ -1453,8 +1459,10 @@
     };
     const TRENDING_SOURCES = ['stocktwits', 'reddit', 'volume'];
     const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
+    const TRENDING_INCLUDE_PRICES = false;
     const trendingCache = {};
     const trendingFetchPromises = {};
+    const trendingPriceHydrations = new Map();
     const stocktwitsSummaryCache = new Map();
     const stocktwitsSummaryPromises = new Map();
     let stocktwitsSummaryPopover = null;
@@ -1541,13 +1549,89 @@
         }
 
         function buildTrendChangeBadge(value, extraClass = '') {
+            const rawString = value === null || value === undefined ? '' : String(value);
+            const forceNeutral = rawString.toLowerCase().includes('e');
             const num = Number(value);
-            if (!Number.isFinite(num)) return '';
+            if (!Number.isFinite(num) && !forceNeutral) return '';
+            const renderNeutral = () => {
+                const classes = ['trending-change', 'neutral'];
+                if (extraClass) classes.push(extraClass);
+                return `<span class="${classes.join(' ')}">0.00%</span>`;
+            };
+            if (forceNeutral || Object.is(num, 0)) {
+                return renderNeutral();
+            }
             const direction = num >= 0 ? 'positive' : 'negative';
             const classes = ['trending-change', direction];
             if (extraClass) classes.push(extraClass);
             const qualifier = num >= 0 ? 'up' : 'down';
             return `<span class="${classes.join(' ')}">${qualifier} ${formatSignedPercentage(num)}</span>`;
+        }
+
+        function updateTrendingChangeBadges(itemEl, changeValue) {
+            if (!itemEl) return;
+            const inlineTarget = itemEl.querySelector('[data-change-inline]');
+            const rightTarget = itemEl.querySelector('[data-change-right]');
+            const inlineMarkup = buildTrendChangeBadge(changeValue, 'trending-change-inline');
+            if (inlineTarget) {
+                inlineTarget.innerHTML = inlineMarkup || '';
+            }
+            const rightMarkup = buildTrendChangeBadge(changeValue, 'trending-change-right');
+            if (rightTarget) {
+                rightTarget.innerHTML = rightMarkup || '';
+            }
+        }
+
+        function findTrendingItemElement(source, ticker) {
+            const list = trendingLists[source];
+            if (!list || !ticker) return null;
+            const normalized = ticker.toUpperCase();
+            return Array.from(list.querySelectorAll('.trending-item')).find(item => {
+                return (item.dataset.ticker || '').toUpperCase() === normalized;
+            }) || null;
+        }
+
+        function applyTrendingPriceUpdate(source, ticker, changePercent) {
+            if (!ticker) return;
+            const targetItem = findTrendingItemElement(source, ticker);
+            if (!targetItem) return;
+            updateTrendingChangeBadges(targetItem, changePercent);
+        }
+
+        function hydrateTrendingPrices(source, items) {
+            if (!Array.isArray(items) || !items.length) return null;
+            if (!trendingLists[source]) return null;
+
+            const tickers = Array.from(new Set(
+                items.slice(0, 12)
+                    .map(item => (item.ticker || '').toUpperCase())
+                    .filter(Boolean)
+            ));
+            if (!tickers.length) return null;
+
+            const hydrationKey = `${source}:${tickers.join(',')}`;
+            if (trendingPriceHydrations.has(hydrationKey)) {
+                return trendingPriceHydrations.get(hydrationKey);
+            }
+
+            const hydrationPromise = (async () => {
+                const quotePromises = tickers.map(async ticker => {
+                    try {
+                        const quote = await fetchQuote(ticker);
+                        if (quote && typeof quote.change_percent === 'number') {
+                            applyTrendingPriceUpdate(source, ticker, Number(quote.change_percent));
+                        }
+                    } catch (error) {
+                        console.error('Trending price hydrate error:', ticker, error);
+                    }
+                });
+                await Promise.allSettled(quotePromises);
+            })().finally(() => {
+                trendingPriceHydrations.delete(hydrationKey);
+            });
+
+            trendingPriceHydrations.set(hydrationKey, hydrationPromise);
+            return hydrationPromise;
         }
 
         function formatRelativeTimeFromISOString(isoString) {
@@ -1906,20 +1990,27 @@
             list.innerHTML = `<div class="trending-message" style="color:${color};">${message}</div>`;
         }
 
-        function isTrendingCacheFresh(entry) {
+        function isTrendingCacheFresh(entry, includePrices = true) {
             if (!entry) return false;
-            return (Date.now() - entry.timestamp) < TRENDING_CACHE_TTL_MS;
+            if ((Date.now() - entry.timestamp) >= TRENDING_CACHE_TTL_MS) {
+                return false;
+            }
+            if (includePrices && !entry.includePrices) {
+                return false;
+            }
+            return true;
         }
 
-        function getFreshTrendingCache(source) {
+        function getFreshTrendingCache(source, includePrices = true) {
             const entry = trendingCache[source];
-            return isTrendingCacheFresh(entry) ? entry : null;
+            return isTrendingCacheFresh(entry, includePrices) ? entry : null;
         }
 
-        function setTrendingCache(source, items) {
+        function setTrendingCache(source, items, includePrices = true) {
             trendingCache[source] = {
                 data: Array.isArray(items) ? items : [],
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                includePrices: Boolean(includePrices)
             };
         }
 
@@ -2236,6 +2327,7 @@
             items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
+                div.dataset.ticker = (item.ticker || '').toUpperCase();
                 div.onclick = () => {
                     document.getElementById('companyInput').value = item.ticker;
                     searchStock();
@@ -2249,17 +2341,12 @@
                     watchersTag = '<span class="trending-tag" style="background:rgba(88,28,135,0.25);color:#e9d5ff;">Watchers N/A</span>';
                 }
                 const changeValue = item.price_change_percent ?? item.change_percent;
-                const changeInline = buildTrendChangeBadge(changeValue, 'trending-change-inline');
-                const changeRight = buildTrendChangeBadge(changeValue, 'trending-change-right');
                 const metricsPieces = [];
                 if (watchersTag) metricsPieces.push(watchersTag);
                 const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
                 const infoButtonHtml = item.ticker && (item.rank || idx + 1) <= 10
                     ? '<button class="trending-info-btn" type="button" aria-label="View StockTwits summary"><span class="icon">i</span></button>'
                     : '';
-                const asidePieces = [];
-                if (changeRight) asidePieces.push(changeRight);
-                const asideHtml = asidePieces.length ? `<div class="trending-card-aside">${asidePieces.join('')}</div>` : '';
 
                 div.innerHTML = `
                     <span class="trending-rank">${item.rank || idx + 1}.</span>
@@ -2267,12 +2354,12 @@
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
                             ${infoButtonHtml}
-                            ${changeInline}
+                            <span class="trending-change-inline" data-change-inline></span>
                         </div>
                         ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                     </div>
-                    ${asideHtml}
+                    <div class="trending-card-aside" data-change-right></div>
                 `;
                 const infoBtn = div.querySelector('.trending-info-btn');
                 if (infoBtn) {
@@ -2281,6 +2368,7 @@
                         toggleStocktwitsSummaryPopover(infoBtn, item.ticker, item.name);
                     });
                 }
+                updateTrendingChangeBadges(div, changeValue);
                 list.appendChild(div);
             });
         }
@@ -2297,6 +2385,7 @@
             items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
+                div.dataset.ticker = (item.ticker || '').toUpperCase();
                 div.onclick = () => {
                     document.getElementById('companyInput').value = item.ticker;
                     searchStock();
@@ -2305,8 +2394,6 @@
                 const pctClass = pct < 0 ? 'negative' : 'positive';
                 const pctLabel = `${pct >= 0 ? '+' : ''}${Math.round(pct)}% mentions`;
                 const tag = item.tag ? `<span class="trending-tag">${item.tag}</span>` : '';
-                const changeInline = buildTrendChangeBadge(item.price_change_percent, 'trending-change-inline');
-                const changeRight = buildTrendChangeBadge(item.price_change_percent, 'trending-change-right');
                 const metricsPieces = [];
                 if (tag) metricsPieces.push(tag);
                 const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
@@ -2316,14 +2403,15 @@
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                            ${changeInline}
+                            <span class="trending-change-inline" data-change-inline></span>
                         </div>
                         ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                         <span class="trending-pct ${pctClass}">${pctLabel}</span>
                     </div>
-                    ${changeRight}
+                    <div class="trending-card-aside" data-change-right></div>
                 `;
+                updateTrendingChangeBadges(div, item.price_change_percent);
                 list.appendChild(div);
             });
         }
@@ -2340,6 +2428,7 @@
             items.slice(0, 10).forEach((item, idx) => {
                 const div = document.createElement('div');
                 div.className = 'trending-item';
+                div.dataset.ticker = (item.ticker || '').toUpperCase();
                 div.onclick = () => {
                     document.getElementById('companyInput').value = item.ticker;
                     searchStock();
@@ -2350,8 +2439,6 @@
                     : 'Volume unavailable';
                 const volumeTag = `<span class="trending-tag">${volumeLabel}</span>`;
                 const changeValue = item.price_change_percent ?? item.change_percent;
-                const changeInline = buildTrendChangeBadge(changeValue, 'trending-change-inline');
-                const changeRight = buildTrendChangeBadge(changeValue, 'trending-change-right');
                 const metricsPieces = [];
                 if (volumeTag) metricsPieces.push(volumeTag);
                 const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
@@ -2361,13 +2448,14 @@
                     <div class="trending-card-content">
                         <div class="trending-ticker-row">
                             <span class="trending-ticker">${item.ticker || 'N/A'}</span>
-                            ${changeInline}
+                            <span class="trending-change-inline" data-change-inline></span>
                         </div>
                         ${metricsRow}
                         <span class="trending-name">${item.name || ''}</span>
                     </div>
-                    ${changeRight}
+                    <div class="trending-card-aside" data-change-right></div>
                 `;
+                updateTrendingChangeBadges(div, changeValue);
                 list.appendChild(div);
             });
         }
@@ -3062,10 +3150,16 @@
         }
 
         async function loadTrendingSource(source, options = {}) {
-            const { forceRefresh = false } = options;
-            const cached = getFreshTrendingCache(source);
+            const {
+                forceRefresh = false,
+                includePrices = TRENDING_INCLUDE_PRICES
+            } = options;
+            const cached = getFreshTrendingCache(source, includePrices);
             if (!forceRefresh && cached) {
                 renderTrendingData(source, cached.data);
+                if (!cached.includePrices) {
+                    hydrateTrendingPrices(source, cached.data);
+                }
                 return cached.data;
             }
 
@@ -3076,20 +3170,31 @@
             setTrendingListLoading(source);
             const fetchPromise = (async () => {
                 try {
-                    const res = await fetch(`/trending/${source}`);
+                    let url = `/trending/${source}`;
+                    if (!includePrices) {
+                        url += url.includes('?') ? '&' : '?';
+                        url += 'include_prices=0';
+                    }
+                    const res = await fetch(url);
                     if (!res.ok) {
                         throw new Error(`Failed to load ${source} data.`);
                     }
                     const data = await res.json();
                     const items = data.data || [];
-                    setTrendingCache(source, items);
+                    setTrendingCache(source, items, includePrices);
                     renderTrendingData(source, items);
+                    if (!includePrices) {
+                        hydrateTrendingPrices(source, items);
+                    }
                     return items;
                 } catch (e) {
                     console.error(`Trending ${source} error:`, e);
                     const fallback = trendingCache[source];
                     if (fallback && Array.isArray(fallback.data) && fallback.data.length) {
                         renderTrendingData(source, fallback.data);
+                        if (!fallback.includePrices) {
+                            hydrateTrendingPrices(source, fallback.data);
+                        }
                     } else {
                         showTrendingMessage(source, 'Failed to load data.', true);
                     }
@@ -3104,8 +3209,12 @@
         }
 
         function loadTrendingStocks(options = {}) {
+            const mergedOptions = {
+                includePrices: TRENDING_INCLUDE_PRICES,
+                ...options
+            };
             TRENDING_SOURCES.forEach(source => {
-                loadTrendingSource(source, options);
+                loadTrendingSource(source, mergedOptions);
             });
         }
 
