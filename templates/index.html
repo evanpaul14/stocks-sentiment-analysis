@@ -1497,6 +1497,7 @@
     let watchlistHasEntries = false;
     let homePrimaryPanel = 'watchlist';
     let homePanelInitialized = false;
+    let homeTrendingInitialized = false;
     let watchlistPriceRefreshPromise = null;
     let activeSentimentRunId = 0;
     let latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
@@ -1855,8 +1856,11 @@
                 }
                 if (isWatchlistPage) {
                     watchlistSectionEl.style.display = '';
-                } else {
+                } else if (!isHomePage) {
                     showWatchlistSection(false);
+                }
+                if (isHomePage) {
+                    setHomePrimaryPanel('trending');
                 }
                 return 0;
             }
@@ -1919,8 +1923,11 @@
             });
             if (isWatchlistPage) {
                 watchlistSectionEl.style.display = '';
-            } else {
+            } else if (!isHomePage) {
                 showWatchlistSection(homePrimaryPanel === 'watchlist');
+            }
+            if (isHomePage) {
+                setHomePrimaryPanel('watchlist');
             }
             return items.length;
         }
@@ -2198,19 +2205,23 @@
 
         function setHomePrimaryPanel(panel) {
             if (!isHomePage) return;
-            homePrimaryPanel = panel === 'watchlist' ? 'watchlist' : 'watchlist';
-            const shouldShowWatchlist = watchlistHasEntries && homePrimaryPanel === 'watchlist';
+            const normalizedPanel = panel === 'trending' ? 'trending' : 'watchlist';
+            homePrimaryPanel = normalizedPanel;
+            const shouldShowWatchlist = watchlistHasEntries && normalizedPanel === 'watchlist';
+            const shouldShowTrending = !shouldShowWatchlist;
             showWatchlistSection(shouldShowWatchlist);
-            showTrendingSection(false);
+            showTrendingSection(shouldShowTrending);
             if (shouldShowWatchlist) {
                 refreshWatchlistPrices();
+            } else if (shouldShowTrending) {
+                ensureHomeTrendingLoaded();
             }
         }
 
         function initializeHomePanel(watchlistCount) {
             if (!isHomePage || homePanelInitialized) return;
             homePanelInitialized = true;
-            const targetPanel = watchlistCount > 0 ? 'watchlist' : 'watchlist';
+            const targetPanel = watchlistCount > 0 ? 'watchlist' : 'trending';
             setHomePrimaryPanel(targetPanel);
         }
 
@@ -3112,7 +3123,8 @@
                 showTrendingSection(true);
                 loadTrendingStocks();
             } else {
-                showTrendingSection(false);
+                const shouldShowTrending = isHomePage && homePrimaryPanel === 'trending';
+                showTrendingSection(shouldShowTrending);
             }
 
             if (isSearchPage && initialSearchQuery) {
@@ -3218,6 +3230,12 @@
             });
         }
 
+        function ensureHomeTrendingLoaded() {
+            if (homeTrendingInitialized || isTrendingPage) return;
+            loadTrendingStocks();
+            homeTrendingInitialized = true;
+        }
+
         async function loadMarketSummaryContent() {
             if (!marketSummarySectionEl) return;
             try {
@@ -3251,7 +3269,14 @@
                 trendingSection.style.display = 'none';
                 return;
             }
-            trendingSection.style.display = show ? '' : 'none';
+            if (show) {
+                trendingSection.style.display = '';
+                if (isHomePage) {
+                    ensureHomeTrendingLoaded();
+                }
+            } else {
+                trendingSection.style.display = 'none';
+            }
         }
         function resetHomeView() {
             if (!isHomePage) {
@@ -3264,8 +3289,8 @@
             if (resultsEl) resultsEl.style.display = 'none';
             const errorEl = document.getElementById('errorMessage');
             if (errorEl) errorEl.innerHTML = '';
-            showTrendingSection(false);
-            setHomePrimaryPanel('watchlist');
+            const targetPanel = watchlistHasEntries ? 'watchlist' : 'trending';
+            setHomePrimaryPanel(targetPanel);
         }
 
         function openTrendingPage() {
