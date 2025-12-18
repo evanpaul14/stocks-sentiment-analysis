@@ -225,6 +225,20 @@ def _get_int_env(var_name, default):
         return default
 
 
+GEMMA_SENTIMENT_TIMEOUT_SECONDS = max(1, _get_int_env("GEMMA_SENTIMENT_TIMEOUT_SECONDS", 8))
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_SENTIMENT_MODEL = os.getenv("CLOUDFLARE_SENTIMENT_MODEL", "@cf/meta/llama-3-8b-instruct")
+CLOUDFLARE_TIMEOUT_SECONDS = max(3, _get_int_env("CLOUDFLARE_TIMEOUT_SECONDS", 10))
+CLOUDFLARE_BASE_URL = (
+    f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/"
+    if CLOUDFLARE_ACCOUNT_ID else None
+)
+CLOUDFLARE_ENABLED = bool(CLOUDFLARE_BASE_URL and CLOUDFLARE_API_TOKEN)
+_cloudflare_session = requests.Session() if CLOUDFLARE_ENABLED else None
+_cloudflare_headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"} if CLOUDFLARE_ENABLED else {}
+
+
 AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
 AI_RATE_WINDOW_SECONDS = max(1, _get_int_env("GEMMA_RATE_WINDOW_SECONDS", 60))
 _ai_call_timestamps = deque()
@@ -1641,6 +1655,30 @@ def build_movement_insight(stock_info):
     }
 
 
+def _build_sentiment_prompt(company_name, article_title, article_description):
+    return (
+        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
+        f"to the company {company_name}.\n\n"
+        f"Title: {article_title}\n"
+        f"Description: {article_description}\n\n"
+        f"Do not assume anything not explicitly stated in the title or description.\n"
+        f"Respond with only one word and nothing else: positive, negative, or neutral."
+    )
+
+
+def _is_model_overloaded_error(exc):
+    if hasattr(exc, 'args') and exc.args and isinstance(exc.args[0], dict):
+        err = exc.args[0]
+        if (
+            isinstance(err, dict)
+            and 'error' in err
+            and err['error'].get('code') == 503
+            and 'model is overloaded' in err['error'].get('message', '').lower()
+        ):
+            return True
+    return False
+
+
 def _extract_sentiment_label(raw_text):
     cleaned = (raw_text or '').strip()
 
@@ -1698,25 +1736,57 @@ def _extract_sentiment_label(raw_text):
     return _normalize(cleaned)
 
 
+def analyze_sentiment_cloudflare(article_title, article_description, company_name):
+    if not CLOUDFLARE_ENABLED:
+        return None
+
+    prompt = _build_sentiment_prompt(company_name, article_title, article_description)
+    payload = {
+        "messages": [
+            {"role": "system", "content": "You are a stock expert"},
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    try:
+        response = _cloudflare_session.post(
+            f"{CLOUDFLARE_BASE_URL}{CLOUDFLARE_SENTIMENT_MODEL}",
+            headers=_cloudflare_headers,
+            json=payload,
+            timeout=CLOUDFLARE_TIMEOUT_SECONDS
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:
+        app_logger.warning("Cloudflare sentiment request failed: %s", exc)
+        return None
+
+    result_payload = data.get('result') or {}
+    raw_text = result_payload.get('response') or result_payload.get('output') or ''
+    sentiment = _extract_sentiment_label(raw_text)
+    if sentiment:
+        app_logger.info("[Cloudflare AI] Sentiment resolved via fallback for %s", company_name)
+    return sentiment
+
+
 def analyze_sentiment_gemma(article_title, article_description, company_name):
-    """Analyze sentiment using Google Gemma AI"""
-    prompt = (
-        f"Analyze the sentiment (positive, negative, or neutral) of this news article strictly in reference "
-        f"to the company {company_name}.\n\n"
-        f"Title: {article_title}\n"
-        f"Description: {article_description}\n\n"
-        f"Do not assume anything not explicitly stated in the title or description.\n"
-        f"Respond with only one word and nothing else: positive, negative, or neutral."
-    )
+    """Analyze sentiment using Google Gemma AI with Cloudflare fallback for slow/error cases."""
+    prompt = _build_sentiment_prompt(company_name, article_title, article_description)
+
+    fallback_reason = None
+    last_exception = None
+    gemma_result = None
 
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
             wait_for_ai_rate_slot()
+            request_started = time.perf_counter()
             response = client.models.generate_content(
                 model=gemma_model,
                 contents=prompt
             )
+            elapsed = time.perf_counter() - request_started
 
             raw_text = getattr(response, 'text', '')
             app_logger.info(
@@ -1725,28 +1795,40 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
                 company_name,
                 str(raw_text)[:240]
             )
-            sentiment = _extract_sentiment_label(raw_text)
-            if not sentiment:
-                sentiment = 'neutral'
+            sentiment = _extract_sentiment_label(raw_text) or 'neutral'
+            gemma_result = sentiment
+            if elapsed > GEMMA_SENTIMENT_TIMEOUT_SECONDS:
+                fallback_reason = f"slow_response_{elapsed:.2f}s"
+                break
             return sentiment
-        except Exception as e:
-            # Check for model overloaded error (503)
-            if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict):
-                err = e.args[0]
-                if (
-                    isinstance(err, dict)
-                    and 'error' in err
-                    and err['error'].get('code') == 503
-                    and 'model is overloaded' in err['error'].get('message', '').lower()
-                ):
-                    raise RuntimeError('MODEL_OVERLOADED')
-            retry_delay = extract_retry_delay_seconds(e)
+        except Exception as exc:
+            last_exception = exc
+            if _is_model_overloaded_error(exc):
+                fallback_reason = 'model_overloaded'
+                break
+            retry_delay = extract_retry_delay_seconds(exc)
             if retry_delay:
                 print(f"Gemma quota hit, waiting {retry_delay:.2f}s before retrying...")
                 time.sleep(retry_delay)
                 continue
-            print(f"Error analyzing sentiment: {e}")
+            print(f"Error analyzing sentiment: {exc}")
+            fallback_reason = fallback_reason or 'api_error'
             break
+
+    if fallback_reason and CLOUDFLARE_ENABLED:
+        fallback = analyze_sentiment_cloudflare(article_title, article_description, company_name)
+        if fallback:
+            app_logger.info("Using Cloudflare sentiment fallback (reason=%s)", fallback_reason)
+            return fallback
+
+    if gemma_result is not None and not fallback_reason:
+        return gemma_result
+
+    if gemma_result is not None:
+        return gemma_result
+
+    if last_exception and _is_model_overloaded_error(last_exception):
+        raise RuntimeError('MODEL_OVERLOADED')
 
     return 'neutral'
 

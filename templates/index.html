@@ -420,6 +420,16 @@
             margin-top: 30px;
         }
 
+        .news-pending {
+            padding: 18px;
+            margin-bottom: 15px;
+            border: 1px dashed #333;
+            border-radius: 12px;
+            text-align: center;
+            color: #a1a1aa;
+            font-size: 14px;
+        }
+
         .sentiment-summary {
             display: flex;
             gap: 12px;
@@ -1270,7 +1280,7 @@
             </div>
             <div class="search-box">
                 <input type="text" id="companyInput" placeholder="Enter company name">
-                <button onclick="searchStock()" id="searchBtn">Search</button>
+                <button onclick="searchStock()" id="searchBtn" data-umami-event="search button">Search</button>
             </div>
             <div class="loading" id="loading">Getting stock market data...</div>
             <div id="errorMessage"></div>
@@ -1279,8 +1289,8 @@
             <div class="section-title" style="margin-bottom: 15px;">Live Trending Dashboards</div>
             <div class="trending-tabs" id="trendingTabs">
                 <button class="trending-tab-btn" data-source="stocktwits">Top Stocks StockTwits</button>
-                <button class="trending-tab-btn active" data-source="reddit">Top Stocks Reddit</button>
-                <button class="trending-tab-btn" data-source="volume">Top Stocks Volume</button>
+                <button class="trending-tab-btn active" data-source="reddit" data-umami-event="top stocks reddit">Top Stocks Reddit</button>
+                <button class="trending-tab-btn" data-source="volume" data-umami-event="top stocks volume">Top Stocks Volume</button>
             </div>
             <div class="trending-columns" id="trendingColumns">
                 <div class="trending-column" data-source="stocktwits">
@@ -1318,7 +1328,7 @@
             <div class="stock-header">
                 <div class="company-header">
                     <div class="company-name" id="companyName"></div>
-                    <button type="button" id="watchlistToggleBtn" class="watchlist-toggle-btn" style="display:none;" aria-pressed="false" title="Toggle watchlist">Add to Watchlist</button>
+                    <button type="button" id="watchlistToggleBtn" class="watchlist-toggle-btn" style="display:none;" aria-pressed="false" title="Toggle watchlist" data-umami-event="toggle watchlist">Add to Watchlist</button>
                 </div>
                 <div class="stock-price" id="stockPrice"></div>
                 <div class="price-change" id="priceChange"></div>
@@ -2837,37 +2847,29 @@
                 return;
             }
 
-            articles.forEach((article, idx) => {
-                const articleDiv = document.createElement('div');
-                articleDiv.className = 'news-article';
-                if (article.link) {
-                    articleDiv.addEventListener('click', () => window.open(article.link, '_blank'));
-                } else {
-                    articleDiv.style.cursor = 'default';
-                }
+            const pendingNotice = document.createElement('div');
+            pendingNotice.className = 'news-pending';
+            pendingNotice.textContent = 'Analyzing sentiment so we can highlight the most relevant articles...';
+            newsContainer.appendChild(pendingNotice);
 
-                const badgeId = `sentiment-badge-${sentimentRunId}-${idx}`;
-                articleDiv.innerHTML = `
-                    <div class="news-source">${article.source} • ${formatDate(article.publishedAt)}</div>
-                    <div class="news-title">${article.title}</div>
-                    <div class="news-description">${article.description}</div>
-                    <div class="news-meta">
-                        <span>${article.link ? 'Click to read more' : 'Coverage updated recently'}</span>
-                        <span class="sentiment-badge loading neutral" id="${badgeId}">Loading...</span>
-                    </div>
-                `;
-                newsContainer.appendChild(articleDiv);
-            });
-
-            progressivelyAnalyzeSentiment(articles, stockInfo.companyName || stockInfo.symbol, sentimentRunId);
+            progressivelyAnalyzeSentiment(
+                articles,
+                stockInfo.companyName || stockInfo.symbol,
+                sentimentRunId,
+                newsContainer,
+                pendingNotice
+            );
         }
 
-        async function progressivelyAnalyzeSentiment(articles, companyName, runId) {
+        async function progressivelyAnalyzeSentiment(articles, companyName, runId, targetContainer, pendingElement) {
             if (!articles || !articles.length) {
                 renderSentimentSummaryUI(latestSentimentCounts, 0, false);
                 setSentimentStatus('No articles to analyze.');
                 return;
             }
+
+            const newsContainer = targetContainer || document.getElementById('newsArticles');
+            let waitingNotice = pendingElement || null;
 
             const total = articles.length;
             let completed = 0;
@@ -2877,13 +2879,6 @@
                 if (runId !== activeSentimentRunId) return;
 
                 const article = articles[idx];
-                const badgeId = `sentiment-badge-${runId}-${idx}`;
-                const badgeEl = document.getElementById(badgeId);
-                if (badgeEl) {
-                    badgeEl.textContent = 'Loading...';
-                    badgeEl.classList.add('loading');
-                }
-
                 let sentiment = null;
                 let didTimeout = false;
                 try {
@@ -2923,21 +2918,83 @@
                 const normalized = (sentiment || '').toString().trim().toLowerCase();
                 if (['positive', 'negative', 'neutral'].includes(normalized)) {
                     latestSentimentCounts[normalized] = (latestSentimentCounts[normalized] || 0) + 1;
-                    if (badgeEl) {
-                        badgeEl.textContent = normalized;
-                        badgeEl.className = `sentiment-badge ${normalized}`;
-                    }
-                } else {
-                    if (badgeEl) {
-                        badgeEl.textContent = 'No result';
-                        badgeEl.className = 'sentiment-badge neutral muted';
-                    }
+                }
+
+                if (waitingNotice && newsContainer && newsContainer.contains(waitingNotice)) {
+                    newsContainer.removeChild(waitingNotice);
+                    waitingNotice = null;
+                }
+
+                if (newsContainer && runId === activeSentimentRunId) {
+                    const { badgeText, badgeClass } = determineSentimentBadge(normalized, didTimeout, Boolean(sentiment));
+                    const articleElement = buildNewsArticleElement(
+                        articles[idx],
+                        badgeText,
+                        badgeClass
+                    );
+                    newsContainer.appendChild(articleElement);
                 }
 
                 completed += 1;
                 renderSentimentSummaryUI(latestSentimentCounts, completed, completed < total);
                 setSentimentStatus(completed < total ? `Analyzed ${completed}/${total} articles...` : '');
             }
+        }
+
+        function determineSentimentBadge(normalizedSentiment, timedOut, hasRawValue) {
+            if (['positive', 'negative', 'neutral'].includes(normalizedSentiment)) {
+                return {
+                    badgeText: normalizedSentiment,
+                    badgeClass: `sentiment-badge ${normalizedSentiment}`
+                };
+            }
+
+            if (timedOut) {
+                return {
+                    badgeText: 'Timeout',
+                    badgeClass: 'sentiment-badge neutral muted'
+                };
+            }
+
+            if (hasRawValue) {
+                return {
+                    badgeText: 'Unclear',
+                    badgeClass: 'sentiment-badge neutral muted'
+                };
+            }
+
+            return {
+                badgeText: 'No result',
+                badgeClass: 'sentiment-badge neutral muted'
+            };
+        }
+
+        function buildNewsArticleElement(article, badgeText, badgeClass) {
+            const articleDiv = document.createElement('div');
+            articleDiv.className = 'news-article';
+
+            if (article.link) {
+                articleDiv.addEventListener('click', () => window.open(article.link, '_blank'));
+            } else {
+                articleDiv.style.cursor = 'default';
+            }
+
+            const publishedDate = article.publishedAt ? formatDate(article.publishedAt) : 'Recently updated';
+            const sourceLabel = article.source ? `${article.source} • ${publishedDate}` : publishedDate;
+            const description = article.description || 'No summary provided.';
+            const actionCopy = article.link ? 'Click to read more' : 'Coverage updated recently';
+
+            articleDiv.innerHTML = `
+                <div class="news-source">${sourceLabel}</div>
+                <div class="news-title">${article.title || 'Untitled coverage'}</div>
+                <div class="news-description">${description}</div>
+                <div class="news-meta">
+                    <span>${actionCopy}</span>
+                    <span class="${badgeClass}">${badgeText}</span>
+                </div>
+            `;
+
+            return articleDiv;
         }
 
         function renderMovementInsight(insight) {
