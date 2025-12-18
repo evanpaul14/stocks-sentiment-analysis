@@ -613,6 +613,29 @@
             display: none;
         }
 
+        .sentiment-progress {
+            width: 100%;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(147, 51, 234, 0.18);
+            overflow: hidden;
+            margin: 4px 0 18px;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .sentiment-progress.is-active {
+            opacity: 1;
+        }
+
+        .sentiment-progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #9333ea, #c084fc);
+            border-radius: inherit;
+            transition: width 0.25s ease;
+        }
+
         .sentiment-badge.loading {
             position: relative;
             background-color: #1f1f1f;
@@ -1354,6 +1377,9 @@
                     <div class="sentiment-summary-spinner" aria-hidden="true"></div>
                 </div>
                 <div class="sentiment-status" id="sentimentStatus" aria-live="polite"></div>
+                <div class="sentiment-progress" id="sentimentProgress" aria-hidden="true">
+                    <div class="sentiment-progress-bar"></div>
+                </div>
                 <div class="chart-container">
                 <div class="chart-tabs">
                     <span class="chart-tab active" data-period="1d">1D</span>
@@ -1512,6 +1538,9 @@
     let activeSentimentRunId = 0;
     let latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
     const sentimentStatusEl = document.getElementById('sentimentStatus');
+    const sentimentProgressEl = document.getElementById('sentimentProgress');
+    const sentimentProgressBarEl = sentimentProgressEl ? sentimentProgressEl.querySelector('.sentiment-progress-bar') : null;
+    let sentimentBatchSize = 0;
     const SENTIMENT_REQUEST_TIMEOUT_MS = 25000;
     const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
 
@@ -1679,6 +1708,7 @@
         }
 
         function renderSentimentSummaryUI(counts, completedTotal = 0, loading = false) {
+            updateSentimentProgress(completedTotal, Boolean(loading));
             const positive = counts.positive || 0;
             const negative = counts.negative || 0;
             const neutral = counts.neutral || 0;
@@ -1719,6 +1749,8 @@
 
         function resetSentimentSummaryUI() {
             latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+            sentimentBatchSize = 0;
+            updateSentimentProgress(0, false);
             renderSentimentSummaryUI(latestSentimentCounts, 0, true);
         }
 
@@ -1732,6 +1764,20 @@
             }
             sentimentStatusEl.textContent = message;
             sentimentStatusEl.style.color = tone === 'error' ? '#ef4444' : '#a1a1aa';
+        }
+
+        function updateSentimentProgress(completed = 0, loading = false) {
+            if (!sentimentProgressEl || !sentimentProgressBarEl) return;
+            if (!loading || sentimentBatchSize <= 0) {
+                sentimentProgressEl.classList.remove('is-active');
+                sentimentProgressEl.setAttribute('aria-hidden', 'true');
+                sentimentProgressBarEl.style.width = '0%';
+                return;
+            }
+            const ratio = sentimentBatchSize ? Math.min(1, completed / sentimentBatchSize) : 0;
+            sentimentProgressEl.classList.add('is-active');
+            sentimentProgressEl.setAttribute('aria-hidden', 'false');
+            sentimentProgressBarEl.style.width = `${(ratio * 100).toFixed(2)}%`;
         }
 
         function createParagraphNodes(container, text) {
@@ -2308,10 +2354,11 @@
             }
         }
 
-        async function fetchSentimentWithTimeout(article, companyName, idx, timeoutMs) {
+        async function fetchSentimentWithTimeout(article, companyName, idx, timeoutMs, runId) {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
+                const normalizedRunId = runId === undefined || runId === null ? '' : String(runId);
                 const res = await fetch('/sentiment', {
                     method: 'POST',
                     headers: {
@@ -2321,7 +2368,8 @@
                         title: article.title,
                         description: article.description,
                         company_name: companyName,
-                        article_id: idx
+                        article_id: idx,
+                        sentiment_run_id: normalizedRunId || undefined
                     }),
                     signal: controller.signal
                 });
@@ -2865,6 +2913,8 @@
             if (!articles || !articles.length) {
                 renderSentimentSummaryUI(latestSentimentCounts, 0, false);
                 setSentimentStatus('No articles to analyze.');
+                sentimentBatchSize = 0;
+                updateSentimentProgress(0, false);
                 return;
             }
 
@@ -2873,7 +2923,10 @@
 
             const total = articles.length;
             let completed = 0;
+            sentimentBatchSize = total;
+            updateSentimentProgress(0, true);
             setSentimentStatus(`Analyzing ${total} article${total === 1 ? '' : 's'}...`);
+            const runIdentifier = String(runId);
 
             for (let idx = 0; idx < articles.length; idx++) {
                 if (runId !== activeSentimentRunId) return;
@@ -2886,7 +2939,8 @@
                         article,
                         companyName,
                         idx,
-                        SENTIMENT_REQUEST_TIMEOUT_MS
+                        SENTIMENT_REQUEST_TIMEOUT_MS,
+                        runIdentifier
                     );
                 } catch (error) {
                     didTimeout = error.name === 'AbortError';
@@ -2897,7 +2951,8 @@
                                 article,
                                 companyName,
                                 idx,
-                                SENTIMENT_RETRY_TIMEOUT_MS
+                                SENTIMENT_RETRY_TIMEOUT_MS,
+                                runIdentifier
                             );
                             didTimeout = false;
                         } catch (retryError) {

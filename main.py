@@ -15,12 +15,14 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import time
 from collections import deque
+import threading
 from functools import lru_cache
 import cloudscraper
 from openai import OpenAI
 import finnhub
 import json
 import atexit
+import uuid
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -237,6 +239,42 @@ CLOUDFLARE_BASE_URL = (
 CLOUDFLARE_ENABLED = bool(CLOUDFLARE_BASE_URL and CLOUDFLARE_API_TOKEN)
 _cloudflare_session = requests.Session() if CLOUDFLARE_ENABLED else None
 _cloudflare_headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"} if CLOUDFLARE_ENABLED else {}
+
+SENTIMENT_RUN_STATE_TTL_SECONDS = max(60, _get_int_env("SENTIMENT_RUN_STATE_TTL_SECONDS", 300))
+_sentiment_run_state = {}
+_sentiment_run_lock = threading.Lock()
+
+
+def _prune_sentiment_run_state_locked(now=None):
+    if not _sentiment_run_state:
+        return
+    now = now or time.time()
+    expired = [
+        run_id for run_id, meta in _sentiment_run_state.items()
+        if now - meta.get('ts', now) > SENTIMENT_RUN_STATE_TTL_SECONDS
+    ]
+    for run_id in expired:
+        _sentiment_run_state.pop(run_id, None)
+
+
+def _should_force_cloudflare_for_run(run_id):
+    if not (run_id and CLOUDFLARE_ENABLED):
+        return False
+    with _sentiment_run_lock:
+        _prune_sentiment_run_state_locked()
+        entry = _sentiment_run_state.get(run_id)
+        return bool(entry and entry.get('force_cloudflare'))
+
+
+def _mark_run_force_cloudflare(run_id):
+    if not (run_id and CLOUDFLARE_ENABLED):
+        return
+    with _sentiment_run_lock:
+        _prune_sentiment_run_state_locked()
+        _sentiment_run_state[run_id] = {
+            'ts': time.time(),
+            'force_cloudflare': True
+        }
 
 
 AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
@@ -1769,8 +1807,21 @@ def analyze_sentiment_cloudflare(article_title, article_description, company_nam
     return sentiment
 
 
-def analyze_sentiment_gemma(article_title, article_description, company_name):
+def analyze_sentiment_gemma(article_title, article_description, company_name, run_id=None):
     """Analyze sentiment using Google Gemma AI with Cloudflare fallback for slow/error cases."""
+    if _should_force_cloudflare_for_run(run_id):
+        fallback = analyze_sentiment_cloudflare(article_title, article_description, company_name)
+        if fallback:
+            app_logger.info(
+                "Using Cloudflare sentiment due to prior fallback for run %s (company=%s)",
+                run_id,
+                company_name
+            )
+            return fallback
+        app_logger.warning(
+            "Cloudflare forced fallback did not return a sentiment for run %s", run_id
+        )
+        return 'neutral'
     prompt = _build_sentiment_prompt(company_name, article_title, article_description)
 
     fallback_reason = None
@@ -1816,6 +1867,7 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
             break
 
     if fallback_reason and CLOUDFLARE_ENABLED:
+        _mark_run_force_cloudflare(run_id)
         fallback = analyze_sentiment_cloudflare(article_title, article_description, company_name)
         if fallback:
             app_logger.info("Using Cloudflare sentiment fallback (reason=%s)", fallback_reason)
@@ -1833,15 +1885,17 @@ def analyze_sentiment_gemma(article_title, article_description, company_name):
     return 'neutral'
 
 
-def build_sentiment_payload(symbol, company_name=None):
+def build_sentiment_payload(symbol, company_name=None, *, sentiment_run_id=None):
     articles = get_news_articles(symbol, 10)
     fallback_query = f"{company_name or symbol} stock market"
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
+    run_id = str(sentiment_run_id).strip() if sentiment_run_id else f"bulk-{uuid.uuid4().hex}"
     for article in articles:
         sentiment = analyze_sentiment_gemma(
             article['title'],
             article['description'],
-            company_name or symbol
+            company_name or symbol,
+            run_id=run_id
         )
         article['sentiment'] = sentiment
         if sentiment in sentiment_summary:
@@ -1978,6 +2032,11 @@ def analyze_article_sentiment():
     description = payload.get('description') or ''
     company_name = (payload.get('company_name') or payload.get('symbol') or '').strip()
     article_id = payload.get('article_id')
+    raw_run_id = payload.get('sentiment_run_id')
+    if raw_run_id is None:
+        sentiment_run_id = None
+    else:
+        sentiment_run_id = str(raw_run_id).strip() or None
 
     if not title:
         return jsonify({'error': 'Title is required for sentiment analysis'}), 400
@@ -1985,7 +2044,7 @@ def analyze_article_sentiment():
         company_name = 'the company'
 
     try:
-        sentiment = analyze_sentiment_gemma(title, description, company_name)
+        sentiment = analyze_sentiment_gemma(title, description, company_name, run_id=sentiment_run_id)
     except RuntimeError as sentiment_exc:
         if str(sentiment_exc) == 'MODEL_OVERLOADED':
             return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
