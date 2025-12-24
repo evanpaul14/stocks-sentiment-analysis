@@ -1297,6 +1297,42 @@ def dispatch_market_summary_email(summary_record):
     return True
 
 
+def get_latest_market_summary_record():
+    return (
+        MarketSummary.query
+        .order_by(MarketSummary.summary_date.desc(), MarketSummary.published_at.desc(), MarketSummary.id.desc())
+        .first()
+    )
+
+
+def send_market_summary_to_recipient(summary_record, recipient_email):
+    if not (summary_record and recipient_email and MAILGUN_ENABLED and MAILGUN_FROM_EMAIL and MAILGUN_MESSAGES_URL):
+        raise RuntimeError("Unable to send market summary to recipient.")
+
+    serialized = serialize_market_summary(summary_record)
+    summary_dt = _resolve_summary_datetime(serialized)
+    heading = _format_daily_heading(summary_dt)
+    html_body = build_market_summary_email_html(serialized, heading, summary_dt)
+    text_body = serialized.get('body') or heading
+
+    response = requests.post(
+        MAILGUN_MESSAGES_URL,
+        auth=HTTPBasicAuth("api", MAILGUN_API_KEY),
+        data={
+            "from": MAILGUN_FROM_EMAIL,
+            "to": recipient_email,
+            "subject": heading,
+            "text": text_body,
+            "html": html_body
+        },
+        timeout=MAILGUN_TIMEOUT_SECONDS
+    )
+    if response.status_code >= 400:
+        snippet = response.text[:200] if response.text else ''
+        raise RuntimeError(f"Mailgun direct send failed ({response.status_code}) {snippet}")
+    return True
+
+
 def ensure_market_summary_email_sent(summary_record):
     if not summary_record or not MAILGUN_ENABLED:
         return False
@@ -2303,8 +2339,28 @@ def market_summary_subscribe():
         app_logger.error("Mailgun list add failed for %s: %s", email, exc)
         return jsonify({"error": "We couldn't add your email to the list. Please try again shortly."}), 502
 
+    summary_sent = False
+    try:
+        latest_summary = get_latest_market_summary_record()
+        if latest_summary:
+            send_market_summary_to_recipient(latest_summary, email)
+            summary_sent = True
+        else:
+            app_logger.info("No market summary available to send for new subscriber %s", email)
+    except Exception as exc:
+        app_logger.error("Failed to send welcome market summary to %s: %s", email, exc)
+
+    if summary_sent:
+        message = (
+            "You're subscribed! The latest market summary is on its way. We'll email weekday market summaries after 4:15 PM ET."
+        )
+    else:
+        message = (
+            "You're subscribed! We'll email weekday market summaries after 4:15 PM ET. Make sure to check your spam folder."
+        )
+
     return jsonify({
-        "message": "You're subscribed! We'll email weekday market summaries after 4:15 PM ET."
+        "message": message
     })
 
 

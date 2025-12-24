@@ -1888,7 +1888,7 @@
                 marketSummaryEmailInputEl.focus();
                 return;
             }
-            setMarketSummarySignupStatus('Sending confirmation link…');
+            setMarketSummarySignupStatus('Signing you up...');
             marketSummarySignupButtonEl.disabled = true;
             try {
                 const res = await fetch('/api/market-summary/subscribe', {
