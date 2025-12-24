@@ -1039,6 +1039,84 @@
             border: 1px solid rgba(147, 51, 234, 0.2);
         }
 
+        .market-summary-signup {
+            background: #11111a;
+            border-radius: 12px;
+            border: 1px solid rgba(147, 51, 234, 0.25);
+            padding: 22px;
+            margin-bottom: 30px;
+            box-shadow: 0 12px 25px rgba(0,0,0,0.35);
+        }
+
+        .market-summary-signup h3 {
+            margin: 0 0 6px;
+            font-size: 18px;
+        }
+
+        .market-summary-signup p {
+            margin: 0 0 18px;
+            color: #a1a1aa;
+            font-size: 14px;
+        }
+
+        .market-summary-signup form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .market-summary-signup input[type="email"] {
+            flex: 1 1 220px;
+            background: #0b0b12;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 12px 14px;
+            color: #f9fafb;
+            font-size: 15px;
+        }
+
+        .market-summary-signup input[type="email"]:focus {
+            outline: none;
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 2px rgba(139,92,246,0.25);
+        }
+
+        .market-summary-signup button {
+            flex: 0 0 auto;
+            background: #7c3aed;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .market-summary-signup button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .market-summary-signup button:hover:not(:disabled) {
+            background: #8b5cf6;
+        }
+
+        .market-summary-signup-status {
+            margin-top: 14px;
+            font-size: 14px;
+            color: #cbd5f5;
+            min-height: 18px;
+        }
+
+        .market-summary-signup-status.success {
+            color: #33ea93;
+        }
+
+        .market-summary-signup-status.error {
+            color: #f87171;
+        }
+
         .market-summary-note {
             color: #a1a1aa;
             font-size: 14px;
@@ -1348,6 +1426,15 @@
         <div class="market-summary-section" id="marketSummarySection" {% if page_view != 'market' %}style="display:none;"{% endif %}>
             <div class="section-title" style="margin-bottom: 10px;">Daily Market Summary</div>
             <p class="market-summary-note">Fresh articles publish weekdays at 4:15 PM ET.</p>
+            <div class="market-summary-signup" id="marketSummarySignupCard">
+                <h3>Get the recap in your inbox</h3>
+                <p>We email the Daily Market Summary every weekday right after it posts.</p>
+                <form id="marketSummarySignupForm" novalidate>
+                    <input type="email" id="marketSummaryEmail" name="email" placeholder="you@example.com" autocomplete="email" required>
+                    <button type="submit" id="marketSummarySignupButton" data-umami-event="market summary signup">Notify Me</button>
+                </form>
+                <p class="market-summary-signup-status" id="marketSummarySignupStatus" aria-live="polite"></p>
+            </div>
             <div id="marketSummaryLatest" class="market-summary-latest">
                 <div class="market-summary-empty">Latest edition will appear here.</div>
             </div>
@@ -1525,6 +1612,10 @@
     const marketSummarySectionEl = document.getElementById('marketSummarySection');
     const marketSummaryLatestEl = document.getElementById('marketSummaryLatest');
     const marketSummaryArchiveEl = document.getElementById('marketSummaryArchive');
+    const marketSummaryFormEl = document.getElementById('marketSummarySignupForm');
+    const marketSummaryEmailInputEl = document.getElementById('marketSummaryEmail');
+    const marketSummarySignupStatusEl = document.getElementById('marketSummarySignupStatus');
+    const marketSummarySignupButtonEl = document.getElementById('marketSummarySignupButton');
     const pageVariant = document.body.dataset.page || 'home';
     const initialSearchQuery = document.body.dataset.searchQuery || '';
     const isHomePage = pageVariant === 'home';
@@ -1772,6 +1863,53 @@
             }
             sentimentStatusEl.textContent = message;
             sentimentStatusEl.style.color = tone === 'error' ? '#ef4444' : '#a1a1aa';
+        }
+
+        function setMarketSummarySignupStatus(message, tone = 'default') {
+            if (!marketSummarySignupStatusEl) return;
+            marketSummarySignupStatusEl.textContent = message || '';
+            marketSummarySignupStatusEl.classList.remove('success', 'error');
+            if (!message) {
+                return;
+            }
+            if (tone === 'success') {
+                marketSummarySignupStatusEl.classList.add('success');
+            } else if (tone === 'error') {
+                marketSummarySignupStatusEl.classList.add('error');
+            }
+        }
+
+        async function handleMarketSummarySignup(event) {
+            event.preventDefault();
+            if (!marketSummaryEmailInputEl || !marketSummarySignupButtonEl) return;
+            const email = marketSummaryEmailInputEl.value.trim();
+            if (!email) {
+                setMarketSummarySignupStatus('Enter your email to subscribe.', 'error');
+                marketSummaryEmailInputEl.focus();
+                return;
+            }
+            setMarketSummarySignupStatus('Sending confirmation link…');
+            marketSummarySignupButtonEl.disabled = true;
+            try {
+                const res = await fetch('/api/market-summary/subscribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email })
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload && payload.error ? payload.error : 'Unable to subscribe.');
+                }
+                setMarketSummarySignupStatus(payload.message || 'Check your inbox to confirm.', 'success');
+                marketSummaryEmailInputEl.value = '';
+            } catch (error) {
+                const fallbackMessage = (error && error.message) ? error.message : 'Unable to subscribe right now.';
+                setMarketSummarySignupStatus(fallbackMessage, 'error');
+            } finally {
+                marketSummarySignupButtonEl.disabled = false;
+            }
         }
 
         function updateSentimentProgress(completed = 0, loading = false) {
@@ -3256,6 +3394,10 @@
 
             if (watchlistToggleBtn) {
                 watchlistToggleBtn.addEventListener('click', handleWatchlistToggleClick);
+            }
+
+            if (marketSummaryFormEl) {
+                marketSummaryFormEl.addEventListener('submit', handleMarketSummarySignup);
             }
         });
 

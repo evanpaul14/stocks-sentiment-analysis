@@ -106,6 +106,16 @@ class MarketSummary(db.Model):
     )
 
 
+class MarketSummarySendLog(db.Model):
+    __tablename__ = "market_summary_send_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    summary_id = db.Column(db.Integer, db.ForeignKey("market_summary.id"), nullable=False, unique=True)
+    sent_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+    status = db.Column(db.String(32), nullable=False, default="sent")
+    error_message = db.Column(db.String(255), nullable=True)
+
+
 def dedupe_market_summaries(summary_date=None):
     """Ensure only one MarketSummary row exists per date."""
     query = db.session.query(
@@ -211,6 +221,7 @@ if FINNHUB_API_KEY:
 
 # Trending stocks API
 import requests
+from requests.auth import HTTPBasicAuth
 import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
 STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json"
@@ -287,6 +298,19 @@ UNSPLASH_DEFAULT_QUERY = os.getenv("UNSPLASH_DEFAULT_QUERY", "stock market")
 UNSPLASH_TIMEOUT_SECONDS = max(3, _get_int_env("UNSPLASH_TIMEOUT_SECONDS", 10))
 UNSPLASH_RANDOM_URL = "https://api.unsplash.com/photos/random"
 UNSPLASH_ENABLED = bool(UNSPLASH_ACCESS_KEY)
+EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
+MAILGUN_MARKET_LIST_ADDRESS = os.getenv("MAILGUN_MARKET_LIST_ADDRESS", "marketsummary@mail.stocksentimentapp.com")
+MAILGUN_FROM_EMAIL = os.getenv("MAILGUN_FROM_EMAIL") or (
+    f"Stock Sentiment App <postmaster@{MAILGUN_DOMAIN}>" if MAILGUN_DOMAIN else None
+)
+MAILGUN_API_BASE = "https://api.mailgun.net/v3"
+MAILGUN_MESSAGES_URL = f"{MAILGUN_API_BASE}/{MAILGUN_DOMAIN}/messages" if MAILGUN_DOMAIN else None
+MAILGUN_LISTS_BASE_URL = f"{MAILGUN_API_BASE}/lists"
+MAILGUN_TIMEOUT_SECONDS = max(5, _get_int_env("MAILGUN_TIMEOUT_SECONDS", 10))
+MAILGUN_ENABLED = bool(MAILGUN_API_KEY and MAILGUN_DOMAIN and MAILGUN_MARKET_LIST_ADDRESS and MAILGUN_MESSAGES_URL)
 
 
 def _build_unsplash_referral_url():
@@ -1015,6 +1039,295 @@ def serialize_market_summary(record):
     }
 
 
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).replace('Z', '+00:00')
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _format_currency(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return '—'
+    return f"${number:,.2f}"
+
+
+def _format_signed_percentage(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return '—'
+    sign = '+' if number >= 0 else ''
+    return f"{sign}{number:.2f}%"
+
+
+def _format_headline_meta(item):
+    parts = []
+    source = (item.get('source') or '').strip()
+    if source:
+        parts.append(source)
+    stamp = _parse_iso_datetime(item.get('publishedAt'))
+    if stamp:
+        parts.append(stamp.strftime('%b %d, %Y'))
+    return ' • '.join(parts)
+
+
+def _build_body_html(body):
+    if not body:
+        return "<p style=\"margin:0;color:#d1d5db;\">No summary available.</p>"
+    paragraphs = []
+    for chunk in body.split('\n'):
+        text = chunk.strip()
+        if text:
+            paragraphs.append(
+                f"<p style=\"margin:0 0 12px;color:#d1d5db;line-height:1.7;\">{html.escape(text)}</p>"
+            )
+    return ''.join(paragraphs)
+
+
+def _resolve_summary_datetime(summary):
+    if not summary:
+        return None
+    for field in ('published_at', 'summary_date', 'created_at'):
+        candidate = _parse_iso_datetime(summary.get(field))
+        if candidate:
+            return candidate
+    return None
+
+
+def _format_daily_heading(summary_dt):
+    if not summary_dt:
+        return "Your Daily Market Summary"
+    local = summary_dt.astimezone(EASTERN_TZ)
+    month = local.strftime('%B')
+    day = local.day
+    return f"Your Daily Market Summary: {month} {day}"
+
+
+def _format_meta_label(summary_dt):
+    if not summary_dt:
+        return ''
+    local = summary_dt.astimezone(EASTERN_TZ)
+    return local.strftime('%B %d, %Y • %I:%M %p ET')
+
+
+def _build_indices_html(indices):
+    if not indices:
+        return ''
+    cards = []
+    for payload in indices:
+        label = html.escape(payload.get('label') or payload.get('symbol') or 'Index')
+        close_label = _format_currency(payload.get('close'))
+        try:
+            change_pct = float(payload.get('change_percent'))
+        except (TypeError, ValueError):
+            change_pct = None
+        change_label = _format_signed_percentage(change_pct)
+        color = '#a1a1aa'
+        if change_pct is not None:
+            color = '#33ea93' if change_pct >= 0 else '#ef4444'
+        cards.append(
+            (
+                "<div style=\"background:#1c1b27;border-radius:10px;padding:14px;border:1px solid rgba(99,102,241,0.25);\">"
+                f"<div style=\"font-size:14px;color:#c4b5fd;margin-bottom:6px;\">{label}</div>"
+                f"<div style=\"font-size:20px;font-weight:600;color:#fff;\">{close_label}</div>"
+                f"<div style=\"font-size:14px;font-weight:600;color:{color};\">{change_label}</div>"
+                "</div>"
+            )
+        )
+    return (
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:22px;">'
+        + ''.join(cards)
+        + '</div>'
+    )
+
+
+def _build_headlines_html(headlines):
+    if not headlines:
+        return ''
+    rows = []
+    for item in headlines:
+        title = html.escape(item.get('title') or 'Story')
+        link = item.get('link') or item.get('url')
+        meta = _format_headline_meta(item)
+        if link:
+            link_html = (
+                f"<a href=\"{html.escape(link)}\" style=\"color:#e0e7ff;text-decoration:none;\" target=\"_blank\" rel=\"noopener noreferrer\">{title}</a>"
+            )
+        else:
+            link_html = f"<span style=\"color:#e0e7ff;\">{title}</span>"
+        meta_html = html.escape(meta) if meta else ''
+        rows.append(
+            (
+                "<tr>"
+                "<td style=\"padding:0 0 10px;vertical-align:top;\">"
+                f"<div style=\"font-size:15px;font-weight:600;line-height:1.4;\">{link_html}</div>"
+                + (
+                    f"<div style=\"font-size:12px;color:#9ca3af;margin-top:2px;text-transform:uppercase;letter-spacing:0.2px;\">{meta_html}</div>"
+                    if meta_html
+                    else ''
+                )
+                + "</td>"
+                + "</tr>"
+            )
+        )
+    return (
+        "<div style=\"background:#13131f;border-radius:10px;padding:18px;border:1px solid rgba(147,51,234,0.15);\">"
+        "<h3 style=\"font-size:15px;font-weight:600;color:#c4b5fd;margin:0 0 12px;text-transform:uppercase;letter-spacing:0.3px;\">Headline drivers</h3>"
+        "<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;\">"
+        + ''.join(rows)
+        + "</table></div>"
+    )
+
+
+def _build_image_html(image_payload, title):
+    if not image_payload:
+        return ''
+    image_url = image_payload.get('url') or image_payload.get('image_url')
+    if not image_url:
+        return ''
+    description = html.escape(image_payload.get('description') or f"Market illustration for {title}")
+    photographer = (
+        image_payload.get('photographer')
+        or image_payload.get('photographer_name')
+        or 'Unsplash photographer'
+    )
+    photographer_profile = (
+        image_payload.get('photographer_profile')
+        or image_payload.get('photographer_profile_url')
+        or 'https://unsplash.com'
+    )
+    unsplash_link = (
+        image_payload.get('unsplash_link')
+        or image_payload.get('unsplash_photo_link')
+        or 'https://unsplash.com'
+    )
+    return (
+        "<div style=\"position:relative;border-radius:12px;overflow:hidden;margin-bottom:20px;border:1px solid rgba(255,255,255,0.05);background:#050505;\">"
+        f"<img src=\"{image_url}\" alt=\"{description}\" style=\"width:100%;height:260px;object-fit:cover;display:block;\" />"
+        f"<div style=\"position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,0.65);padding:6px 12px;border-radius:999px;font-size:12px;color:#f1f5f9;\">Photo by <a href=\"{photographer_profile}\" style=\"color:#f8fafc;\" target=\"_blank\" rel=\"noopener noreferrer\">{html.escape(photographer)}</a> on <a href=\"{unsplash_link}\" style=\"color:#f8fafc;\" target=\"_blank\" rel=\"noopener noreferrer\">Unsplash</a></div>"
+        "</div>"
+    )
+
+
+def build_market_summary_email_html(summary, heading, summary_dt):
+    body_html = _build_body_html(summary.get('body'))
+    indices_html = _build_indices_html(summary.get('indices'))
+    headlines_html = _build_headlines_html(summary.get('headlines'))
+    image_html = _build_image_html(summary.get('image'), heading)
+    meta_label = _format_meta_label(summary_dt)
+    return (
+        "<div style=\"background:#000;padding:32px 20px;font-family:'Inter','Segoe UI',sans-serif;color:#fff;\">"
+        "<div style=\"max-width:640px;margin:0 auto;background:#0a0a0a;border-radius:16px;padding:32px;border:1px solid rgba(147,51,234,0.2);box-shadow:0 20px 45px rgba(0,0,0,0.35);\">"
+        "<div style=\"text-transform:uppercase;font-size:13px;letter-spacing:0.35px;color:#a78bfa;margin-bottom:8px;\">Daily Market Summary</div>"
+        f"<h1 style=\"margin:0 0 6px;font-size:26px;line-height:1.2;color:#fff;\">{html.escape(heading)}</h1>"
+        f"<div style=\"font-size:13px;color:#a1a1aa;margin-bottom:18px;letter-spacing:0.3px;text-transform:uppercase;\">{html.escape(meta_label)}</div>"
+        f"{image_html}"
+        "<div style=\"background:#11111a;border:1px solid rgba(147,51,234,0.15);border-radius:12px;padding:24px;margin-bottom:24px;\">"
+        f"{body_html}"
+        "</div>"
+        f"{indices_html}"
+        f"{headlines_html}"
+        "<div style=\"margin-top:28px;text-align:center;font-size:12px;color:#9ca3af;\">"
+        "<a href=\"%unsubscribe_url%\" style=\"color:#c4b5fd;text-decoration:underline;\">Unsubscribe</a>"
+        "</div>"
+        "</div>"
+        "</div>"
+    )
+
+
+def _is_valid_email_address(value):
+    if not value:
+        return False
+    return bool(EMAIL_REGEX.match(value))
+
+
+def add_member_to_mailgun_list(email):
+    if not (MAILGUN_ENABLED and MAILGUN_API_KEY and MAILGUN_LISTS_BASE_URL and MAILGUN_MARKET_LIST_ADDRESS):
+        raise RuntimeError("Mailgun list integration is unavailable.")
+    url = f"{MAILGUN_LISTS_BASE_URL}/{MAILGUN_MARKET_LIST_ADDRESS}/members"
+    response = requests.post(
+        url,
+        auth=HTTPBasicAuth("api", MAILGUN_API_KEY),
+        data={
+            "address": email,
+            "subscribed": "yes",
+            "upsert": "yes"
+        },
+        timeout=MAILGUN_TIMEOUT_SECONDS
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Mailgun list update failed ({response.status_code})")
+
+
+def dispatch_market_summary_email(summary_record):
+    if not (summary_record and MAILGUN_ENABLED and MAILGUN_FROM_EMAIL and MAILGUN_MESSAGES_URL):
+        raise RuntimeError("Mailgun is not fully configured.")
+    serialized = serialize_market_summary(summary_record)
+    summary_dt = _resolve_summary_datetime(serialized)
+    heading = _format_daily_heading(summary_dt)
+    html_body = build_market_summary_email_html(serialized, heading, summary_dt)
+    text_body = serialized.get('body') or heading
+    to_header = f"Market Summary Subscribers <{MAILGUN_MARKET_LIST_ADDRESS}>"
+    response = requests.post(
+        MAILGUN_MESSAGES_URL,
+        auth=HTTPBasicAuth("api", MAILGUN_API_KEY),
+        data={
+            "from": MAILGUN_FROM_EMAIL,
+            "to": to_header,
+            "subject": heading,
+            "text": text_body,
+            "html": html_body
+        },
+        timeout=MAILGUN_TIMEOUT_SECONDS
+    )
+    if response.status_code >= 400:
+        snippet = response.text[:200] if response.text else ''
+        raise RuntimeError(f"Mailgun broadcast failed ({response.status_code}) {snippet}")
+    return True
+
+
+def ensure_market_summary_email_sent(summary_record):
+    if not summary_record or not MAILGUN_ENABLED:
+        return False
+
+    log_entry = MarketSummarySendLog.query.filter_by(summary_id=summary_record.id).first()
+    if log_entry and log_entry.status == 'sent':
+        return False
+    if not log_entry:
+        log_entry = MarketSummarySendLog(summary_id=summary_record.id)
+        db.session.add(log_entry)
+
+    try:
+        dispatch_market_summary_email(summary_record)
+        log_entry.status = 'sent'
+        log_entry.sent_at = _utcnow_naive()
+        log_entry.error_message = None
+        db.session.commit()
+        market_summary_logger.info(
+            "Market summary email dispatched for summary_id=%s",
+            summary_record.id
+        )
+        return True
+    except Exception as exc:
+        db.session.rollback()
+        log_entry.status = 'failed'
+        log_entry.error_message = str(exc)[:250]
+        db.session.add(log_entry)
+        db.session.commit()
+        market_summary_logger.error("Failed to send market summary email: %s", exc)
+        return False
+
 def prune_market_summary_history(cutoff_date=None):
     if not MARKET_SUMMARY_ENABLED:
         return 0
@@ -1112,12 +1425,15 @@ def run_market_summary_job():
                 market_summary_logger.info(
                     "Market summary refreshed for %s", summary.summary_date
                 )
+                ensure_market_summary_email_sent(summary)
         except Exception as exc:
             market_summary_logger.error("Market summary job failed: %s", exc)
 
 
 market_summary_scheduler = None
 _scheduler_started = False
+_runtime_bootstrap_lock = threading.Lock()
+_runtime_bootstrap_complete = False
 
 
 def _should_start_market_scheduler():
@@ -1172,6 +1488,26 @@ def bootstrap_market_summary_if_needed():
         market_summary_logger.info("Bootstrapped market summary for %s", now_et.date())
     except Exception as exc:
         market_summary_logger.error("Bootstrap market summary failed: %s", exc)
+
+
+def ensure_market_runtime_bootstrap():
+    """Initialize market summary data and scheduler once per process."""
+    global _runtime_bootstrap_complete
+    if _runtime_bootstrap_complete:
+        return
+
+    with _runtime_bootstrap_lock:
+        if _runtime_bootstrap_complete:
+            return
+        with app.app_context():
+            bootstrap_market_summary_if_needed()
+        start_market_summary_scheduler()
+        _runtime_bootstrap_complete = True
+
+
+@app.before_request
+def _ensure_market_runtime_bootstrap():
+    ensure_market_runtime_bootstrap()
 
 def get_trending_source_data(source, include_prices=True):
     """Return trending data for a specific source identifier."""
@@ -1949,6 +2285,39 @@ def market_summary_page():
     """Render the market summary landing page"""
     return render_template('index.html', page_view='market', initial_query='')
 
+
+@app.route('/api/market-summary/subscribe', methods=['POST'])
+@limiter.limit("3 per hour")
+def market_summary_subscribe():
+    if not MAILGUN_ENABLED:
+        return jsonify({"error": "Email delivery is unavailable right now. Please try again later."}), 503
+
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get('email') or '').strip().lower()
+    if not _is_valid_email_address(email):
+        return jsonify({"error": "Enter a valid email address."}), 400
+
+    try:
+        add_member_to_mailgun_list(email)
+    except Exception as exc:
+        app_logger.error("Mailgun list add failed for %s: %s", email, exc)
+        return jsonify({"error": "We couldn't add your email to the list. Please try again shortly."}), 502
+
+    return jsonify({
+        "message": "You're subscribed! We'll email weekday market summaries after 4:15 PM ET."
+    })
+
+
+@app.route('/confirm', methods=['GET'])
+@limiter.limit("200 per hour")
+def confirm_market_summary_subscription():
+    message = (
+        "Email confirmations are no longer required. If you entered your email on the Market Summary page, "
+        "you're already on the list for weekday recaps after 4:15 PM ET."
+    )
+    return render_template('confirm.html', status='success', message=message)
+
+
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
 def search_stock():
@@ -2173,14 +2542,8 @@ def sitemap_xml():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
 
 
-
-with app.app_context():
-    bootstrap_market_summary_if_needed()
-
-start_market_summary_scheduler()
-
-
 if __name__ == '__main__':
+    ensure_market_runtime_bootstrap()
     app.run(
         host='0.0.0.0', 
         debug=False, 
