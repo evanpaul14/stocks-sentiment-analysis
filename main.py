@@ -2352,7 +2352,7 @@ def market_summary_subscribe():
 
     if summary_sent:
         message = (
-            "You're subscribed! The latest market summary is on its way. We'll email weekday market summaries after 4:15 PM ET."
+            "You're subscribed! The latest market summary is on its way, check you spam if you don't see it."
         )
     else:
         message = (
