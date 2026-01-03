@@ -52,9 +52,12 @@ A Flask web app for real-time stock search, trending dashboards, and sentiment a
 - `/trending` (GET): Get trending stocks (Reddit/ApeWisdom).
 - `/trending/<source>` (GET): Trending stocks from `stocktwits` or `alpaca`.
 - `/sentiment` (POST): Analyze sentiment for a stock/news article.
-- `/market-summary` (GET): Get latest market summary (if enabled).
+- `/market-summary` (GET): Landing page for the latest market summary editions (if enabled).
+- `/market-summary/stock-market-today` (GET): SEO-friendly page that always shows the latest market summary article.
+- `/market-summary/<slug>` (GET): Dedicated article page for a specific daily summary (e.g., `/market-summary/2024-07-08`).
 - `/api/market-summary/latest` (GET): Latest market summary (JSON).
 - `/api/market-summary/archive` (GET): Market summary archive (JSON).
+- `/api/market-summary/<slug>` (GET): Fetch a specific market summary by slug (ISO date or `id-<pk>`).
 - `/quote/<symbol>` (GET): Quick price/quote lookup.
 - `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
 

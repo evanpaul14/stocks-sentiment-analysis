@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, url_for
 from flask_sqlalchemy import SQLAlchemy
 from google import genai
 from pygooglenews import GoogleNews
@@ -972,16 +972,37 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
     return fallback_market_summary_text(summary_date, snapshots, headlines)
 
 
+def build_market_summary_slug(record):
+    if not record:
+        return None
+    summary_date = getattr(record, 'summary_date', None)
+    if summary_date:
+        return summary_date.isoformat()
+    record_id = getattr(record, 'id', None)
+    if record_id:
+        return f"id-{record_id}"
+    return None
+
+
+def build_market_summary_permalink(slug):
+    if not slug:
+        return None
+    slug_text = str(slug).strip()
+    if not slug_text:
+        return None
+    return f"/market-summary/{slug_text}"
+
+
 def build_market_summary_image_payload(record):
     if not (record and UNSPLASH_ENABLED):
         return None
 
-    summary_locator = None
     summary_label = None
+    slug = build_market_summary_slug(record)
+    summary_locator = slug
     if record.summary_date:
-        summary_locator = record.summary_date.isoformat()
         summary_label = record.summary_date.strftime('%B %d, %Y')
-    elif record.published_at:
+    elif record.published_at and not summary_locator:
         try:
             record_date = record.published_at.date()
         except Exception:
@@ -991,9 +1012,10 @@ def build_market_summary_image_payload(record):
             summary_label = record_date.strftime('%B %d, %Y')
     if not summary_locator:
         summary_locator = f"id-{record.id or 'latest'}"
+    permalink = build_market_summary_permalink(summary_locator)
 
     article_stub = {
-        "link": f"market-summary://{summary_locator}",
+        "link": permalink or f"market-summary://{summary_locator}",
         "title": record.title or "Market Summary",
         "description": record.body or ""
     }
@@ -1025,10 +1047,15 @@ def serialize_market_summary(record):
             return value.isoformat()
         return value.replace(tzinfo=timezone.utc).isoformat()
 
+    slug = build_market_summary_slug(record)
+    permalink = build_market_summary_permalink(slug)
+
     return {
         'id': record.id,
         'title': record.title,
         'body': record.body,
+        'slug': slug,
+        'permalink': permalink,
         'summary_date': record.summary_date.isoformat() if record.summary_date else None,
         'published_at': _serialize_datetime(record.published_at),
         'created_at': _serialize_datetime(record.created_at),
@@ -1303,6 +1330,33 @@ def get_latest_market_summary_record():
         .order_by(MarketSummary.summary_date.desc(), MarketSummary.published_at.desc(), MarketSummary.id.desc())
         .first()
     )
+
+
+def resolve_market_summary_by_slug(summary_slug):
+    if not summary_slug:
+        return None
+    slug_text = str(summary_slug).strip()
+    if not slug_text:
+        return None
+
+    if slug_text.startswith('id-'):
+        try:
+            record_id = int(slug_text.split('id-', 1)[1])
+        except ValueError:
+            record_id = None
+        if record_id:
+            record = db.session.get(MarketSummary, record_id)
+            if record:
+                return record
+
+    try:
+        summary_date = datetime.strptime(slug_text, '%Y-%m-%d').date()
+    except ValueError:
+        summary_date = None
+    if summary_date:
+        return MarketSummary.query.filter_by(summary_date=summary_date).first()
+
+    return None
 
 
 def send_market_summary_to_recipient(summary_record, recipient_email):
@@ -2319,7 +2373,62 @@ def trending_board_page():
 @limiter.limit("50 per minute")
 def market_summary_page():
     """Render the market summary landing page"""
-    return render_template('index.html', page_view='market', initial_query='')
+    return render_template(
+        'index.html',
+        page_view='market',
+        initial_query='',
+        market_summary_slug=None,
+        initial_market_summary_article=None
+    )
+
+
+@app.route('/market-summary/stock-market-today')
+@limiter.limit("50 per minute")
+def market_summary_stock_market_today_page():
+    """Render the Stock Market Today landing page with the latest summary."""
+    latest_record = get_latest_market_summary_record()
+    canonical_url = url_for('market_summary_stock_market_today_page', _external=True)
+    page_title = "Market Summary: Stock Market Today"
+    if not latest_record:
+        return render_template(
+            'index.html',
+            page_view='market',
+            initial_query='',
+            market_summary_slug=None,
+            initial_market_summary_article=None,
+            market_summary_page_title=page_title,
+            market_summary_canonical_url=canonical_url
+        )
+    serialized = serialize_market_summary(latest_record)
+    return render_template(
+        'index.html',
+        page_view='market',
+        initial_query='',
+        market_summary_slug=serialized.get('slug'),
+        initial_market_summary_article=serialized,
+        market_summary_page_title=page_title,
+        market_summary_canonical_url=canonical_url
+    )
+
+
+@app.route('/market-summary/<string:summary_slug>')
+@limiter.limit("50 per minute")
+def market_summary_article_page(summary_slug):
+    """Render a dedicated market summary article page."""
+    record = resolve_market_summary_by_slug(summary_slug)
+    if not record:
+        return render_template('404.html'), 404
+    serialized = serialize_market_summary(record)
+    canonical_slug = serialized.get('slug') or summary_slug
+    page_title = serialized.get('title') or "Market Summary"
+    return render_template(
+        'index.html',
+        page_view='market',
+        initial_query='',
+        market_summary_slug=canonical_slug,
+        initial_market_summary_article=serialized,
+        market_summary_page_title=page_title
+    )
 
 
 @app.route('/api/market-summary/subscribe', methods=['POST'])
@@ -2521,6 +2630,17 @@ def market_summary_archive():
         "count": len(records),
         "articles": [serialize_market_summary(rec) for rec in records]
     })
+
+
+@app.route('/api/market-summary/<string:summary_slug>', methods=['GET'])
+@limiter.limit("30 per minute")
+def market_summary_article(summary_slug):
+    record = resolve_market_summary_by_slug(summary_slug)
+    if not record:
+        return jsonify({
+            "error": "Market summary article not found."
+        }), 404
+    return jsonify({"article": serialize_market_summary(record)})
 
 
 @app.route('/quote/<symbol>', methods=['GET'])

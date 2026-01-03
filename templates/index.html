@@ -4,10 +4,16 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Search stocks instantly and get live data, trends, and AI powered news sentiment plus real time trending tickers for fast market insight.">
+    <meta name="description" content="Get the ultimate market sentiment and stock sentiment analysis using ai, to get live data and news analysis that help make stock predictions and stock forecasts.">
     <meta name="msvalidate.01" content="3EEDAE9565183A466E75364048FC8D47" />
     <meta name="google-site-verification" content="2SD21a9x2-kiPIB6JKVUg27gcu1GmmocLo8KfoDMadI" />
-    <title>Stock Sentiment Analysis</title>
+    {% set resolved_page_title = market_summary_page_title|default('Stock Sentiment Analysis', true) %}
+    <title>{{ resolved_page_title }}</title>
+    {% if market_summary_canonical_url is defined and market_summary_canonical_url %}
+    <link rel="canonical" href="{{ market_summary_canonical_url }}">
+    {% elif market_summary_slug is defined and market_summary_slug %}
+    <link rel="canonical" href="{{ url_for('market_summary_article_page', summary_slug=market_summary_slug, _external=True) }}">
+    {% endif %}
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -1259,6 +1265,22 @@
             margin-top: 2px;
         }
 
+        .market-summary-share {
+            margin-top: 14px;
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .market-summary-share a {
+            color: #c4b5fd;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .market-summary-share a:hover {
+            text-decoration: underline;
+        }
+
         .market-summary-archive {
             display: flex;
             flex-direction: column;
@@ -1376,7 +1398,7 @@
 </head>
     {% set resolved_page = page_view or 'home' %}
     {% set body_class = resolved_page + '-page' %}
-    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}">
+    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}" data-market-article-slug="{{ market_summary_slug|default('', true) }}">
     <div class="container">
         <div class="search-section">
             <div class="page-title-row">
@@ -1575,6 +1597,10 @@
         </div>
     </div>
 
+    {% if initial_market_summary_article is defined and initial_market_summary_article %}
+    <script id="initialMarketSummaryArticle" type="application/json">{{ initial_market_summary_article | tojson }}</script>
+    {% endif %}
+
     <script>
     let chart = null;
     let currentSymbol = null;
@@ -1616,6 +1642,16 @@
     const marketSummaryEmailInputEl = document.getElementById('marketSummaryEmail');
     const marketSummarySignupStatusEl = document.getElementById('marketSummarySignupStatus');
     const marketSummarySignupButtonEl = document.getElementById('marketSummarySignupButton');
+    const marketSummarySlug = document.body.dataset.marketArticleSlug || '';
+    const initialMarketSummaryArticleEl = document.getElementById('initialMarketSummaryArticle');
+    let initialMarketSummaryArticle = null;
+    if (initialMarketSummaryArticleEl) {
+        try {
+            initialMarketSummaryArticle = JSON.parse(initialMarketSummaryArticleEl.textContent);
+        } catch (error) {
+            console.error('Unable to parse initial market summary payload:', error);
+        }
+    }
     const pageVariant = document.body.dataset.page || 'home';
     const initialSearchQuery = document.body.dataset.searchQuery || '';
     const isHomePage = pageVariant === 'home';
@@ -2791,6 +2827,15 @@
             if (headlinesEl) {
                 card.appendChild(headlinesEl);
             }
+            if (article.permalink) {
+                const shareRow = document.createElement('div');
+                shareRow.className = 'market-summary-share';
+                const shareLink = document.createElement('a');
+                shareLink.href = article.permalink;
+                shareLink.textContent = 'Open standalone article →';
+                shareRow.appendChild(shareLink);
+                card.appendChild(shareRow);
+            }
             marketSummaryLatestEl.appendChild(card);
         }
 
@@ -2824,6 +2869,15 @@
                     details.appendChild(heroEl);
                 }
                 details.appendChild(bodyEl);
+                if (item.permalink) {
+                    const linkRow = document.createElement('div');
+                    linkRow.className = 'market-summary-share';
+                    const link = document.createElement('a');
+                    link.href = item.permalink;
+                    link.textContent = 'Open standalone article →';
+                    linkRow.appendChild(link);
+                    details.appendChild(linkRow);
+                }
                 marketSummaryArchiveEl.appendChild(details);
             });
         }
@@ -3501,6 +3555,21 @@
         async function loadMarketSummaryContent() {
             if (!marketSummarySectionEl) return;
             try {
+                if (marketSummarySlug) {
+                    let standaloneArticle = initialMarketSummaryArticle;
+                    if (!standaloneArticle) {
+                        const articlePayload = await fetchJson(`/api/market-summary/${encodeURIComponent(marketSummarySlug)}`);
+                        standaloneArticle = articlePayload && articlePayload.article;
+                    }
+                    if (!standaloneArticle) {
+                        throw new Error('Market summary article unavailable.');
+                    }
+                    const archivePayload = await fetchJson('/api/market-summary/archive?limit=10');
+                    const archiveItems = (archivePayload && archivePayload.articles) || [];
+                    renderMarketSummaryLatest(standaloneArticle);
+                    renderMarketSummaryArchive(archiveItems, standaloneArticle.id);
+                    return;
+                }
                 const [latestPayload, archivePayload] = await Promise.all([
                     fetchJson('/api/market-summary/latest'),
                     fetchJson('/api/market-summary/archive?limit=10')
@@ -3594,7 +3663,9 @@
 
         if (marketSummaryBtnEl) {
             marketSummaryBtnEl.addEventListener('click', () => {
-                if (isMarketPage) return;
+                if (isMarketPage && !marketSummarySlug) {
+                    return;
+                }
                 window.location.href = '/market-summary';
             });
         }
