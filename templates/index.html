@@ -1410,7 +1410,7 @@
                 </div>
             </div>
             <div class="search-box">
-                <input type="text" id="companyInput" placeholder="Enter company name">
+                <input type="text" id="companyInput" placeholder="Enter a company name or ticker to analyze stock">
                 <button onclick="searchStock()" id="searchBtn" data-umami-event="search button">Search</button>
             </div>
             <div class="loading" id="loading">Getting stock market data...</div>
@@ -2917,7 +2917,7 @@
             const companyName = (forcedQuery !== null ? forcedQuery : (inputEl ? inputEl.value : '')).trim();
 
             if (!companyName) {
-                showError('Please enter a company name');
+                showError('Enter a company name');
                 return;
             }
 
