@@ -1622,6 +1622,19 @@
         }
         return TRENDING_SOURCES[0];
     }
+
+    function resolveTrendingSourceFromPath(pathname) {
+        const match = pathname && pathname.match(/^\/trending-list(?:\/([a-z]+))?$/);
+        if (match && match[1]) {
+            return normalizeTrendingSource(match[1]);
+        }
+        return TRENDING_SOURCES[0];
+    }
+
+    function buildTrendingPath(source) {
+        const normalized = normalizeTrendingSource(source);
+        return `/trending-list/${normalized}`;
+    }
     const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
     const TRENDING_INCLUDE_PRICES = false;
     const trendingCache = {};
@@ -2912,10 +2925,16 @@
             setActiveTrendingColumn(normalized);
         }
 
-        function navigateToTrendingSource(source) {
+        function navigateToTrendingSource(source, { replaceState = false } = {}) {
             const normalized = normalizeTrendingSource(source);
-            const targetPath = `/trending-list/${normalized}`;
-            if (window.location.pathname === targetPath) {
+            const targetPath = buildTrendingPath(normalized);
+            if (isTrendingPage) {
+                if (window.location.pathname !== targetPath) {
+                    const historyMethod = replaceState ? 'replaceState' : 'pushState';
+                    if (typeof history[historyMethod] === 'function') {
+                        history[historyMethod]({ trendingSource: normalized }, '', targetPath);
+                    }
+                }
                 setTrendingTabsActive(normalized);
                 return;
             }
@@ -3460,6 +3479,10 @@
             } else if (isTrendingPage) {
                 showTrendingSection(true);
                 loadTrendingStocks();
+                const canonicalPath = buildTrendingPath(currentTrendingSource);
+                if (window.location.pathname !== canonicalPath) {
+                    navigateToTrendingSource(currentTrendingSource, { replaceState: true });
+                }
             } else {
                 const shouldShowTrending = isHomePage && homePrimaryPanel === 'trending';
                 showTrendingSection(shouldShowTrending);
@@ -3726,6 +3749,13 @@
                 hideStocktwitsPopover();
             }
         });
+
+        if (isTrendingPage) {
+            window.addEventListener('popstate', () => {
+                const restoredSource = resolveTrendingSourceFromPath(window.location.pathname);
+                setTrendingTabsActive(restoredSource);
+            });
+        }
     </script>
 </body>
 </html>
