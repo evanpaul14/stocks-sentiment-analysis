@@ -1398,7 +1398,7 @@
 </head>
     {% set resolved_page = page_view or 'home' %}
     {% set body_class = resolved_page + '-page' %}
-    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}" data-market-article-slug="{{ market_summary_slug|default('', true) }}">
+    <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}" data-market-article-slug="{{ market_summary_slug|default('', true) }}" data-trending-source="{{ trending_source|default('stocktwits', true) }}">
     <div class="container">
         <div class="search-section">
             <div class="page-title-row">
@@ -1411,7 +1411,7 @@
             </div>
             <div class="search-box">
                 <input type="text" id="companyInput" placeholder="Enter a company name or ticker to analyze stock">
-                <button onclick="searchStock()" id="searchBtn" data-umami-event="search button">Search</button>
+                <button onclick="searchStock()" id="searchBtn" data-umami-event="search button">Analyze Stock</button>
             </div>
             <div class="loading" id="loading">Getting stock market data...</div>
             <div id="errorMessage"></div>
@@ -1615,6 +1615,13 @@
         volume: document.getElementById('volumeList')
     };
     const TRENDING_SOURCES = ['stocktwits', 'reddit', 'volume'];
+    function normalizeTrendingSource(value) {
+        const normalized = (value || '').toString().trim().toLowerCase();
+        if (TRENDING_SOURCES.includes(normalized)) {
+            return normalized;
+        }
+        return TRENDING_SOURCES[0];
+    }
     const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
     const TRENDING_INCLUDE_PRICES = false;
     const trendingCache = {};
@@ -1664,6 +1671,7 @@
     const watchlistNavBtnEl = document.getElementById('watchlistNavBtn');
     const marketSummaryBtnEl = document.getElementById('marketSummaryBtn');
     const unsplashReferralFallback = document.body.dataset.unsplashRef || 'https://unsplash.com/?utm_source=stocks-sentiment-analysis&utm_medium=referral';
+    let currentTrendingSource = normalizeTrendingSource(document.body.dataset.trendingSource || '');
     let watchlistStorageAvailable = true;
     let watchlistHasEntries = false;
     let homePrimaryPanel = 'watchlist';
@@ -2893,23 +2901,41 @@
             });
         }
 
+        function setTrendingTabsActive(source) {
+            const normalized = normalizeTrendingSource(source);
+            currentTrendingSource = normalized;
+            document.body.dataset.trendingSource = normalized;
+            const tabs = document.querySelectorAll('.trending-tab-btn');
+            tabs.forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.source === normalized);
+            });
+            setActiveTrendingColumn(normalized);
+        }
+
+        function navigateToTrendingSource(source) {
+            const normalized = normalizeTrendingSource(source);
+            const targetPath = `/trending-list/${normalized}`;
+            if (window.location.pathname === targetPath) {
+                setTrendingTabsActive(normalized);
+                return;
+            }
+            window.location.href = targetPath;
+        }
+
         function initializeTrendingTabs() {
             const tabs = document.querySelectorAll('.trending-tab-btn');
             tabs.forEach(tab => {
                 tab.addEventListener('click', () => {
-                    if (tab.classList.contains('active')) return;
-                    tabs.forEach(btn => btn.classList.remove('active'));
-                    tab.classList.add('active');
-                    setActiveTrendingColumn(tab.dataset.source);
+                    const source = normalizeTrendingSource(tab.dataset.source);
+                    if (isTrendingPage) {
+                        if (source === currentTrendingSource) return;
+                        navigateToTrendingSource(source);
+                        return;
+                    }
+                    setTrendingTabsActive(source);
                 });
             });
-            // Default to StockTwits trending
-            tabs.forEach(btn => btn.classList.remove('active'));
-            const defaultTab = Array.from(tabs).find(tab => tab.dataset.source === 'stocktwits');
-            if (defaultTab) {
-                defaultTab.classList.add('active');
-            }
-            setActiveTrendingColumn('stocktwits');
+            setTrendingTabsActive(currentTrendingSource);
         }
 
         async function searchStock(forcedQuery = null) {
@@ -3625,7 +3651,7 @@
         }
 
         function openTrendingPage() {
-            window.location.href = '/trending-list';
+            navigateToTrendingSource('stocktwits');
         }
 
         if (homeTitleEl) {

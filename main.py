@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, redirect
 from flask_sqlalchemy import SQLAlchemy
 from google import genai
 from pygooglenews import GoogleNews
@@ -226,6 +226,14 @@ import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
 STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json"
 ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=20"
+TRENDING_PAGE_SOURCES = ("stocktwits", "reddit", "volume")
+
+
+def _normalize_trending_page_source(raw_value, default="stocktwits"):
+    normalized = (raw_value or "").strip().lower()
+    if normalized in TRENDING_PAGE_SOURCES:
+        return normalized
+    return default
 
 
 def _get_int_env(var_name, default):
@@ -2366,7 +2374,28 @@ def search_results_page():
 @limiter.limit("50 per minute")
 def trending_board_page():
     """Render the dedicated trending dashboards page"""
-    return render_template('index.html', page_view='trending', initial_query='')
+    return render_template(
+        'index.html',
+        page_view='trending',
+        initial_query='',
+        trending_source='stocktwits'
+    )
+
+
+@app.route('/trending-list/<string:source>')
+@limiter.limit("50 per minute")
+def trending_board_page_source(source):
+    """Render the trending dashboards page with a specific source active."""
+    source_text = (source or '').strip()
+    normalized = _normalize_trending_page_source(source_text)
+    if source_text != normalized:
+        return redirect(url_for('trending_board_page_source', source=normalized))
+    return render_template(
+        'index.html',
+        page_view='trending',
+        initial_query='',
+        trending_source=normalized
+    )
 
 
 @app.route('/market-summary')
