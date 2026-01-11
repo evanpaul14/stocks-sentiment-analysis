@@ -4,7 +4,7 @@ Disallow: /historical
 Disallow: /watchlist
 Disallow: /static/
 Disallow: /google-verification
-Disallow: /api/
+
 Allow: /
 Allow: /market-summary
 Allow: /trending-list
