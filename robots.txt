@@ -2,7 +2,6 @@ User-agent: *
 Disallow: /search
 Disallow: /historical
 Disallow: /watchlist
-Disallow: /trending-list
 Disallow: /static/
 Disallow: /google-verification
 Disallow: /api/
