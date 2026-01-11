@@ -7,4 +7,5 @@ Disallow: /google-verification
 Disallow: /api/
 Allow: /
 Allow: /market-summary
+Allow: /trending-list
 Sitemap: https://stocksentimentapp.com/sitemap.xml
