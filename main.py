@@ -48,6 +48,20 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 
+HOME_META_DESCRIPTION = (
+    "Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts."
+)
+TRENDING_META_DESCRIPTION = (
+    "See trending stocks on Stocktwits, Reddit, and stock volume to see today's most active stocks."
+)
+MARKET_META_DESCRIPTION = (
+    "Check the daily stock market summary with index moves, sector highlights, and curated headlines in one view."
+)
+STOCK_MARKET_TODAY_META_DESCRIPTION = (
+    "Catch up on today's market movers, dow jones today, nasdaq today and s&p 500 performance with our stock market summary."
+)
+
+
 @app.context_processor
 def inject_unsplash_globals():
     return {"unsplash_referral_url": _build_unsplash_referral_url()}
@@ -2347,7 +2361,12 @@ def build_sentiment_payload(symbol, company_name=None, *, sentiment_run_id=None)
 @limiter.limit("50 per minute")
 def index():
     '''Render the main page'''
-    return render_template('index.html', page_view='home', initial_query='')
+    return render_template(
+        'index.html',
+        page_view='home',
+        initial_query='',
+        meta_description=HOME_META_DESCRIPTION
+    )
 
 @app.route('/privacy')
 @limiter.limit("50 per minute")
@@ -2378,7 +2397,8 @@ def trending_board_page():
         'index.html',
         page_view='trending',
         initial_query='',
-        trending_source='stocktwits'
+        trending_source='stocktwits',
+        meta_description=TRENDING_META_DESCRIPTION
     )
 
 
@@ -2394,7 +2414,8 @@ def trending_board_page_source(source):
         'index.html',
         page_view='trending',
         initial_query='',
-        trending_source=normalized
+        trending_source=normalized,
+        meta_description=TRENDING_META_DESCRIPTION
     )
 
 
@@ -2407,7 +2428,8 @@ def market_summary_page():
         page_view='market',
         initial_query='',
         market_summary_slug=None,
-        initial_market_summary_article=None
+        initial_market_summary_article=None,
+        meta_description=MARKET_META_DESCRIPTION
     )
 
 
@@ -2417,7 +2439,7 @@ def market_summary_stock_market_today_page():
     """Render the Stock Market Today landing page with the latest summary."""
     latest_record = get_latest_market_summary_record()
     canonical_url = url_for('market_summary_stock_market_today_page', _external=True)
-    page_title = "Market Summary: Stock Market Today"
+    page_title = "Stock Market Today"
     if not latest_record:
         return render_template(
             'index.html',
@@ -2426,7 +2448,8 @@ def market_summary_stock_market_today_page():
             market_summary_slug=None,
             initial_market_summary_article=None,
             market_summary_page_title=page_title,
-            market_summary_canonical_url=canonical_url
+            market_summary_canonical_url=canonical_url,
+            meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION
         )
     serialized = serialize_market_summary(latest_record)
     return render_template(
@@ -2436,7 +2459,8 @@ def market_summary_stock_market_today_page():
         market_summary_slug=serialized.get('slug'),
         initial_market_summary_article=serialized,
         market_summary_page_title=page_title,
-        market_summary_canonical_url=canonical_url
+        market_summary_canonical_url=canonical_url,
+        meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION
     )
 
 
@@ -2456,7 +2480,8 @@ def market_summary_article_page(summary_slug):
         initial_query='',
         market_summary_slug=canonical_slug,
         initial_market_summary_article=serialized,
-        market_summary_page_title=page_title
+        market_summary_page_title=page_title,
+        meta_description=MARKET_META_DESCRIPTION
     )
 
 

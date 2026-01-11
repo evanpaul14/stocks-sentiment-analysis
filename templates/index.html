@@ -4,7 +4,8 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts.">
+    {% set resolved_meta_description = meta_description|default('Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts.', true) %}
+    <meta name="description" content="{{ resolved_meta_description }}">
     <meta name="msvalidate.01" content="3EEDAE9565183A466E75364048FC8D47" />
     <meta name="google-site-verification" content="2SD21a9x2-kiPIB6JKVUg27gcu1GmmocLo8KfoDMadI" />
     {% set resolved_page_title = market_summary_page_title|default('Stock Sentiment Analysis', true) %}
