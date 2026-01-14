@@ -29,8 +29,19 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 load_dotenv()
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SITEMAP_FILE_PATH = PROJECT_ROOT / "sitemap.xml"
+MARKET_SUMMARY_SITEMAP_BASE_URL = (
+    (os.getenv("MARKET_SUMMARY_SITEMAP_BASE_URL") or "https://stocksentimentapp.com/market-summary").rstrip("/")
+    or "https://stocksentimentapp.com/market-summary"
+)
+SITEMAP_XML_NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
+ET.register_namespace("", SITEMAP_XML_NAMESPACE)
 
 
 log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -1456,6 +1467,58 @@ def prune_market_summary_history(cutoff_date=None):
     return deleted
 
 
+def upsert_market_summary_sitemap_entry(summary_date):
+    """Ensure sitemap.xml lists the market-summary detail page for the given date."""
+    if not summary_date:
+        return False
+
+    sitemap_path = SITEMAP_FILE_PATH
+    if not sitemap_path.exists():
+        return False
+
+    target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{summary_date.strftime('%Y-%m-%d')}"
+
+    try:
+        tree = ET.parse(sitemap_path)
+    except ET.ParseError as exc:
+        raise RuntimeError(f"Sitemap parsing failed: {exc}") from exc
+
+    root = tree.getroot()
+    ns_uri = SITEMAP_XML_NAMESPACE
+    url_tag = None
+    for node in root.findall(f"{{{ns_uri}}}url"):
+        loc_tag = node.find(f"{{{ns_uri}}}loc")
+        if loc_tag is not None and (loc_tag.text or "").strip() == target_loc:
+            url_tag = node
+            break
+
+    if url_tag is None:
+        url_tag = ET.SubElement(root, f"{{{ns_uri}}}url")
+        loc_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}loc")
+        loc_tag.text = target_loc
+    else:
+        loc_tag = url_tag.find(f"{{{ns_uri}}}loc")
+        if loc_tag is None:
+            loc_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}loc")
+        loc_tag.text = target_loc
+
+    lastmod_tag = url_tag.find(f"{{{ns_uri}}}lastmod")
+    if lastmod_tag is None:
+        lastmod_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}lastmod")
+    lastmod_tag.text = summary_date.strftime('%Y-%m-%d')
+
+    tmp_path = sitemap_path.with_name(sitemap_path.name + ".tmp")
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
+    try:
+        tree.write(tmp_path, encoding="utf-8", xml_declaration=True)
+        tmp_path.replace(sitemap_path)
+    except OSError as exc:
+        raise RuntimeError(f"Sitemap write failed: {exc}") from exc
+
+    return True
+
+
 def ensure_market_summary_for_date(target_date=None, force=False):
     if not MARKET_SUMMARY_ENABLED:
         return None
@@ -1468,6 +1531,14 @@ def ensure_market_summary_for_date(target_date=None, force=False):
     dedupe_market_summaries(summary_date)
     existing = MarketSummary.query.filter_by(summary_date=summary_date).first()
     if existing and not force:
+        try:
+            upsert_market_summary_sitemap_entry(existing.summary_date)
+        except Exception as exc:
+            market_summary_logger.error(
+                "Failed to sync sitemap entry for %s: %s",
+                existing.summary_date,
+                exc
+            )
         return existing
 
     snapshots = get_market_index_snapshots()
@@ -1518,6 +1589,15 @@ def ensure_market_summary_for_date(target_date=None, force=False):
         db.session.rollback()
         market_summary_logger.error("Failed to persist market summary: %s", exc)
         raise
+
+    try:
+        upsert_market_summary_sitemap_entry(target_record.summary_date)
+    except Exception as exc:
+        market_summary_logger.error(
+            "Failed to update sitemap for %s: %s",
+            target_record.summary_date,
+            exc
+        )
 
     try:
         pruned = prune_market_summary_history()
