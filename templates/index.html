@@ -15,10 +15,10 @@
     {% elif market_summary_slug is defined and market_summary_slug %}
     <link rel="canonical" href="{{ url_for('market_summary_article_page', summary_slug=market_summary_slug, _external=True) }}">
     {% endif %}
-    <script async src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script async src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -1043,6 +1043,27 @@
             border: 1px solid rgba(147, 51, 234, 0.2);
         }
 
+        .market-summary-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #a1a1aa;
+            text-decoration: none;
+            margin-bottom: 12px;
+            transition: color 0.2s ease;
+        }
+
+        .market-summary-back-btn::before {
+            content: '\2190';
+            font-size: 16px;
+        }
+
+        .market-summary-back-btn:hover {
+            color: #f9fafb;
+        }
+
         .market-summary-signup {
             background: #11111a;
             border-radius: 12px;
@@ -1280,33 +1301,80 @@
         }
 
         .market-summary-archive {
+            margin-top: 0;
+        }
+
+        .market-summary-archive-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
             display: flex;
             flex-direction: column;
             gap: 12px;
         }
 
-        .market-summary-archive-item {
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 10px;
-            padding: 14px 18px;
-            background: #0f0f19;
-        }
-
-        .market-summary-archive-item summary {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
+        .market-summary-archive-entry {
             list-style: none;
+        }
+
+        .market-summary-archive-link {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: #0f0f19;
+            text-decoration: none;
+            color: inherit;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .market-summary-archive-link:hover {
+            border-color: rgba(147, 51, 234, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .market-summary-archive-thumb {
+            width: 64px;
+            height: 48px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #18181b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .market-summary-archive-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .market-summary-archive-thumb.is-placeholder span {
+            font-size: 12px;
+            color: #a1a1aa;
+            text-transform: uppercase;
+        }
+
+        .market-summary-archive-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .market-summary-archive-title {
             font-weight: 600;
+            font-size: 15px;
+            color: #f4f4f5;
         }
 
-        .market-summary-archive-item summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .market-summary-archive-item[open] summary {
-            margin-bottom: 12px;
+        .market-summary-archive-meta {
+            font-size: 12px;
+            color: #a1a1aa;
         }
 
         .market-summary-empty {
@@ -1444,7 +1512,10 @@
         </div>
 
         <div class="market-summary-section" id="marketSummarySection" {% if page_view != 'market' %}style="display:none;"{% endif %}>
-            <div class="section-title" style="margin-bottom: 10px;">Daily Market Summary</div>
+            <a href="/market-summary" id="marketSummaryBackBtn" class="market-summary-back-btn" {% if not market_summary_slug|default('', true) %}style="display:none;"{% endif %}>Back to Market Summary</a>
+            <div class="section-title" style="margin-bottom: 10px;">
+                {% if market_summary_slug|default('', true) %}Market Summary Article{% else %}Latest Market Summary{% endif %}
+            </div>
             <p class="market-summary-note">Fresh articles publish weekdays at 4:15 PM ET.</p>
             <div class="market-summary-signup" id="marketSummarySignupCard">
                 <h3>Get the recap in your inbox</h3>
@@ -1458,8 +1529,8 @@
             <div id="marketSummaryLatest" class="market-summary-latest">
                 <div class="market-summary-empty">Latest edition will appear here.</div>
             </div>
-            <div class="section-title" style="margin: 20px 0 10px; font-size: 18px;">Recent Editions</div>
-            <div class="market-summary-archive" id="marketSummaryArchive"></div>
+            <div class="section-title" id="marketSummaryArchiveHeading" style="margin: 20px 0 10px; font-size: 18px;{% if market_summary_slug|default('', true) %} display:none;{% endif %}">Past Editions</div>
+            <div class="market-summary-archive" id="marketSummaryArchive" {% if market_summary_slug|default('', true) %}style="display:none;"{% endif %}></div>
         </div>
 
         <div id="results">
@@ -1656,6 +1727,7 @@
     const marketSummarySectionEl = document.getElementById('marketSummarySection');
     const marketSummaryLatestEl = document.getElementById('marketSummaryLatest');
     const marketSummaryArchiveEl = document.getElementById('marketSummaryArchive');
+    const marketSummaryArchiveHeadingEl = document.getElementById('marketSummaryArchiveHeading');
     const marketSummaryFormEl = document.getElementById('marketSummarySignupForm');
     const marketSummaryEmailInputEl = document.getElementById('marketSummaryEmail');
     const marketSummarySignupStatusEl = document.getElementById('marketSummarySignupStatus');
@@ -2846,7 +2918,7 @@
             if (headlinesEl) {
                 card.appendChild(headlinesEl);
             }
-            if (article.permalink) {
+            if (article.permalink && !marketSummarySlug) {
                 const shareRow = document.createElement('div');
                 shareRow.className = 'market-summary-share';
                 const shareLink = document.createElement('a');
@@ -2861,44 +2933,67 @@
         function renderMarketSummaryArchive(items, latestId) {
             if (!marketSummaryArchiveEl) return;
             marketSummaryArchiveEl.innerHTML = '';
-            const filtered = (items || []).filter(item => item.id !== latestId);
+            const filtered = (items || []).filter(item => {
+                if (!latestId) return true;
+                return item.id !== latestId;
+            });
             if (!filtered.length) {
                 marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty">No earlier editions</div>';
                 return;
             }
-            filtered.forEach((item, index) => {
-                const details = document.createElement('details');
-                details.className = 'market-summary-archive-item';
-                if (index === 0) details.open = true;
-                const summary = document.createElement('summary');
-                const titleSpan = document.createElement('span');
-                titleSpan.textContent = item.title || 'Market Summary';
-                const dateSpan = document.createElement('span');
-                dateSpan.style.fontSize = '13px';
-                dateSpan.style.color = '#a1a1aa';
-                dateSpan.textContent = formatMarketSummaryTimestamp(item.published_at || item.created_at);
-                summary.appendChild(titleSpan);
-                summary.appendChild(dateSpan);
-                const bodyEl = document.createElement('div');
-                bodyEl.className = 'market-summary-body';
-                createParagraphNodes(bodyEl, item.body);
-                details.appendChild(summary);
-                const heroEl = renderMarketSummaryHero(item.image, item.title);
-                if (heroEl) {
-                    details.appendChild(heroEl);
+            const list = document.createElement('ul');
+            list.className = 'market-summary-archive-list';
+            filtered.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'market-summary-archive-entry';
+                const link = document.createElement('a');
+                link.className = 'market-summary-archive-link';
+                const href = item.permalink || (item.slug ? `/market-summary/${encodeURIComponent(item.slug)}` : '/market-summary');
+                link.href = href;
+                link.setAttribute('aria-label', `Read ${item.title || 'market summary'}`);
+
+                const thumb = document.createElement('div');
+                thumb.className = 'market-summary-archive-thumb';
+                if (item.image && item.image.url) {
+                    const img = document.createElement('img');
+                    img.src = item.image.url;
+                    img.alt = item.image.description || `Thumbnail for ${item.title || 'market summary'}`;
+                    img.loading = 'lazy';
+                    thumb.appendChild(img);
+                } else {
+                    thumb.classList.add('is-placeholder');
+                    const placeholder = document.createElement('span');
+                    const seed = item.summary_date || item.published_at || item.created_at;
+                    if (seed) {
+                        const placeholderDate = new Date(seed);
+                        if (!Number.isNaN(placeholderDate.getTime())) {
+                            placeholder.textContent = placeholderDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                        } else {
+                            placeholder.textContent = 'SSA';
+                        }
+                    } else {
+                        placeholder.textContent = 'SSA';
+                    }
+                    thumb.appendChild(placeholder);
                 }
-                details.appendChild(bodyEl);
-                if (item.permalink) {
-                    const linkRow = document.createElement('div');
-                    linkRow.className = 'market-summary-share';
-                    const link = document.createElement('a');
-                    link.href = item.permalink;
-                    link.textContent = 'Open standalone article →';
-                    linkRow.appendChild(link);
-                    details.appendChild(linkRow);
-                }
-                marketSummaryArchiveEl.appendChild(details);
+
+                const info = document.createElement('div');
+                info.className = 'market-summary-archive-info';
+                const title = document.createElement('div');
+                title.className = 'market-summary-archive-title';
+                title.textContent = item.title || 'Market Summary';
+                const meta = document.createElement('div');
+                meta.className = 'market-summary-archive-meta';
+                meta.textContent = `Published ${formatMarketSummaryTimestamp(item.published_at || item.created_at)}`;
+                info.appendChild(title);
+                info.appendChild(meta);
+
+                link.appendChild(thumb);
+                link.appendChild(info);
+                li.appendChild(link);
+                list.appendChild(li);
             });
+            marketSummaryArchiveEl.appendChild(list);
         }
 
         function setActiveTrendingColumn(source) {
@@ -3611,26 +3706,38 @@
                     if (!standaloneArticle) {
                         throw new Error('Market summary article unavailable.');
                     }
-                    const archivePayload = await fetchJson('/api/market-summary/archive?limit=10');
-                    const archiveItems = (archivePayload && archivePayload.articles) || [];
                     renderMarketSummaryLatest(standaloneArticle);
-                    renderMarketSummaryArchive(archiveItems, standaloneArticle.id);
+                    if (marketSummaryArchiveHeadingEl) {
+                        marketSummaryArchiveHeadingEl.style.display = 'none';
+                    }
+                    if (marketSummaryArchiveEl) {
+                        marketSummaryArchiveEl.innerHTML = '';
+                        marketSummaryArchiveEl.style.display = 'none';
+                    }
                     return;
                 }
                 const [latestPayload, archivePayload] = await Promise.all([
                     fetchJson('/api/market-summary/latest'),
-                    fetchJson('/api/market-summary/archive?limit=10')
+                    fetchJson('/api/market-summary/archive?limit=12')
                 ]);
                 const latestArticle = latestPayload && latestPayload.article;
                 const archiveItems = (archivePayload && archivePayload.articles) || [];
                 renderMarketSummaryLatest(latestArticle);
                 renderMarketSummaryArchive(archiveItems, latestArticle && latestArticle.id);
+                if (marketSummaryArchiveHeadingEl) {
+                    marketSummaryArchiveHeadingEl.style.display = '';
+                }
+                if (marketSummaryArchiveEl) {
+                    marketSummaryArchiveEl.style.display = '';
+                }
             } catch (error) {
                 console.error('Market summary load error:', error);
                 if (marketSummaryLatestEl) {
                     marketSummaryLatestEl.innerHTML = `<div class="market-summary-empty error">${error.message || 'Unable to load market summary.'}</div>`;
                 }
-                if (marketSummaryArchiveEl) {
+                if (!marketSummarySlug && marketSummaryArchiveEl) {
+                    marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty error">Unable to load past editions.</div>';
+                } else if (marketSummaryArchiveEl) {
                     marketSummaryArchiveEl.innerHTML = '';
                 }
             }
