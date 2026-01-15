@@ -1476,7 +1476,9 @@ def upsert_market_summary_sitemap_entry(summary_date):
     if not sitemap_path.exists():
         return False
 
-    target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{summary_date.strftime('%Y-%m-%d')}"
+    lastmod_text = summary_date.strftime('%Y-%m-%d')
+    target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{lastmod_text}"
+    stock_market_today_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/stock-market-today"
 
     try:
         tree = ET.parse(sitemap_path)
@@ -1485,27 +1487,33 @@ def upsert_market_summary_sitemap_entry(summary_date):
 
     root = tree.getroot()
     ns_uri = SITEMAP_XML_NAMESPACE
-    url_tag = None
-    for node in root.findall(f"{{{ns_uri}}}url"):
-        loc_tag = node.find(f"{{{ns_uri}}}loc")
-        if loc_tag is not None and (loc_tag.text or "").strip() == target_loc:
-            url_tag = node
-            break
+    def _ensure_url_lastmod(loc_value, lastmod_value):
+        url_node = None
+        for node in root.findall(f"{{{ns_uri}}}url"):
+            loc_node = node.find(f"{{{ns_uri}}}loc")
+            if loc_node is not None and (loc_node.text or "").strip() == loc_value:
+                url_node = node
+                break
 
-    if url_tag is None:
-        url_tag = ET.SubElement(root, f"{{{ns_uri}}}url")
-        loc_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}loc")
-        loc_tag.text = target_loc
-    else:
-        loc_tag = url_tag.find(f"{{{ns_uri}}}loc")
-        if loc_tag is None:
-            loc_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}loc")
-        loc_tag.text = target_loc
+        if url_node is None:
+            url_node = ET.SubElement(root, f"{{{ns_uri}}}url")
+            loc_node = ET.SubElement(url_node, f"{{{ns_uri}}}loc")
+            loc_node.text = loc_value
+        else:
+            loc_node = url_node.find(f"{{{ns_uri}}}loc")
+            if loc_node is None:
+                loc_node = ET.SubElement(url_node, f"{{{ns_uri}}}loc")
+            loc_node.text = loc_value
 
-    lastmod_tag = url_tag.find(f"{{{ns_uri}}}lastmod")
-    if lastmod_tag is None:
-        lastmod_tag = ET.SubElement(url_tag, f"{{{ns_uri}}}lastmod")
-    lastmod_tag.text = summary_date.strftime('%Y-%m-%d')
+        lastmod_node = url_node.find(f"{{{ns_uri}}}lastmod")
+        if lastmod_node is None:
+            lastmod_node = ET.SubElement(url_node, f"{{{ns_uri}}}lastmod")
+        lastmod_node.text = lastmod_value
+
+    # Individual market summary article URL (date-based).
+    _ensure_url_lastmod(target_loc, lastmod_text)
+    # SEO landing page that always shows the latest summary.
+    _ensure_url_lastmod(stock_market_today_loc, lastmod_text)
 
     tmp_path = sitemap_path.with_name(sitemap_path.name + ".tmp")
     if hasattr(ET, "indent"):

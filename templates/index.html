@@ -67,10 +67,25 @@
             cursor: pointer;
             transition: background 0.2s, color 0.2s;
             box-shadow: none;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .nav-pill-btn:hover {
             background: #232136;
+            color: #c4b5fd;
+        }
+
+        .home-title-link {
+            color: inherit;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .home-title-link:focus,
+        .home-title-link:hover {
             color: #c4b5fd;
         }
 
@@ -1468,11 +1483,13 @@
     <div class="container">
         <div class="search-section">
             <div class="page-title-row">
-                <h1 style="font-size:32px;cursor:pointer;" id="homeTitle">Stock Sentiment Analysis</h1>
+                <h1 style="font-size:32px;">
+                    <a id="homeTitle" class="home-title-link" href="/">Stock Sentiment Analysis</a>
+                </h1>
                 <div class="nav-button-row">
-                    <button id="trendingBtn" class="nav-pill-btn" type="button">Trending</button>
-                    <button id="watchlistNavBtn" class="nav-pill-btn" type="button">Watchlist</button>
-                    <button id="marketSummaryBtn" class="nav-pill-btn" type="button">Market Summary</button>
+                    <a id="trendingBtn" class="nav-pill-btn" href="/trending-list">Trending</a>
+                    <a id="watchlistNavBtn" class="nav-pill-btn" href="/watchlist">Watchlist</a>
+                    <a id="marketSummaryBtn" class="nav-pill-btn" href="/market-summary">Market Summary</a>
                 </div>
             </div>
             <div class="search-box">
@@ -2923,7 +2940,7 @@
                 shareRow.className = 'market-summary-share';
                 const shareLink = document.createElement('a');
                 shareLink.href = article.permalink;
-                shareLink.textContent = 'Open article →';
+                shareLink.textContent = 'Read Full Market Summary →';
                 shareRow.appendChild(shareLink);
                 card.appendChild(shareRow);
             }
@@ -3783,44 +3800,46 @@
         }
 
         if (homeTitleEl) {
-            homeTitleEl.addEventListener('click', () => {
+            homeTitleEl.addEventListener('click', (event) => {
                 if (!isHomePage) {
-                    window.location.href = '/';
                     return;
                 }
+                event.preventDefault();
                 resetHomeView();
             });
         }
 
         if (trendingBtnEl) {
-            trendingBtnEl.addEventListener('click', () => {
-                if (isTrendingPage) return;
+            trendingBtnEl.addEventListener('click', (event) => {
+                if (!isTrendingPage) {
+                    return;
+                }
+                event.preventDefault();
                 openTrendingPage();
             });
         }
 
         if (watchlistNavBtnEl) {
-            watchlistNavBtnEl.addEventListener('click', () => {
-                if (isWatchlistPage) {
-                    if (watchlistSectionEl) {
-                        watchlistSectionEl.style.display = '';
-                    }
-                    const count = renderWatchlist();
-                    if (count > 0) {
-                        refreshWatchlistPrices();
-                    }
-                } else {
-                    window.location.href = '/watchlist';
+            watchlistNavBtnEl.addEventListener('click', (event) => {
+                if (!isWatchlistPage) {
+                    return;
+                }
+                event.preventDefault();
+                if (watchlistSectionEl) {
+                    watchlistSectionEl.style.display = '';
+                }
+                const count = renderWatchlist();
+                if (count > 0) {
+                    refreshWatchlistPrices();
                 }
             });
         }
 
         if (marketSummaryBtnEl) {
-            marketSummaryBtnEl.addEventListener('click', () => {
+            marketSummaryBtnEl.addEventListener('click', (event) => {
                 if (isMarketPage && !marketSummarySlug) {
-                    return;
+                    event.preventDefault();
                 }
-                window.location.href = '/market-summary';
             });
         }
 

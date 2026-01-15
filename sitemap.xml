@@ -1,34 +1,28 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<urlset
-      xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-            http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
-
-
-
-<url>
-  <loc>https://stocksentimentapp.com/</loc>
-  <changefreq>daily</changefreq>
-  <priority>1.0</priority>
-</url>
-
-<url>
-  <loc>https://stocksentimentapp.com/trending-list</loc>
-  <changefreq>daily</changefreq>
-  <priority>0.9</priority>
-</url>
-
-<url>
-  <loc>https://stocksentimentapp.com/market-summary</loc>
-  <changefreq>daily</changefreq>
-  <priority>1.0</priority>
-</url>
-
-<url>
-  <loc>https://stocksentimentapp.com/market-summary/stock-market-today</loc>
-  <changefreq>daily</changefreq>
-  <priority>1.0</priority>
-</url>
-
+<?xml version='1.0' encoding='utf-8'?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9             http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>https://stocksentimentapp.com/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://stocksentimentapp.com/trending-list</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://stocksentimentapp.com/market-summary</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://stocksentimentapp.com/market-summary/stock-market-today</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <lastmod>2026-01-14</lastmod>
+  </url>
+  <url>
+    <loc>https://stocksentimentapp.com/market-summary/2026-01-14</loc>
+    <lastmod>2026-01-14</lastmod>
+  </url>
 </urlset>
