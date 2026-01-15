@@ -9,7 +9,17 @@
     <meta name="description" content="{{ resolved_meta_description }}">
     <meta name="msvalidate.01" content="3EEDAE9565183A466E75364048FC8D47" />
     <meta name="google-site-verification" content="2SD21a9x2-kiPIB6JKVUg27gcu1GmmocLo8KfoDMadI" />
-    {% set resolved_page_title = market_summary_page_title|default('Stock Sentiment Analysis', true) %}
+    {% set current_page_view = page_view|default('home', true) %}
+    {% if current_page_view == 'market' %}
+        {% set default_page_title = 'Daily Market Summary' %}
+    {% elif current_page_view == 'trending' %}
+        {% set default_page_title = 'Trending' %}
+    {% elif current_page_view == 'watchlist' %}
+        {% set default_page_title = 'Watchlist' %}
+    {% else %}
+        {% set default_page_title = 'Stock Sentiment Analysis' %}
+    {% endif %}
+    {% set resolved_page_title = market_summary_page_title|default(default_page_title, true) %}
     <title>{{ resolved_page_title }}</title>
     {% if market_summary_canonical_url is defined and market_summary_canonical_url %}
     <link rel="canonical" href="{{ market_summary_canonical_url }}">
