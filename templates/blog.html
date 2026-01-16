@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if meta_description %}
+    <meta name="description" content="{{ meta_description }}">
+    {% endif %}
+    <title>{{ page_title or 'Market Notes Blog' }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: #000000;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .page-title-row {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .home-title-link {
+            color: inherit;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .home-title-link:hover,
+        .home-title-link:focus {
+            color: #c4b5fd;
+        }
+
+        .nav-button-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .nav-pill-btn {
+            background: #18181b;
+            color: #b48be4;
+            font-weight: 500;
+            font-size: 15px;
+            padding: 7px 18px;
+            border: none;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-pill-btn:hover {
+            background: #232136;
+            color: #c4b5fd;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        .blog-hero {
+            background-color: #0a0a0a;
+            border-radius: 16px;
+            border: 1px solid rgba(147, 51, 234, 0.2);
+            padding: 28px;
+            margin-bottom: 30px;
+        }
+
+        .blog-hero p {
+            color: #a1a1aa;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 14px;
+        }
+
+        .blog-hero a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 999px;
+            background: rgba(147, 51, 234, 0.2);
+            color: #c4b5fd;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .blog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        .blog-card,
+        .blog-article-card,
+        .related-card {
+            background-color: #0a0a0a;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 24px;
+        }
+
+        .blog-card {
+            display: flex;
+            gap: 18px;
+            align-items: stretch;
+            min-height: 180px;
+        }
+
+        .blog-thumb {
+            width: 140px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #050505;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .blog-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .blog-thumb.is-placeholder {
+            background: linear-gradient(120deg, rgba(147, 51, 234, 0.35), rgba(79, 70, 229, 0.25));
+            border-style: dashed;
+        }
+
+        .blog-thumb.is-placeholder span {
+            color: #e0e7ff;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        .blog-card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .blog-card-body h2 {
+            font-size: 22px;
+            margin-bottom: 4px;
+        }
+
+        .blog-card p {
+            color: #a1a1aa;
+            line-height: 1.6;
+            margin-bottom: 18px;
+        }
+
+        .blog-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 13px;
+            color: #a1a1aa;
+            margin-top: auto;
+        }
+
+        .blog-card-footer a {
+            color: #c4b5fd;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .blog-card-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .empty-state {
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px dashed rgba(147, 51, 234, 0.35);
+            color: #a1a1aa;
+            text-align: center;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #a1a1aa;
+            text-decoration: none;
+            margin-bottom: 18px;
+        }
+
+        .back-link:hover {
+            color: #c4b5fd;
+        }
+
+        .blog-article-card h2 {
+            font-size: 34px;
+            margin-bottom: 12px;
+        }
+
+        .blog-meta-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #a1a1aa;
+            letter-spacing: 0.35px;
+            margin-bottom: 18px;
+        }
+
+        .blog-meta-pill {
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .blog-byline {
+            color: #a1a1aa;
+            font-size: 15px;
+            margin-bottom: 18px;
+        }
+
+        .blog-byline strong {
+            color: #fff;
+        }
+
+        .article-hero {
+            width: 100%;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 24px;
+            background: #050505;
+        }
+
+        .article-hero img {
+            width: 100%;
+            height: auto;
+            display: block;
+            max-height: 420px;
+            object-fit: cover;
+        }
+
+        .blog-body {
+            color: #d1d5db;
+            line-height: 1.7;
+        }
+
+        .blog-body p {
+            margin-bottom: 18px;
+        }
+
+        .related-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .related-card a {
+            color: #c4b5fd;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .related-card a:hover {
+            text-decoration: underline;
+        }
+
+        .eyebrow {
+            color: #b48be4;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.35px;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 720px) {
+            body {
+                padding: 16px;
+            }
+
+            .blog-article-card,
+            .blog-card,
+            .related-card {
+                padding: 18px;
+            }
+
+            .blog-card {
+                flex-direction: column;
+            }
+
+            .blog-thumb {
+                width: 100%;
+                height: 180px;
+            }
+
+            .blog-article-card h2 {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-title-row">
+            <h1 style="font-size:32px;">
+                <a class="home-title-link" href="/">Stock Sentiment Analysis</a>
+            </h1>
+            <div class="nav-button-row">
+                <a class="nav-pill-btn" href="/trending-list">Trending</a>
+                <a class="nav-pill-btn" href="/watchlist">Watchlist</a>
+                <a class="nav-pill-btn" href="/market-summary">Market Summary</a>
+            </div>
+        </div>
+
+        {% if view_mode == 'detail' and article %}
+        <a class="back-link" href="/blog">&larr; Back to Market Notes</a>
+        <article class="blog-article-card">
+            <p class="eyebrow">Market Notes</p>
+            <h2>{{ article.title }}</h2>
+            {% set published_dt = article.published_at or article.updated_at or article.created_at %}
+            {% set author_name = article.author or 'stocksentimentapp.com Team' %}
+            {% if published_dt %}
+            <p class="blog-byline">By {{ author_name }} • {{ published_dt|blog_timestamp(True) }}</p>
+            {% else %}
+            <p class="blog-byline">By {{ author_name }}</p>
+            {% endif %}
+            {% if article.image_url %}
+            <div class="article-hero">
+                <img src="{{ article.image_url }}" alt="Hero image for {{ article.title }}">
+            </div>
+            {% endif %}
+            <div class="blog-body">{{ article.content|safe }}</div>
+        </article>
+        <section style="margin-top:30px;">
+            <div class="section-title" style="font-size:20px; border-bottom:none; padding-bottom:0;">More market notes</div>
+            {% set sidebar_articles = related_articles if related_articles is defined else articles %}
+            {% if sidebar_articles %}
+            <div class="related-grid">
+                {% for item in sidebar_articles %}
+                <div class="related-card">
+                    <a href="{{ url_for('blog_article_page', slug=item.slug) }}">{{ item.title }}</a>
+                    {% set sidebar_dt = item.published_at or item.created_at %}
+                    <p style="margin:6px 0 0; color:#a1a1aa; font-size:13px;">{{ sidebar_dt|blog_timestamp(False) if sidebar_dt else '' }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state" style="text-align:left;">No other posts yet.</div>
+            {% endif %}
+        </section>
+        {% else %}
+        <section class="blog-hero">
+            <p class="eyebrow">Market Notes</p>
+            <h2 class="section-title" style="border-bottom:none;padding-bottom:0;margin-bottom:12px;">Latest commentary from the desk</h2>
+            <p>Check the daily stock market summary with index moves, sector highlights, and curated headlines in one view.</p>
+            <a href="/market-summary">See today’s market summary →</a>
+        </section>
+        {% if articles %}
+        <div class="section-title">Recent posts</div>
+        <section class="blog-grid">
+            {% for article in articles %}
+            <article class="blog-card">
+                <div class="blog-thumb {% if not article.image_url %}is-placeholder{% endif %}">
+                    {% if article.image_url %}
+                    <img src="{{ article.image_url }}" alt="Preview image for {{ article.title }}">
+                    {% else %}
+                    <span>Preview</span>
+                    {% endif %}
+                </div>
+                <div class="blog-card-body">
+                    <p class="eyebrow" style="margin-bottom:6px;">{{ article.author or 'stocksentimentapp.com Team' }}</p>
+                    <h2>{{ article.title }}</h2>
+                    <p>{{ article.content|striptags|truncate(200, True, '…') }}</p>
+                    {% set list_dt = article.published_at or article.created_at %}
+                    <div class="blog-card-footer">
+                        <span>{{ list_dt|blog_timestamp(False) if list_dt else 'Draft' }}</span>
+                        <a href="{{ url_for('blog_article_page', slug=article.slug) }}">Read article</a>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </section>
+        {% else %}
+        <div class="empty-state">No published articles yet. Post your first piece from /write.</div>
+        {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if meta_description %}
+    <meta name="description" content="{{ meta_description }}">
+    {% endif %}
+    <title>Writer Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <style>
+        :root {
+            --bg: #000;
+            --panel: #0a0a0a;
+            --panel-border: rgba(147, 51, 234, 0.25);
+            --surface: #11111a;
+            --text: #f9fafb;
+            --muted: #a1a1aa;
+            --accent: #9333ea;
+            --accent-soft: #c4b5fd;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            padding: 40px 24px;
+        }
+
+        .page-shell {
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 4px;
+        }
+
+        .global-status {
+            font-size: 13px;
+            color: var(--muted);
+            min-height: 18px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .panel + .panel {
+            margin-top: 24px;
+        }
+
+        h2 {
+            margin: 0 0 16px;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        label {
+            font-size: 12px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 6px;
+            color: var(--muted);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="url"],
+        textarea {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #050505;
+            color: var(--text);
+            font-size: 15px;
+            font-family: inherit;
+        }
+
+        input:focus,
+        textarea:focus,
+        .editor-canvas:focus {
+            outline: none;
+            border-color: rgba(147, 51, 234, 0.7);
+            box-shadow: 0 0 0 2px rgba(147, 51, 234, 0.35);
+        }
+
+        button {
+            border: none;
+            border-radius: 12px;
+            padding: 12px 22px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .primary-btn {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .primary-btn:hover:not(:disabled) {
+            background: #7e22ce;
+            transform: translateY(-1px);
+        }
+
+        .secondary-btn {
+            background: rgba(147, 51, 234, 0.15);
+            color: var(--accent-soft);
+        }
+
+        .secondary-btn:hover {
+            background: rgba(147, 51, 234, 0.25);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .editor-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .toolbar-btn {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 10px;
+            min-width: 42px;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .toolbar-btn:hover {
+            background: rgba(147, 51, 234, 0.25);
+            color: var(--accent-soft);
+        }
+
+        .toolbar-btn.active {
+            background: rgba(147, 51, 234, 0.35);
+            color: var(--accent-soft);
+            box-shadow: 0 0 0 1px rgba(147, 51, 234, 0.65) inset;
+        }
+
+        .editor-canvas {
+            min-height: 320px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 18px;
+            line-height: 1.6;
+            background: #050505;
+            overflow-y: auto;
+        }
+
+        .editor-canvas p {
+            margin: 0 0 12px;
+        }
+
+        .hero-preview {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            min-height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            font-size: 14px;
+            margin-top: 12px;
+            overflow: hidden;
+            background: #050505;
+        }
+
+        .hero-preview span {
+            padding: 0 12px;
+            text-align: center;
+        }
+
+        .hero-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        .status-line {
+            margin-top: 16px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .status-line.success {
+            color: #33ea93;
+        }
+
+        .status-line.error {
+            color: var(--danger);
+        }
+
+        .articles-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .article-card {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 16px 18px;
+            background: #0f0f19;
+        }
+
+        .article-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .article-card h3 {
+            margin: 0 0 6px;
+            font-size: 18px;
+        }
+
+        .article-card small {
+            color: var(--muted);
+        }
+
+        .delete-article-btn {
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 12px;
+            padding: 6px 12px;
+            cursor: pointer;
+        }
+
+        .delete-article-btn:hover {
+            border-color: rgba(239, 68, 68, 0.6);
+            color: #fff;
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        .article-card-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .article-status-pill {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #f3f4f6;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .article-status-pill.published {
+            border-color: rgba(51, 234, 147, 0.6);
+            color: #33ea93;
+            background: rgba(51, 234, 147, 0.12);
+        }
+
+        .article-status-pill.draft {
+            border-color: rgba(249, 115, 22, 0.45);
+            color: #fdba74;
+            background: rgba(249, 115, 22, 0.12);
+        }
+
+        .publish-article-btn {
+            border: 1px solid rgba(147, 51, 234, 0.5);
+            border-radius: 999px;
+            background: rgba(147, 51, 234, 0.2);
+            color: var(--accent-soft);
+            padding: 6px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .publish-article-btn:hover:not(:disabled) {
+            background: rgba(147, 51, 234, 0.35);
+        }
+
+        .publish-article-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .edit-article-btn,
+        .unpublish-article-btn {
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            background: transparent;
+            color: #f3f4f6;
+            padding: 6px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .edit-article-btn:hover {
+            border-color: rgba(147, 51, 234, 0.6);
+            color: var(--accent-soft);
+        }
+
+        .unpublish-article-btn {
+            border-color: rgba(239, 68, 68, 0.6);
+            color: #fecaca;
+        }
+
+        .unpublish-article-btn:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fee2e2;
+        }
+
+        .view-article-link {
+            color: var(--accent-soft);
+            font-size: 13px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .view-article-link:hover {
+            text-decoration: underline;
+        }
+
+        .article-card p {
+            margin: 8px 0 0;
+            color: #d4d4d8;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .article-preview {
+            margin-top: 10px;
+            color: #d4d4d8;
+            line-height: 1.6;
+            max-height: 260px;
+            overflow: hidden;
+        }
+
+        .article-preview p,
+        .article-preview ul,
+        .article-preview ol {
+            margin: 0 0 10px;
+        }
+
+        .article-preview ul,
+        .article-preview ol {
+            padding-left: 20px;
+        }
+
+        .article-preview strong,
+        .article-preview em,
+        .article-preview code {
+            color: #fef3c7;
+        }
+
+        .article-preview a {
+            color: var(--accent-soft);
+            text-decoration: none;
+        }
+
+        .article-preview a:hover {
+            text-decoration: underline;
+        }
+
+        .empty-state {
+            padding: 18px;
+            border-radius: 14px;
+            background: rgba(147, 51, 234, 0.12);
+            color: var(--muted);
+            text-align: center;
+            border: 1px dashed rgba(147, 51, 234, 0.35);
+        }
+
+        .logout-btn {
+            display: none;
+            margin-left: auto;
+        }
+
+        body[data-auth="true"] .logout-btn {
+            display: inline-flex;
+        }
+
+        body[data-auth="true"] #loginPanel {
+            display: none;
+        }
+
+        body[data-auth="false"] .requires-auth {
+            display: none;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 24px 16px;
+            }
+
+            .panel {
+                padding: 20px;
+            }
+
+            .editor-toolbar {
+                gap: 6px;
+            }
+
+            .toolbar-btn {
+                padding: 8px 10px;
+            }
+        }
+    </style>
+</head>
+<body data-auth="{{ 'true' if is_authenticated else 'false' }}" data-default-author="{{ default_author }}">
+    <div class="page-shell">
+        <div class="top-bar">
+            <div class="global-status" id="globalStatus"></div>
+            <button class="secondary-btn logout-btn" id="logoutBtn" type="button">Sign out</button>
+        </div>
+        <main>
+            <section class="panel" id="loginPanel">
+                <h2>Private Login</h2>
+                <p style="color: var(--muted); margin-bottom: 18px;">Only authorized users can access this page.</p>
+                <form id="loginForm">
+                    <div style="margin-bottom: 16px;">
+                        <label for="loginUsername">Username</label>
+                        <input type="text" id="loginUsername" name="username" autocomplete="username" required>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" name="password" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="primary-btn" id="loginSubmit">Unlock editor</button>
+                    <div class="status-line" id="loginStatus" role="status" aria-live="polite"></div>
+                </form>
+            </section>
+
+            <section class="panel requires-auth" id="editorPanel">
+                <h2>Mini Word Processor</h2>
+                <div style="margin-bottom: 16px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                    <div>
+                        <label for="articleTitle">Story title</label>
+                        <input type="text" id="articleTitle" placeholder="e.g. 5 signals that defined today's tape">
+                    </div>
+                    <div>
+                        <label for="articleAuthor">Author</label>
+                        <input type="text" id="articleAuthor" value="{{ default_author }}">
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label for="heroImageUrl">Hero image link</label>
+                    <input type="url" id="heroImageUrl" placeholder="https://...">
+                    <div class="hero-preview" id="heroPreview">
+                        <span id="heroPreviewMessage">Drop a headline image link above.</span>
+                        <img id="heroPreviewImg" alt="Hero preview">
+                    </div>
+                </div>
+                <div class="editor-toolbar" aria-label="Formatting toolbar">
+                    <button type="button" class="toolbar-btn" data-command="bold"><strong>B</strong></button>
+                    <button type="button" class="toolbar-btn" data-command="italic"><em>I</em></button>
+                    <button type="button" class="toolbar-btn" data-command="underline"><span style="text-decoration: underline;">U</span></button>
+                    <button type="button" class="toolbar-btn" data-command="insertUnorderedList">• List</button>
+                    <button type="button" class="toolbar-btn" data-command="insertOrderedList">1. List</button>
+                    <button type="button" class="toolbar-btn" data-command="formatBlock" data-value="blockquote">Quote</button>
+                    <button type="button" class="toolbar-btn" data-command="createLink">Link</button>
+                    <button type="button" class="toolbar-btn" data-command="insertImage">Embed img</button>
+                    <button type="button" class="toolbar-btn" id="clearEditor">Clear</button>
+                </div>
+                <div class="editor-canvas" id="editorCanvas" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true">
+                    <p>Start with a hook tying back to the day's flow...</p>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                    <button type="button" class="secondary-btn" id="draftReset">Reset</button>
+                    <button type="button" class="primary-btn" id="publishBtn">Save to drafts</button>
+                </div>
+                <div class="status-line" id="editorStatus" role="status" aria-live="polite"></div>
+            </section>
+
+            <section class="panel requires-auth" id="historyPanel">
+                <h2>Recent drafts</h2>
+                <div id="articlesList" class="articles-list">
+                    <div class="empty-state">Nothing stored yet. Your first post will appear here.</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const DEFAULT_EDITOR_HTML = '<p>Start with a hook tying back to the day\'s flow...</p>';
+        const state = {
+            isAuthenticated: document.body.dataset.auth === 'true',
+            defaultAuthor: document.body.dataset.defaultAuthor || 'The stocksentimentapp.com Team',
+            saving: false,
+            editingArticleId: null
+        };
+
+        const loginForm = document.getElementById('loginForm');
+        const loginStatus = document.getElementById('loginStatus');
+        const loginSubmit = document.getElementById('loginSubmit');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const globalStatus = document.getElementById('globalStatus');
+        const editorCanvas = document.getElementById('editorCanvas');
+        const publishBtn = document.getElementById('publishBtn');
+        const editorStatus = document.getElementById('editorStatus');
+        const articlesList = document.getElementById('articlesList');
+        const articleTitle = document.getElementById('articleTitle');
+        const articleAuthor = document.getElementById('articleAuthor');
+        const heroInput = document.getElementById('heroImageUrl');
+        const heroPreviewMessage = document.getElementById('heroPreviewMessage');
+        const heroPreviewImg = document.getElementById('heroPreviewImg');
+        const draftReset = document.getElementById('draftReset');
+        const toolbarButtons = document.querySelectorAll('.toolbar-btn[data-command]');
+        const clearEditorBtn = document.getElementById('clearEditor');
+        const STATEFUL_TOOLBAR_COMMANDS = new Set(['bold', 'italic', 'underline', 'insertunorderedlist', 'insertorderedlist', 'formatblock']);
+
+        function setBodyAuthFlag(isAuthed) {
+            state.isAuthenticated = isAuthed;
+            document.body.dataset.auth = isAuthed ? 'true' : 'false';
+        }
+
+        function isSelectionInsideEditor() {
+            if (!editorCanvas) {
+                return false;
+            }
+            const selection = window.getSelection();
+            if (!selection || !selection.anchorNode) {
+                return false;
+            }
+            return editorCanvas.contains(selection.anchorNode);
+        }
+
+        function updateToolbarState() {
+            if (!toolbarButtons || toolbarButtons.length === 0) {
+                return;
+            }
+            if (!isSelectionInsideEditor()) {
+                toolbarButtons.forEach(btn => btn.classList.remove('active'));
+                return;
+            }
+            toolbarButtons.forEach(btn => {
+                const rawCommand = (btn.dataset.command || '').toLowerCase();
+                if (!STATEFUL_TOOLBAR_COMMANDS.has(rawCommand)) {
+                    btn.classList.remove('active');
+                    return;
+                }
+                let isActive = false;
+                try {
+                    if (rawCommand === 'formatblock') {
+                        const value = document.queryCommandValue('formatBlock');
+                        isActive = typeof value === 'string' && value.toLowerCase().includes('blockquote');
+                    } else {
+                        isActive = document.queryCommandState(btn.dataset.command);
+                    }
+                } catch (error) {
+                    isActive = false;
+                }
+                btn.classList.toggle('active', Boolean(isActive));
+            });
+        }
+
+        function scheduleToolbarStateUpdate() {
+            requestAnimationFrame(updateToolbarState);
+        }
+
+        function updateEditorModeLabels() {
+            if (publishBtn) {
+                publishBtn.textContent = state.editingArticleId ? 'Update draft' : 'Save to drafts';
+            }
+            if (draftReset) {
+                draftReset.textContent = state.editingArticleId ? 'Cancel edit' : 'Reset';
+            }
+        }
+
+        function buildLinkHtml(url, text) {
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.textContent = text;
+            anchor.target = '_blank';
+            anchor.rel = 'noopener noreferrer';
+            return anchor.outerHTML;
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            loginStatus.textContent = '';
+            loginSubmit.disabled = true;
+            const payload = {
+                username: loginForm.username.value.trim(),
+                password: loginForm.password.value.trim()
+            };
+            try {
+                const response = await fetch('/write/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+                setBodyAuthFlag(true);
+                loginStatus.textContent = 'Unlocked. Loading editor...';
+                loginStatus.className = 'status-line success';
+                await loadArticles();
+            } catch (error) {
+                loginStatus.textContent = error.message;
+                loginStatus.className = 'status-line error';
+            } finally {
+                loginSubmit.disabled = false;
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                const response = await fetch('/write/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                if (response.ok) {
+                    setBodyAuthFlag(false);
+                    resetDraft();
+                    globalStatus.textContent = 'Signed out.';
+                }
+            } catch (error) {
+                globalStatus.textContent = 'Unable to sign out right now.';
+            }
+        }
+
+        function execToolbarCommand(command, value = null) {
+            if (!command) {
+                return;
+            }
+            const normalized = command.toLowerCase();
+            if (normalized === 'createlink') {
+                const urlInput = prompt('Enter the destination URL (include https://)');
+                if (!urlInput) return;
+                const url = urlInput.trim();
+                if (!url) return;
+                const selection = window.getSelection();
+                const selectedText = selection && selection.toString ? selection.toString().trim() : '';
+                let linkText = selectedText;
+                if (!linkText) {
+                    linkText = prompt('Enter the text to display for this link');
+                    if (!linkText) return;
+                } else {
+                    const override = prompt('Link text (leave blank to keep current selection)', linkText);
+                    if (override !== null && override !== '') {
+                        linkText = override.trim();
+                    }
+                }
+                const finalText = (linkText || '').trim();
+                if (!finalText) return;
+                const anchorHtml = buildLinkHtml(url, finalText);
+                document.execCommand('insertHTML', false, anchorHtml);
+                scheduleToolbarStateUpdate();
+                return;
+            }
+            if (normalized === 'insertimage') {
+                const url = prompt('Image source URL');
+                if (!url) return;
+                document.execCommand('insertImage', false, url);
+                scheduleToolbarStateUpdate();
+                return;
+            }
+            if (normalized === 'formatblock' && value) {
+                document.execCommand(command, false, value);
+                scheduleToolbarStateUpdate();
+                return;
+            }
+            document.execCommand(command, false, value);
+            scheduleToolbarStateUpdate();
+        }
+
+        function bindToolbar() {
+            toolbarButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const command = btn.dataset.command;
+                    const value = btn.dataset.value || null;
+                    execToolbarCommand(command, value);
+                });
+            });
+            if (clearEditorBtn) {
+                clearEditorBtn.addEventListener('click', () => {
+                    editorCanvas.innerHTML = '';
+                    scheduleToolbarStateUpdate();
+                });
+            }
+        }
+
+        function renderHeroPreview(url) {
+            heroPreviewImg.style.display = 'none';
+            heroPreviewMessage.style.display = 'block';
+            heroPreviewMessage.textContent = 'Drop a headline image link above.';
+            if (!url) {
+                return;
+            }
+            heroPreviewMessage.textContent = 'Loading preview...';
+            heroPreviewImg.src = url;
+            heroPreviewImg.onload = () => {
+                heroPreviewImg.style.display = 'block';
+                heroPreviewMessage.style.display = 'none';
+            };
+            heroPreviewImg.onerror = () => {
+                heroPreviewImg.style.display = 'none';
+                heroPreviewMessage.style.display = 'block';
+                heroPreviewMessage.textContent = 'That link did not load. Double-check the URL.';
+            };
+        }
+
+        function enterEditMode(article) {
+            if (!article) {
+                return;
+            }
+            state.editingArticleId = article.id;
+            articleTitle.value = article.title || '';
+            articleAuthor.value = article.author || state.defaultAuthor;
+            heroInput.value = article.image_url || '';
+            renderHeroPreview(heroInput.value.trim());
+            editorCanvas.innerHTML = article.content || DEFAULT_EDITOR_HTML;
+            editorStatus.textContent = `Editing "${article.title || 'Untitled draft'}"`;
+            editorStatus.className = 'status-line';
+            updateEditorModeLabels();
+            scheduleToolbarStateUpdate();
+            try {
+                editorCanvas.focus();
+            } catch (error) {
+                // no-op, focus might fail in some browsers
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        heroInput.addEventListener('input', () => {
+            renderHeroPreview(heroInput.value.trim());
+        });
+
+        if (editorCanvas) {
+            ['keyup', 'mouseup', 'focus', 'blur', 'input'].forEach(eventName => {
+                editorCanvas.addEventListener(eventName, scheduleToolbarStateUpdate);
+            });
+        }
+
+        document.addEventListener('selectionchange', () => {
+            if (isSelectionInsideEditor()) {
+                scheduleToolbarStateUpdate();
+            }
+        });
+
+        function escapeHtml(value) {
+            return (value || '').replace(/[&<>"']/g, char => {
+                switch (char) {
+                    case '&': return '&amp;';
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '"': return '&quot;';
+                    case "'": return '&#39;';
+                    default: return char;
+                }
+            });
+        }
+
+        function renderInlineMarkdown(text) {
+            let html = escapeHtml(text);
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+            html = html.replace(/\[(.+?)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            return html;
+        }
+
+        function convertMarkdownToHtml(markdown) {
+            if (!markdown) {
+                return '';
+            }
+            const lines = markdown.split(/\r?\n/);
+            const htmlParts = [];
+            let inList = false;
+
+            const closeListIfNeeded = () => {
+                if (inList) {
+                    htmlParts.push('</ul>');
+                    inList = false;
+                }
+            };
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    closeListIfNeeded();
+                    return;
+                }
+
+                if (/^[-*+]\s+/.test(trimmed)) {
+                    if (!inList) {
+                        htmlParts.push('<ul>');
+                        inList = true;
+                    }
+                    const itemText = trimmed.replace(/^[-*+]\s+/, '');
+                    htmlParts.push(`<li>${renderInlineMarkdown(itemText)}</li>`);
+                    return;
+                }
+
+                closeListIfNeeded();
+
+                if (/^###\s+/.test(trimmed)) {
+                    htmlParts.push(`<h3>${renderInlineMarkdown(trimmed.replace(/^###\s+/, ''))}</h3>`);
+                    return;
+                }
+                if (/^##\s+/.test(trimmed)) {
+                    htmlParts.push(`<h2>${renderInlineMarkdown(trimmed.replace(/^##\s+/, ''))}</h2>`);
+                    return;
+                }
+                if (/^#\s+/.test(trimmed)) {
+                    htmlParts.push(`<h1>${renderInlineMarkdown(trimmed.replace(/^#\s+/, ''))}</h1>`);
+                    return;
+                }
+
+                htmlParts.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+            });
+
+            closeListIfNeeded();
+            return htmlParts.join('');
+        }
+
+        function buildPreviewHtml(content) {
+            const raw = (content || '').trim();
+            if (!raw) {
+                return '';
+            }
+            const looksLikeHtml = /<\s*\/?[a-z][^>]*>/i.test(raw);
+            if (looksLikeHtml) {
+                return raw;
+            }
+            return convertMarkdownToHtml(raw);
+        }
+
+        function renderArticles(articles) {
+            if (!articles || articles.length === 0) {
+                articlesList.innerHTML = '<div class="empty-state">Nothing stored yet. Your first post will appear here.</div>';
+                return;
+            }
+            articlesList.innerHTML = '';
+            articles.forEach(article => {
+                const card = document.createElement('article');
+                card.className = 'article-card';
+                function parseIsoToLocal(isoString) {
+                    if (!isoString) return '';
+                    // Ensure Z if missing (treat as UTC)
+                    let safeIso = isoString;
+                    if (!/Z$|[+-]\d{2}:?\d{2}$/.test(safeIso)) {
+                        safeIso += 'Z';
+                    }
+                    const date = new Date(safeIso);
+                    return date.toLocaleString(undefined, {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    });
+                }
+                const formatted = parseIsoToLocal(article.updated_at || article.created_at || new Date().toISOString());
+                const safeTitle = escapeHtml(article.title || 'Untitled draft');
+                const safeAuthor = escapeHtml(article.author || state.defaultAuthor);
+                const permalink = article.permalink || (article.slug ? `/blog/${article.slug}` : '');
+                const isPublished = Boolean(article.is_published);
+                const statusClass = isPublished ? 'published' : 'draft';
+                const statusLabel = isPublished ? 'Published' : 'Draft';
+                card.innerHTML = `
+                    <div class="article-card-header">
+                        <div>
+                            <h3>${safeTitle}</h3>
+                            <small>${safeAuthor} • ${formatted}</small>
+                        </div>
+                        <div class="article-card-actions">
+                            <span class="article-status-pill ${statusClass}">${statusLabel}</span>
+                            ${isPublished && permalink ? `<a class="view-article-link" href="${escapeHtml(permalink)}" target="_blank" rel="noopener noreferrer">View</a>` : ''}
+                            ${isPublished ? `<button type="button" class="unpublish-article-btn" data-article-id="${article.id}">Unpublish</button>` : ''}
+                            ${!isPublished ? `<button type="button" class="edit-article-btn" data-article-id="${article.id}">Edit</button>` : ''}
+                            ${!isPublished ? `<button type="button" class="publish-article-btn" data-article-id="${article.id}">Post</button>` : ''}
+                            <button type="button" class="delete-article-btn" data-article-id="${article.id}">Delete</button>
+                        </div>
+                    </div>
+                    <div class="article-preview">${buildPreviewHtml(article.content)}</div>
+                `;
+                const deleteBtn = card.querySelector('.delete-article-btn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', () => handleDeleteArticle(article.id, card));
+                }
+                const editBtn = card.querySelector('.edit-article-btn');
+                if (editBtn) {
+                    editBtn.addEventListener('click', () => enterEditMode(article));
+                }
+                const publishBtnEl = card.querySelector('.publish-article-btn');
+                if (publishBtnEl) {
+                    publishBtnEl.addEventListener('click', () => handlePublishArticle(article.id, publishBtnEl));
+                }
+                const unpublishBtn = card.querySelector('.unpublish-article-btn');
+                if (unpublishBtn) {
+                    unpublishBtn.addEventListener('click', () => handleUnpublishArticle(article.id, unpublishBtn));
+                }
+                articlesList.appendChild(card);
+            });
+        }
+
+        async function loadArticles() {
+            if (!state.isAuthenticated) return;
+            try {
+                const response = await fetch('/api/blog/articles', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                if (response.status === 401) {
+                    setBodyAuthFlag(false);
+                    return;
+                }
+                const data = await response.json();
+                if (response.ok) {
+                    renderArticles(data.articles || []);
+                }
+            } catch (error) {
+                globalStatus.textContent = 'Unable to load stored drafts.';
+            }
+        }
+
+        function validateDraft({ title, content }) {
+            if (!title || !title.trim()) {
+                return 'Add a title before saving.';
+            }
+            const plainText = (content || '').replace(/<[^>]+>/g, '').trim();
+            if (!plainText) {
+                return 'Write some content before saving.';
+            }
+            return null;
+        }
+
+        async function handleDeleteArticle(articleId, cardElement) {
+            if (!articleId) return;
+            const confirmed = window.confirm('Delete this draft? This cannot be undone.');
+            if (!confirmed) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to delete draft.');
+                }
+                if (cardElement && cardElement.parentNode) {
+                    cardElement.parentNode.removeChild(cardElement);
+                }
+                if (state.editingArticleId === articleId) {
+                    resetDraft();
+                }
+                if (!articlesList.querySelector('.article-card')) {
+                    articlesList.innerHTML = '<div class="empty-state">Nothing stored yet. Your first post will appear here.</div>';
+                }
+                globalStatus.textContent = 'Draft deleted.';
+                loadArticles().catch(() => {});
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to delete draft.';
+                await loadArticles();
+            }
+        }
+
+        async function handlePublishArticle(articleId, buttonEl) {
+            if (!articleId || !buttonEl || buttonEl.disabled) {
+                return;
+            }
+            buttonEl.disabled = true;
+            const originalLabel = buttonEl.textContent;
+            buttonEl.textContent = 'Posting...';
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}/publish`, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to publish draft.');
+                }
+                globalStatus.textContent = 'Draft posted to the public blog.';
+                await loadArticles();
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to post draft right now.';
+            } finally {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalLabel;
+            }
+        }
+
+        async function handleUnpublishArticle(articleId, buttonEl) {
+            if (!articleId || !buttonEl || buttonEl.disabled) {
+                return;
+            }
+            const originalLabel = buttonEl.textContent;
+            buttonEl.disabled = true;
+            buttonEl.textContent = 'Reverting...';
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}/unpublish`, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to unpublish this post.');
+                }
+                globalStatus.textContent = 'Article reverted to draft.';
+                if (state.editingArticleId === articleId) {
+                    resetDraft();
+                }
+                await loadArticles();
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to revert the post right now.';
+            } finally {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalLabel;
+            }
+        }
+
+        async function handleSave() {
+            if (state.saving) return;
+            const payload = {
+                title: articleTitle.value.trim(),
+                author: articleAuthor.value.trim() || state.defaultAuthor,
+                image_url: heroInput.value.trim(),
+                content: editorCanvas.innerHTML.trim()
+            };
+            const errorMessage = validateDraft(payload);
+            if (errorMessage) {
+                editorStatus.textContent = errorMessage;
+                editorStatus.className = 'status-line error';
+                return;
+            }
+            state.saving = true;
+            publishBtn.disabled = true;
+            const isUpdating = Boolean(state.editingArticleId);
+            editorStatus.textContent = isUpdating ? 'Updating draft...' : 'Saving...';
+            editorStatus.className = 'status-line';
+            try {
+                const endpoint = isUpdating ? `/api/blog/articles/${state.editingArticleId}` : '/api/blog/articles';
+                const method = isUpdating ? 'PUT' : 'POST';
+                const response = await fetch(endpoint, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to save right now.');
+                }
+                editorStatus.textContent = isUpdating ? 'Draft updated.' : 'Saved and archived.';
+                editorStatus.className = 'status-line success';
+                await loadArticles();
+            } catch (error) {
+                editorStatus.textContent = error.message;
+                editorStatus.className = 'status-line error';
+            } finally {
+                state.saving = false;
+                publishBtn.disabled = false;
+            }
+        }
+
+        function resetDraft() {
+            state.editingArticleId = null;
+            articleTitle.value = '';
+            articleAuthor.value = state.defaultAuthor;
+            heroInput.value = '';
+            renderHeroPreview('');
+            editorCanvas.innerHTML = DEFAULT_EDITOR_HTML;
+            editorStatus.textContent = '';
+            updateEditorModeLabels();
+            scheduleToolbarStateUpdate();
+        }
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', handleLogin);
+        }
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', handleLogout);
+        }
+        if (publishBtn) {
+            publishBtn.addEventListener('click', handleSave);
+        }
+        if (draftReset) {
+            draftReset.addEventListener('click', resetDraft);
+        }
+
+        bindToolbar();
+        scheduleToolbarStateUpdate();
+        updateEditorModeLabels();
+        if (state.isAuthenticated) {
+            loadArticles();
+        }
+    </script>
+</body>
+</html>

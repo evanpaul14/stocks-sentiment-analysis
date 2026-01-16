@@ -3,7 +3,7 @@
 
 # Stocks Sentiment Analysis
 
-A Flask web app for real-time stock search, trending dashboards, and sentiment analysis using Yahoo Finance, ApeWisdom, StockTwits, Alpaca, Google News, Finnhub, and LLM-powered summaries. SQLite is used only for Unsplash image cache and market summary history; all other data is fetched live and rendered client-side.
+A Flask web app for real-time stock search, trending dashboards, sentiment analysis, and an authenticated writer workspace using Yahoo Finance, ApeWisdom, StockTwits, Alpaca, Google News, Finnhub, and LLM-powered summaries. SQLite backs the Unsplash image cache, market summary history, and the internal blog editor; everything else is fetched live and rendered client-side.
 
 ## Features
 - Search stocks by ticker or company name
@@ -12,6 +12,7 @@ A Flask web app for real-time stock search, trending dashboards, and sentiment a
 - News aggregation and AI-powered sentiment analysis (Gemma, LLM7, Cloudflare)
 - Market summary dashboard (optional, with daily wrap)
 - Unsplash-powered article images
+- Private `/write` page with a mini word processor that saves long-form articles into `blog.db`
 - Rate-limited endpoints for API safety
 
 ## Quickstart
@@ -37,6 +38,11 @@ A Flask web app for real-time stock search, trending dashboards, and sentiment a
   # Optional: Cloudflare AI
   CLOUDFLARE_ACCOUNT_ID=your_cf_account
   CLOUDFLARE_API_TOKEN=your_cf_token
+  # Authenticated writer workspace
+  FLASK_SECRET_KEY=replace_with_random_string
+  BLOG_ADMIN_USERNAME=choose_a_username
+  BLOG_ADMIN_PASSWORD=choose_a_password
+  BLOG_DEFAULT_AUTHOR=stocksentimentapp.com Team
   ```
 
 3. **Run the app:**
@@ -60,6 +66,10 @@ A Flask web app for real-time stock search, trending dashboards, and sentiment a
 - `/api/market-summary/<slug>` (GET): Fetch a specific market summary by slug (ISO date or `id-<pk>`).
 - `/quote/<symbol>` (GET): Quick price/quote lookup.
 - `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
+- `/write` (GET): Auth-only writer workspace with the mini word processor UI.
+- `/write/login` (POST): JSON login endpoint that unlocks the writer workspace (`BLOG_ADMIN_*` credentials).
+- `/write/logout` (POST): Ends the writer session.
+- `/api/blog/articles` (GET/POST): Manage private blog articles stored in `blog.db` (requires an authenticated writer session).
 
 ## Frontend
 
@@ -67,9 +77,16 @@ A Flask web app for real-time stock search, trending dashboards, and sentiment a
 - Trending cards and search bar trigger backend endpoints
 - All formatting (currency, numbers) is client-side
 
+## Writer Workspace
+
+- Visit `/write` and unlock the page with `BLOG_ADMIN_USERNAME` / `BLOG_ADMIN_PASSWORD` (set in `.env`).
+- The page bundles a lightweight word processor (contenteditable + formatting toolbar) where admins can craft long-form posts, specify a hero image URL, and save directly to SQLite.
+- Articles persist inside `blog.db` through the SQLAlchemy `blog` bind, alongside created/updated timestamps and auto-generated slugs.
+- `/api/blog/articles` responds with JSON so you can preview or repurpose drafts elsewhere; the endpoint stays locked behind the same session to avoid public exposure.
+
 ## Architecture
 
-- **No database required for main features** (SQLite only used for Unsplash image cache and market summary history)
+- **No database required for public features** (SQLite only stores Unsplash cache, market summaries, and the authenticated blog workspace)
 - All data fetched live from third-party APIs
 - Sentiment and movement summaries use Gemma, LLM7, or Cloudflare (rate-limited)
 - Trending APIs are wrapped with timeouts and error handling
@@ -93,6 +110,7 @@ Optional (degrades gracefully if missing):
 - `FINNHUB_API_KEY`
 - `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`, `UNSPLASH_DEFAULT_QUERY`
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SENTIMENT_MODEL`
+- `FLASK_SECRET_KEY`, `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
 
 ## Rate Limits
 

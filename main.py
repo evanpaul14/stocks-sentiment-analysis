@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, redirect
+from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, redirect, session
 from flask_sqlalchemy import SQLAlchemy
 from google import genai
 from pygooglenews import GoogleNews
@@ -11,6 +11,7 @@ from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
 import os
 import logging
+import hmac
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import time
@@ -26,7 +27,7 @@ import uuid
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import func, text
+from sqlalchemy import func, text, inspect
 from sqlalchemy.exc import IntegrityError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from pathlib import Path
@@ -56,6 +57,10 @@ app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ip_log.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_BINDS'] = {
+    'blog': 'sqlite:///blog.db'
+}
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.urandom(32)
 db = SQLAlchemy(app)
 
 
@@ -72,6 +77,16 @@ STOCK_MARKET_TODAY_META_DESCRIPTION = (
     "Catch up on today's market movers, dow jones today, nasdaq today and s&p 500 performance with our stock market summary."
 )
 
+BLOG_ADMIN_USERNAME = os.getenv("BLOG_ADMIN_USERNAME")
+BLOG_ADMIN_PASSWORD = os.getenv("BLOG_ADMIN_PASSWORD")
+DEFAULT_ARTICLE_AUTHOR = os.getenv("BLOG_DEFAULT_AUTHOR", "stocksentimentapp.com Team")
+BLOG_PAGE_META_DESCRIPTION = (
+    "Draft and publish original market commentary with the built-in word processor."
+)
+BLOG_LIST_META_DESCRIPTION = (
+    "Browse fresh market commentary, trade ideas, and sentiment takeaways from stocksentimentapp.com writers."
+)
+
 
 @app.context_processor
 def inject_unsplash_globals():
@@ -84,6 +99,29 @@ def _utcnow_naive():
 
 
 EASTERN_TZ = ZoneInfo("America/New_York")
+
+
+def _localize_datetime(value, target_tz):
+    if not value or not target_tz:
+        return None
+    try:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(target_tz)
+    except Exception:
+        return None
+
+
+def format_blog_timestamp(value, include_time=True):
+    localized = _localize_datetime(value, EASTERN_TZ)
+    if not localized:
+        return None
+    if include_time:
+        return localized.strftime('%b %d, %Y • %I:%M %p ET')
+    return localized.strftime('%b %d, %Y')
+
+
+app.jinja_env.filters['blog_timestamp'] = format_blog_timestamp
 
 
 class ArticleImage(db.Model):
@@ -139,6 +177,229 @@ class MarketSummarySendLog(db.Model):
     sent_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
     status = db.Column(db.String(32), nullable=False, default="sent")
     error_message = db.Column(db.String(255), nullable=True)
+
+
+class BlogArticle(db.Model):
+    __bind_key__ = "blog"
+    __tablename__ = "blog_articles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    slug = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    author = db.Column(db.String(255), nullable=False, default=DEFAULT_ARTICLE_AUTHOR)
+    content = db.Column(db.Text, nullable=False)
+    image_url = db.Column(db.String(512), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+    updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, onupdate=_utcnow_naive)
+    is_published = db.Column(db.Boolean, nullable=False, default=False, server_default="0")
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        permalink = None
+        try:
+            permalink = url_for('blog_article_page', slug=self.slug)
+        except RuntimeError:
+            permalink = f"/blog/{self.slug}"
+        return {
+            "id": self.id,
+            "title": self.title,
+            "slug": self.slug,
+            "author": self.author,
+            "content": self.content,
+            "image_url": self.image_url,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_published": bool(self.is_published),
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "permalink": permalink
+        }
+
+
+def _blog_credentials_configured():
+    return bool(BLOG_ADMIN_USERNAME and BLOG_ADMIN_PASSWORD)
+
+
+def _is_blog_admin():
+    return bool(session.get('blog_admin_authenticated'))
+
+
+def _verify_blog_credentials(username, password):
+    if not _blog_credentials_configured():
+        return False
+    safe_username = username or ''
+    safe_password = password or ''
+    return (
+        hmac.compare_digest(safe_username, BLOG_ADMIN_USERNAME)
+        and hmac.compare_digest(safe_password, BLOG_ADMIN_PASSWORD)
+    )
+
+
+def _slugify_article_title(title):
+    cleaned = (title or '').lower()
+    cleaned = re.sub(r'[^a-z0-9]+', '-', cleaned)
+    cleaned = cleaned.strip('-')
+    if not cleaned:
+        return f"article-{uuid.uuid4().hex[:8]}"
+    return cleaned[:80]
+
+
+def _generate_unique_blog_slug(title):
+    base = _slugify_article_title(title)
+    slug = base
+    suffix = 2
+    while BlogArticle.query.filter_by(slug=slug).first() is not None:
+        slug = f"{base}-{suffix}"
+        suffix += 1
+    return slug
+
+
+def _create_blog_article(title, content, image_url=None, author=None):
+    if not title or not content:
+        raise ValueError("Title and content are required")
+    normalized_author = (author or DEFAULT_ARTICLE_AUTHOR).strip() or DEFAULT_ARTICLE_AUTHOR
+    slug = _generate_unique_blog_slug(title)
+    article = BlogArticle(
+        title=title.strip(),
+        slug=slug,
+        author=normalized_author,
+        content=content,
+        image_url=(image_url or '').strip() or None
+    )
+    db.session.add(article)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        article.slug = _generate_unique_blog_slug(f"{title}-{uuid.uuid4().hex[:4]}")
+        db.session.add(article)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return article
+
+
+def _fetch_recent_blog_articles(limit=None):
+    use_limit = limit or BLOG_ARTICLE_FETCH_LIMIT
+    query = BlogArticle.query.order_by(BlogArticle.created_at.desc())
+    if use_limit:
+        query = query.limit(use_limit)
+    return query.all()
+
+
+def _delete_blog_article(identifier):
+    article = _resolve_blog_article(identifier)
+    if not article:
+        return False
+    try:
+        db.session.delete(article)
+        db.session.commit()
+        return True
+    except Exception as exc:
+        db.session.rollback()
+        app_logger.error("Unable to delete blog article %s: %s", identifier, exc)
+        raise
+
+
+def ensure_blog_article_columns():
+    try:
+        engine = db.get_engine(app, bind='blog')
+    except Exception as exc:
+        app_logger.warning("Unable to load blog engine for schema sync: %s", exc)
+        return
+    inspector = inspect(engine)
+    existing_columns = {col['name'] for col in inspector.get_columns('blog_articles')}
+    alter_statements = []
+    if 'is_published' not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE blog_articles ADD COLUMN is_published INTEGER NOT NULL DEFAULT 0"
+        )
+    if 'published_at' not in existing_columns:
+        alter_statements.append(
+            "ALTER TABLE blog_articles ADD COLUMN published_at DATETIME"
+        )
+    if not alter_statements:
+        return
+    with engine.begin() as connection:
+        for statement in alter_statements:
+            connection.execute(text(statement))
+
+
+def _fetch_published_blog_articles(limit=None):
+    query = (
+        BlogArticle.query
+        .filter_by(is_published=True)
+        .order_by(BlogArticle.published_at.desc(), BlogArticle.created_at.desc())
+    )
+    if limit:
+        query = query.limit(limit)
+    return query.all()
+
+
+def _fetch_blog_article_by_slug(slug):
+    if not slug:
+        return None
+    return BlogArticle.query.filter_by(slug=slug, is_published=True).first()
+
+
+def _resolve_blog_article(identifier):
+    if identifier is None:
+        return None
+    if isinstance(identifier, int):
+        return db.session.get(BlogArticle, identifier)
+    try:
+        identifier_str = str(identifier).strip()
+    except Exception:
+        return None
+    if not identifier_str:
+        return None
+
+    article = None
+    if identifier_str.isdigit():
+        try:
+            article = db.session.get(BlogArticle, int(identifier_str))
+        except Exception:
+            article = None
+        if article:
+            return article
+
+    return BlogArticle.query.filter_by(slug=identifier_str).first()
+
+
+def _publish_blog_article(identifier):
+    article = _resolve_blog_article(identifier)
+    if not article:
+        return None
+    if article.is_published and article.published_at:
+        return article
+    article.is_published = True
+    article.published_at = _utcnow_naive()
+    try:
+        db.session.add(article)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app_logger.error("Unable to publish blog article %s: %s", identifier, exc)
+        raise
+    return article
+
+
+def _unpublish_blog_article(identifier):
+    article = _resolve_blog_article(identifier)
+    if not article:
+        return None
+    if not article.is_published:
+        return article
+    article.is_published = False
+    article.published_at = None
+    try:
+        db.session.add(article)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app_logger.error("Unable to unpublish blog article %s: %s", identifier, exc)
+        raise
+    return article
 
 
 def dedupe_market_summaries(summary_date=None):
@@ -206,6 +467,13 @@ with app.app_context():
             "Market summary uniqueness bootstrap failed: %s",
             exc
         )
+    try:
+        ensure_blog_article_columns()
+    except Exception as exc:
+        app_logger.warning(
+            "Blog schema bootstrap failed: %s",
+            exc
+        )
 
 
 
@@ -269,6 +537,9 @@ def _get_int_env(var_name, default):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+BLOG_ARTICLE_FETCH_LIMIT = max(1, _get_int_env("BLOG_ARTICLE_FETCH_LIMIT", 50))
 
 
 GEMMA_SENTIMENT_TIMEOUT_SECONDS = max(1, _get_int_env("GEMMA_SENTIMENT_TIMEOUT_SECONDS", 8))
@@ -2571,6 +2842,223 @@ def market_summary_article_page(summary_slug):
         market_summary_page_title=page_title,
         meta_description=MARKET_META_DESCRIPTION
     )
+
+
+@app.route('/blog', methods=['GET'])
+@limiter.limit("50 per minute")
+def blog_listing_page():
+    articles = _fetch_published_blog_articles()
+    return render_template(
+        'blog.html',
+        view_mode='list',
+        articles=articles,
+        meta_description=BLOG_LIST_META_DESCRIPTION,
+        page_title='Market Notes Blog'
+    )
+
+
+@app.route('/blog/<string:slug>', methods=['GET'])
+@limiter.limit("50 per minute")
+def blog_article_page(slug):
+    article = _fetch_blog_article_by_slug(slug)
+    if not article:
+        return render_template('404.html'), 404
+    recent_articles = _fetch_published_blog_articles(limit=6)
+    related_articles = [item for item in recent_articles if item.slug != article.slug][:4]
+    return render_template(
+        'blog.html',
+        view_mode='detail',
+        articles=recent_articles,
+        related_articles=related_articles,
+        article=article,
+        meta_description=article.title,
+        page_title=article.title
+    )
+
+
+@app.route('/write', methods=['GET'])
+@limiter.limit("20 per minute")
+def writer_portal():
+    """Render the internal writing surface."""
+    return render_template(
+        'write.html',
+        is_authenticated=_is_blog_admin(),
+        default_author=DEFAULT_ARTICLE_AUTHOR,
+        meta_description=BLOG_PAGE_META_DESCRIPTION
+    )
+
+
+@app.route('/write/login', methods=['POST'])
+@limiter.limit("10 per hour")
+def writer_login():
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled. Configure BLOG_ADMIN credentials."}), 503
+
+    payload = request.get_json(silent=True) or request.form or {}
+    username = (payload.get('username') or '').strip()
+    password = (payload.get('password') or '').strip()
+    if not username or not password:
+        return jsonify({"error": "Username and password are required."}), 400
+
+    if _verify_blog_credentials(username, password):
+        session['blog_admin_authenticated'] = True
+        session.permanent = True
+        return jsonify({"message": "Authenticated."})
+
+    return jsonify({"error": "Invalid credentials."}), 401
+
+
+@app.route('/write/logout', methods=['POST'])
+@limiter.limit("20 per hour")
+def writer_logout():
+    session.pop('blog_admin_authenticated', None)
+    return jsonify({"message": "Logged out."})
+
+
+@app.route('/api/blog/articles', methods=['GET', 'POST'])
+@limiter.limit("40 per hour")
+def blog_articles_endpoint():
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    if request.method == 'GET':
+        try:
+            raw_limit = request.args.get('limit')
+            limit = int(raw_limit) if raw_limit is not None else BLOG_ARTICLE_FETCH_LIMIT
+        except ValueError:
+            limit = BLOG_ARTICLE_FETCH_LIMIT
+        limit = max(1, min(limit, BLOG_ARTICLE_FETCH_LIMIT))
+        articles = _fetch_recent_blog_articles(limit)
+        return jsonify({
+            "count": len(articles),
+            "articles": [article.to_dict() for article in articles]
+        })
+
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get('title') or '').strip()
+    content = (payload.get('content') or '').strip()
+    image_url = (payload.get('image_url') or '').strip()
+    author = (payload.get('author') or '').strip() or DEFAULT_ARTICLE_AUTHOR
+
+    if not title:
+        return jsonify({"error": "Title is required."}), 400
+    if not content:
+        return jsonify({"error": "Content is required."}), 400
+
+    try:
+        article = _create_blog_article(title, content, image_url, author)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        app_logger.error("Unable to save blog article: %s", exc)
+        return jsonify({"error": "Unable to save article right now."}), 500
+
+    return jsonify({"article": article.to_dict()}), 201
+
+
+@app.route('/api/blog/articles/<article_identifier>', methods=['DELETE'])
+@limiter.limit("40 per hour")
+def blog_article_detail_endpoint(article_identifier):
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    try:
+        deleted = _delete_blog_article(article_identifier)
+    except Exception:
+        return jsonify({"error": "Unable to delete draft right now."}), 500
+
+    if not deleted:
+        return jsonify({"error": "Draft not found."}), 404
+
+    return jsonify({"message": "Draft deleted."}), 200
+
+
+@app.route('/api/blog/articles/<article_identifier>', methods=['PUT', 'PATCH'])
+@limiter.limit("40 per hour")
+def blog_article_update_endpoint(article_identifier):
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    title = (payload.get('title') or '').strip()
+    content = (payload.get('content') or '').strip()
+    image_url = (payload.get('image_url') or '').strip()
+    author = (payload.get('author') or '').strip() or DEFAULT_ARTICLE_AUTHOR
+
+    if not title:
+        return jsonify({"error": "Title is required."}), 400
+    if not content:
+        return jsonify({"error": "Content is required."}), 400
+
+    article = _resolve_blog_article(article_identifier)
+    if not article:
+        return jsonify({"error": "Draft not found."}), 404
+
+    article.title = title
+    article.content = content
+    article.image_url = image_url or None
+    article.author = author
+    article.updated_at = _utcnow_naive()
+
+    try:
+        db.session.add(article)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app_logger.error("Unable to update blog article %s: %s", article_identifier, exc)
+        return jsonify({"error": "Unable to save updates right now."}), 500
+
+    return jsonify({"article": article.to_dict()}), 200
+
+
+@app.route('/api/blog/articles/<article_identifier>/publish', methods=['POST'])
+@limiter.limit("40 per hour")
+def blog_article_publish_endpoint(article_identifier):
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    try:
+        article = _publish_blog_article(article_identifier)
+    except Exception:
+        return jsonify({"error": "Unable to publish right now."}), 500
+
+    if not article:
+        return jsonify({"error": "Draft not found."}), 404
+
+    return jsonify({
+        "article": article.to_dict(),
+        "message": "Article posted to the blog."
+    })
+
+
+@app.route('/api/blog/articles/<article_identifier>/unpublish', methods=['POST'])
+@limiter.limit("40 per hour")
+def blog_article_unpublish_endpoint(article_identifier):
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    try:
+        article = _unpublish_blog_article(article_identifier)
+    except Exception:
+        return jsonify({"error": "Unable to unpublish right now."}), 500
+
+    if not article:
+        return jsonify({"error": "Draft not found."}), 404
+
+    return jsonify({
+        "article": article.to_dict(),
+        "message": "Article reverted to draft."
+    }), 200
 
 
 @app.route('/api/market-summary/subscribe', methods=['POST'])

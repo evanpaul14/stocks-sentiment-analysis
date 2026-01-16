@@ -19,10 +19,14 @@
     <loc>https://stocksentimentapp.com/market-summary/stock-market-today</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
-    <lastmod>2026-01-14</lastmod>
+    <lastmod>2026-01-15</lastmod>
   </url>
   <url>
     <loc>https://stocksentimentapp.com/market-summary/2026-01-14</loc>
     <lastmod>2026-01-14</lastmod>
+  </url>
+  <url>
+    <loc>https://stocksentimentapp.com/market-summary/2026-01-15</loc>
+    <lastmod>2026-01-15</lastmod>
   </url>
 </urlset>
