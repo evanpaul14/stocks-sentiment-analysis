@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import func, text, inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -325,6 +325,22 @@ def ensure_blog_article_columns():
             connection.execute(text(statement))
 
 
+def _safe_create_all(bind=None):
+    """Create tables for a bind while tolerating existing schemas."""
+    bind_label = bind or "default"
+    try:
+        db.create_all(bind=bind)
+    except OperationalError as exc:
+        message = str(exc).lower()
+        if "already exists" in message:
+            app_logger.info(
+                "Skipping create_all for %s bind because tables already exist",
+                bind_label
+            )
+            return
+        raise
+
+
 def _fetch_published_blog_articles(limit=None):
     query = (
         BlogArticle.query
@@ -458,7 +474,8 @@ def ensure_market_summary_unique_index():
         )
 
 with app.app_context():
-    db.create_all()
+    _safe_create_all()
+    _safe_create_all(bind='blog')
     try:
         dedupe_market_summaries()
         ensure_market_summary_unique_index()
