@@ -106,6 +106,10 @@ BLOG_PAGE_META_DESCRIPTION = (
 BLOG_LIST_META_DESCRIPTION = (
     "Browse fresh market commentary, trade ideas, and sentiment takeaways from stocksentimentapp.com writers."
 )
+BLOG_SITEMAP_BASE_URL = (
+    (os.getenv("BLOG_SITEMAP_BASE_URL") or "https://stocksentimentapp.com/blog").rstrip("/")
+    or "https://stocksentimentapp.com/blog"
+)
 
 
 @app.context_processor
@@ -1817,54 +1821,20 @@ def prune_market_summary_history(cutoff_date=None):
     return deleted
 
 
-def upsert_market_summary_sitemap_entry(summary_date):
-    """Ensure sitemap.xml lists the market-summary detail page for the given date."""
-    if not summary_date:
-        return False
-
+def _load_sitemap_tree():
     sitemap_path = SITEMAP_FILE_PATH
     if not sitemap_path.exists():
-        return False
-
-    lastmod_text = summary_date.strftime('%Y-%m-%d')
-    target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{lastmod_text}"
-    stock_market_today_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/stock-market-today"
-
+        return None, None, None
     try:
         tree = ET.parse(sitemap_path)
     except ET.ParseError as exc:
         raise RuntimeError(f"Sitemap parsing failed: {exc}") from exc
+    return tree, tree.getroot(), sitemap_path
 
-    root = tree.getroot()
-    ns_uri = SITEMAP_XML_NAMESPACE
-    def _ensure_url_lastmod(loc_value, lastmod_value):
-        url_node = None
-        for node in root.findall(f"{{{ns_uri}}}url"):
-            loc_node = node.find(f"{{{ns_uri}}}loc")
-            if loc_node is not None and (loc_node.text or "").strip() == loc_value:
-                url_node = node
-                break
 
-        if url_node is None:
-            url_node = ET.SubElement(root, f"{{{ns_uri}}}url")
-            loc_node = ET.SubElement(url_node, f"{{{ns_uri}}}loc")
-            loc_node.text = loc_value
-        else:
-            loc_node = url_node.find(f"{{{ns_uri}}}loc")
-            if loc_node is None:
-                loc_node = ET.SubElement(url_node, f"{{{ns_uri}}}loc")
-            loc_node.text = loc_value
-
-        lastmod_node = url_node.find(f"{{{ns_uri}}}lastmod")
-        if lastmod_node is None:
-            lastmod_node = ET.SubElement(url_node, f"{{{ns_uri}}}lastmod")
-        lastmod_node.text = lastmod_value
-
-    # Individual market summary article URL (date-based).
-    _ensure_url_lastmod(target_loc, lastmod_text)
-    # SEO landing page that always shows the latest summary.
-    _ensure_url_lastmod(stock_market_today_loc, lastmod_text)
-
+def _write_sitemap_tree(tree, sitemap_path):
+    if tree is None or sitemap_path is None:
+        return False
     tmp_path = sitemap_path.with_name(sitemap_path.name + ".tmp")
     if hasattr(ET, "indent"):
         ET.indent(tree, space="  ")
@@ -1873,8 +1843,108 @@ def upsert_market_summary_sitemap_entry(summary_date):
         tmp_path.replace(sitemap_path)
     except OSError as exc:
         raise RuntimeError(f"Sitemap write failed: {exc}") from exc
+    return True
+
+
+def _ensure_sitemap_url(root, loc_value, lastmod_value=None):
+    if root is None or not loc_value:
+        return None
+    ns_uri = SITEMAP_XML_NAMESPACE
+    url_node = None
+    for node in root.findall(f"{{{ns_uri}}}url"):
+        loc_node = node.find(f"{{{ns_uri}}}loc")
+        if loc_node is not None and (loc_node.text or "").strip() == loc_value:
+            url_node = node
+            break
+    if url_node is None:
+        url_node = ET.SubElement(root, f"{{{ns_uri}}}url")
+    loc_node = url_node.find(f"{{{ns_uri}}}loc")
+    if loc_node is None:
+        loc_node = ET.SubElement(url_node, f"{{{ns_uri}}}loc")
+    loc_node.text = loc_value
+    if lastmod_value:
+        lastmod_node = url_node.find(f"{{{ns_uri}}}lastmod")
+        if lastmod_node is None:
+            lastmod_node = ET.SubElement(url_node, f"{{{ns_uri}}}lastmod")
+        lastmod_node.text = lastmod_value
+    return url_node
+
+
+def _remove_sitemap_entry(loc_value):
+    if not loc_value:
+        return False
+    tree, root, sitemap_path = _load_sitemap_tree()
+    if tree is None or root is None:
+        return False
+    ns_uri = SITEMAP_XML_NAMESPACE
+    removed = False
+    for node in list(root.findall(f"{{{ns_uri}}}url")):
+        loc_node = node.find(f"{{{ns_uri}}}loc")
+        if loc_node is not None and (loc_node.text or "").strip() == loc_value:
+            root.remove(node)
+            removed = True
+    if not removed:
+        return False
+    _write_sitemap_tree(tree, sitemap_path)
+    return True
+
+
+def upsert_market_summary_sitemap_entry(summary_date):
+    """Ensure sitemap.xml lists the market-summary detail page for the given date."""
+    if not summary_date:
+        return False
+
+    tree, root, sitemap_path = _load_sitemap_tree()
+    if tree is None or root is None:
+        return False
+
+    lastmod_text = summary_date.strftime('%Y-%m-%d')
+    target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{lastmod_text}"
+    stock_market_today_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/stock-market-today"
+
+    # Individual market summary article URL (date-based).
+    _ensure_sitemap_url(root, target_loc, lastmod_text)
+    # SEO landing page that always shows the latest summary.
+    _ensure_sitemap_url(root, stock_market_today_loc, lastmod_text)
+
+    _write_sitemap_tree(tree, sitemap_path)
 
     return True
+
+
+def upsert_blog_article_sitemap_entry(article):
+    if not article or not getattr(article, 'slug', None):
+        return False
+
+    tree, root, sitemap_path = _load_sitemap_tree()
+    if tree is None or root is None:
+        app_logger.warning(
+            "Sitemap file missing; unable to register blog article %s",
+            getattr(article, 'slug', 'unknown')
+        )
+        return False
+
+    published_marker = article.published_at or article.updated_at or _utcnow_naive()
+    if not isinstance(published_marker, datetime):
+        published_marker = _utcnow_naive()
+    lastmod_text = published_marker.strftime('%Y-%m-%d')
+    loc_value = f"{BLOG_SITEMAP_BASE_URL}/{article.slug}"
+
+    _ensure_sitemap_url(root, loc_value, lastmod_text)
+    _write_sitemap_tree(tree, sitemap_path)
+    return True
+
+
+def remove_blog_article_sitemap_entry(article):
+    slug = getattr(article, 'slug', None)
+    if not slug:
+        return False
+    loc_value = f"{BLOG_SITEMAP_BASE_URL}/{slug}"
+    try:
+        return _remove_sitemap_entry(loc_value)
+    except Exception as exc:
+        app_logger.error("Unable to remove sitemap entry for blog article %s: %s", slug, exc)
+        return False
 
 
 def ensure_market_summary_for_date(target_date=None, force=False):
@@ -3112,6 +3182,11 @@ def blog_article_publish_endpoint(article_identifier):
     if not article:
         return jsonify({"error": "Draft not found."}), 404
 
+    try:
+        upsert_blog_article_sitemap_entry(article)
+    except Exception as exc:
+        app_logger.error("Unable to sync sitemap for blog article %s: %s", article.slug, exc)
+
     return jsonify({
         "article": article.to_dict(),
         "message": "Article posted to the blog."
@@ -3133,6 +3208,11 @@ def blog_article_unpublish_endpoint(article_identifier):
 
     if not article:
         return jsonify({"error": "Draft not found."}), 404
+
+    try:
+        remove_blog_article_sitemap_entry(article)
+    except Exception as exc:
+        app_logger.error("Unable to remove sitemap entry for article %s: %s", article.slug, exc)
 
     return jsonify({
         "article": article.to_dict(),

@@ -4,6 +4,7 @@ Disallow: /historical
 Disallow: /watchlist
 Disallow: /static/
 Disallow: /google-verification
+Disallow: /write
 
 Allow: /
 Allow: /market-summary

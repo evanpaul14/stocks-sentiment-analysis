@@ -173,6 +173,32 @@
             box-shadow: 0 0 0 1px rgba(147, 51, 234, 0.65) inset;
         }
 
+        .toolbar-select {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .toolbar-select select {
+            border: none;
+            background: transparent;
+            color: var(--text);
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .toolbar-select select:focus {
+            outline: none;
+        }
+
         .editor-canvas {
             min-height: 320px;
             border-radius: 14px;
@@ -376,6 +402,10 @@
             overflow: hidden;
         }
 
+        .article-preview.expanded {
+            max-height: none;
+        }
+
         .article-preview p,
         .article-preview ul,
         .article-preview ol {
@@ -400,6 +430,24 @@
 
         .article-preview a:hover {
             text-decoration: underline;
+        }
+
+        .preview-toggle-btn {
+            margin-top: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 999px;
+            color: var(--text);
+            font-size: 13px;
+            padding: 6px 14px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .preview-toggle-btn:hover {
+            background: rgba(147, 51, 234, 0.25);
+            border-color: rgba(147, 51, 234, 0.4);
+            color: var(--accent-soft);
         }
 
         .empty-state {
@@ -500,7 +548,36 @@
                     <button type="button" class="toolbar-btn" data-command="formatBlock" data-value="blockquote">Quote</button>
                     <button type="button" class="toolbar-btn" data-command="createLink">Link</button>
                     <button type="button" class="toolbar-btn" data-command="insertImage">Embed img</button>
+                    <button type="button" class="toolbar-btn" data-command="justifyLeft" title="Align left">Left</button>
+                    <button type="button" class="toolbar-btn" data-command="justifyCenter" title="Align center">Center</button>
+                    <button type="button" class="toolbar-btn" data-command="justifyRight" title="Align right">Right</button>
+                    <button type="button" class="toolbar-btn" data-command="justifyFull" title="Justify text">Justify</button>
                     <button type="button" class="toolbar-btn" id="clearEditor">Clear</button>
+                    <label for="fontSizeControl" class="toolbar-select">
+                        Font size
+                        <select id="fontSizeControl">
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="15">15</option>
+                            <option value="16" selected>16</option>
+                            <option value="17">17</option>
+                            <option value="18">18</option>
+                            <option value="19">19</option>
+                            <option value="20">20</option>
+                            <option value="21">21</option>
+                            <option value="22">22</option>
+                            <option value="23">23</option>
+                            <option value="24">24</option>
+                        </select>
+                    </label>
                 </div>
                 <div class="editor-canvas" id="editorCanvas" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true">
                     <p>Start with a hook tying back to the day's flow...</p>
@@ -547,7 +624,37 @@
         const draftReset = document.getElementById('draftReset');
         const toolbarButtons = document.querySelectorAll('.toolbar-btn[data-command]');
         const clearEditorBtn = document.getElementById('clearEditor');
-        const STATEFUL_TOOLBAR_COMMANDS = new Set(['bold', 'italic', 'underline', 'insertunorderedlist', 'insertorderedlist', 'formatblock']);
+        const fontSizeControl = document.getElementById('fontSizeControl');
+        let lastEditorSelectionRange = null;
+        const STATEFUL_TOOLBAR_COMMANDS = new Set([
+            'bold',
+            'italic',
+            'underline',
+            'insertunorderedlist',
+            'insertorderedlist',
+            'formatblock',
+            'justifyleft',
+            'justifycenter',
+            'justifyright',
+            'justifyfull'
+        ]);
+        const FONT_SIZE_DEFAULT = 16;
+        const FONT_SIZE_MIN = 5;
+        const FONT_SIZE_MAX = 24;
+        const FONT_SIZE_COMMAND_TO_PX = {
+            '1': 10,
+            '2': 12,
+            '3': 16,
+            '4': 18,
+            '5': 24,
+            '6': 32,
+            '7': 40
+        };
+
+        function clampFontSizePx(value) {
+            const numeric = Number.isFinite(value) ? value : FONT_SIZE_DEFAULT;
+            return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, numeric || FONT_SIZE_DEFAULT));
+        }
 
         function setBodyAuthFlag(isAuthed) {
             state.isAuthenticated = isAuthed;
@@ -596,6 +703,78 @@
 
         function scheduleToolbarStateUpdate() {
             requestAnimationFrame(updateToolbarState);
+        }
+
+        function captureEditorSelection() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                return;
+            }
+            if (!isSelectionInsideEditor()) {
+                return;
+            }
+            lastEditorSelectionRange = selection.getRangeAt(0).cloneRange();
+        }
+
+        function restoreEditorSelection() {
+            if (!lastEditorSelectionRange) {
+                return false;
+            }
+            const selection = window.getSelection();
+            if (!selection) {
+                return false;
+            }
+            selection.removeAllRanges();
+            selection.addRange(lastEditorSelectionRange.cloneRange());
+            try {
+                editorCanvas.focus();
+            } catch (error) {
+                // Ignore focus issues when restoring selection from toolbar controls.
+            }
+            return true;
+        }
+
+        function applyFontSize(optionValue) {
+            if (!editorCanvas) {
+                return;
+            }
+            const preferredPx = clampFontSizePx(parseInt(optionValue, 10));
+            try {
+                // Use CSS spans instead of deprecated <font> tags when possible.
+                document.execCommand('styleWithCSS', false, true);
+            } catch (error) {
+                // Some browsers ignore styleWithCSS toggles; proceed regardless.
+            }
+            document.execCommand('fontSize', false, 7);
+            normalizeFontElements(preferredPx);
+            try {
+                document.execCommand('styleWithCSS', false, false);
+            } catch (error) {
+                // No-op if the browser does not support reverting styleWithCSS.
+            }
+            scheduleToolbarStateUpdate();
+            captureEditorSelection();
+        }
+
+        function normalizeFontElements(preferredPx) {
+            if (!editorCanvas) {
+                return;
+            }
+            const fallbackPx = clampFontSizePx(preferredPx || FONT_SIZE_DEFAULT);
+            const fontNodes = editorCanvas.querySelectorAll('font[size]');
+            fontNodes.forEach(fontNode => {
+                const sizeAttr = String(fontNode.getAttribute('size') || '').trim();
+                let pxValue = fallbackPx;
+                if (!preferredPx && FONT_SIZE_COMMAND_TO_PX[sizeAttr]) {
+                    pxValue = clampFontSizePx(FONT_SIZE_COMMAND_TO_PX[sizeAttr]);
+                }
+                const span = document.createElement('span');
+                span.style.fontSize = `${pxValue}px`;
+                while (fontNode.firstChild) {
+                    span.appendChild(fontNode.firstChild);
+                }
+                fontNode.replaceWith(span);
+            });
         }
 
         function updateEditorModeLabels() {
@@ -690,6 +869,7 @@
                 const anchorHtml = buildLinkHtml(url, finalText);
                 document.execCommand('insertHTML', false, anchorHtml);
                 scheduleToolbarStateUpdate();
+                captureEditorSelection();
                 return;
             }
             if (normalized === 'insertimage') {
@@ -697,15 +877,18 @@
                 if (!url) return;
                 document.execCommand('insertImage', false, url);
                 scheduleToolbarStateUpdate();
+                captureEditorSelection();
                 return;
             }
             if (normalized === 'formatblock' && value) {
                 document.execCommand(command, false, value);
                 scheduleToolbarStateUpdate();
+                captureEditorSelection();
                 return;
             }
             document.execCommand(command, false, value);
             scheduleToolbarStateUpdate();
+            captureEditorSelection();
         }
 
         function bindToolbar() {
@@ -774,10 +957,14 @@
             ['keyup', 'mouseup', 'focus', 'blur', 'input'].forEach(eventName => {
                 editorCanvas.addEventListener(eventName, scheduleToolbarStateUpdate);
             });
+            ['keyup', 'mouseup'].forEach(eventName => {
+                editorCanvas.addEventListener(eventName, captureEditorSelection);
+            });
         }
 
         document.addEventListener('selectionchange', () => {
             if (isSelectionInsideEditor()) {
+                captureEditorSelection();
                 scheduleToolbarStateUpdate();
             }
         });
@@ -870,6 +1057,36 @@
             return convertMarkdownToHtml(raw);
         }
 
+        function togglePreviewExpansion(previewNode, triggerButton) {
+            if (!previewNode || !triggerButton) {
+                return;
+            }
+            const expanded = previewNode.classList.toggle('expanded');
+            triggerButton.textContent = expanded ? 'Collapse preview' : 'Expand preview';
+            triggerButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            if (!expanded) {
+                try {
+                    previewNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } catch (error) {
+                    // scrollIntoView might fail silently on some browsers; safe to ignore.
+                }
+            }
+        }
+
+        function reevaluatePreviewToggle(previewNode, triggerButton) {
+            if (!previewNode || !triggerButton) {
+                return;
+            }
+            previewNode.classList.remove('expanded');
+            triggerButton.textContent = 'Expand preview';
+            triggerButton.setAttribute('aria-expanded', 'false');
+            triggerButton.hidden = true;
+            requestAnimationFrame(() => {
+                const needsToggle = (previewNode.scrollHeight - previewNode.clientHeight) > 4;
+                triggerButton.hidden = !needsToggle;
+            });
+        }
+
         function renderArticles(articles) {
             if (!articles || articles.length === 0) {
                 articlesList.innerHTML = '<div class="empty-state">Nothing stored yet. Your first post will appear here.</div>';
@@ -916,6 +1133,20 @@
                     </div>
                     <div class="article-preview">${buildPreviewHtml(article.content)}</div>
                 `;
+                const previewNode = card.querySelector('.article-preview');
+                let previewToggleBtn = null;
+                if (previewNode) {
+                    previewToggleBtn = document.createElement('button');
+                    previewToggleBtn.type = 'button';
+                    previewToggleBtn.className = 'preview-toggle-btn';
+                    previewToggleBtn.textContent = 'Expand preview';
+                    previewToggleBtn.setAttribute('aria-expanded', 'false');
+                    previewToggleBtn.hidden = true;
+                    previewToggleBtn.addEventListener('click', () => {
+                        togglePreviewExpansion(previewNode, previewToggleBtn);
+                    });
+                    previewNode.after(previewToggleBtn);
+                }
                 const deleteBtn = card.querySelector('.delete-article-btn');
                 if (deleteBtn) {
                     deleteBtn.addEventListener('click', () => handleDeleteArticle(article.id, card));
@@ -933,6 +1164,9 @@
                     unpublishBtn.addEventListener('click', () => handleUnpublishArticle(article.id, unpublishBtn));
                 }
                 articlesList.appendChild(card);
+                if (previewNode && previewToggleBtn) {
+                    reevaluatePreviewToggle(previewNode, previewToggleBtn);
+                }
             });
         }
 
@@ -1106,6 +1340,10 @@
             renderHeroPreview('');
             editorCanvas.innerHTML = DEFAULT_EDITOR_HTML;
             editorStatus.textContent = '';
+            if (fontSizeControl) {
+                fontSizeControl.value = '16';
+            }
+            lastEditorSelectionRange = null;
             updateEditorModeLabels();
             scheduleToolbarStateUpdate();
         }
@@ -1121,6 +1359,19 @@
         }
         if (draftReset) {
             draftReset.addEventListener('click', resetDraft);
+        }
+        if (fontSizeControl) {
+            fontSizeControl.addEventListener('change', () => {
+                const restored = restoreEditorSelection();
+                if (!restored && !isSelectionInsideEditor()) {
+                    try {
+                        editorCanvas.focus();
+                    } catch (error) {
+                        // Ignore focus errors for browsers that block programmatic focus.
+                    }
+                }
+                applyFontSize(fontSizeControl.value);
+            });
         }
 
         bindToolbar();
