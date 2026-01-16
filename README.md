@@ -39,6 +39,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
   CLOUDFLARE_ACCOUNT_ID=your_cf_account
   CLOUDFLARE_API_TOKEN=your_cf_token
   # Authenticated writer workspace
+  # Required: use a long, random string and keep it stable across deployments
   FLASK_SECRET_KEY=replace_with_random_string
   BLOG_ADMIN_USERNAME=choose_a_username
   BLOG_ADMIN_PASSWORD=choose_a_password
@@ -103,6 +104,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 Required:
 - `GOOGLE_API_KEY` (Gemma)
+- `FLASK_SECRET_KEY` (session signing; must be the same across all workers)
 
 Optional (degrades gracefully if missing):
 - `LLM7_API_KEY`, `LLM7_BASE_URL`, `LLM7_MODEL`
@@ -110,7 +112,7 @@ Optional (degrades gracefully if missing):
 - `FINNHUB_API_KEY`
 - `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`, `UNSPLASH_DEFAULT_QUERY`
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SENTIMENT_MODEL`
-- `FLASK_SECRET_KEY`, `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
+- `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
 
 ## Rate Limits
 

@@ -61,7 +61,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_BINDS'] = {
     'blog': 'sqlite:///blog.db'
 }
-app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.urandom(32)
+
+_secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY")
+if not _secret_key:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY (or SECRET_KEY) must be set so blog editor sessions remain valid across workers."
+    )
+
+app.secret_key = _secret_key
 db = SQLAlchemy(app)
 
 try:
