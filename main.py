@@ -6,6 +6,7 @@ from yahooquery import search
 import yfinance as yf
 import re
 import hashlib
+import inspect as pyinspect
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
@@ -62,6 +63,18 @@ app.config['SQLALCHEMY_BINDS'] = {
 }
 app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY") or os.urandom(32)
 db = SQLAlchemy(app)
+
+try:
+    _CREATE_ALL_SIGNATURE = pyinspect.signature(SQLAlchemy.create_all)
+except (ValueError, TypeError):
+    _CREATE_ALL_SIGNATURE = None
+
+_CREATE_ALL_SUPPORTS_BIND = bool(
+    _CREATE_ALL_SIGNATURE and "bind" in _CREATE_ALL_SIGNATURE.parameters
+)
+_CREATE_ALL_SUPPORTS_BIND_KEY = bool(
+    _CREATE_ALL_SIGNATURE and "bind_key" in _CREATE_ALL_SIGNATURE.parameters
+)
 
 
 HOME_META_DESCRIPTION = (
@@ -325,12 +338,30 @@ def ensure_blog_article_columns():
             connection.execute(text(statement))
 
 
+def _create_tables_for_bind(bind_key):
+    if not bind_key:
+        raise ValueError("bind_key is required for bound table creation")
+    try:
+        engine = db.get_engine(app, bind=bind_key)
+    except Exception as exc:
+        app_logger.error("Unable to load engine for %s bind: %s", bind_key, exc)
+        raise
+    tables = [
+        table
+        for table in db.Model.metadata.sorted_tables
+        if table.info.get("bind_key") == bind_key
+    ]
+    if not tables:
+        app_logger.info("No tables registered for %s bind; skipping create_all", bind_key)
+        return
+    db.Model.metadata.create_all(bind=engine, tables=tables)
+
+
 def _safe_create_all(bind=None):
     """Create tables for a bind while tolerating existing schemas."""
     bind_label = bind or "default"
-    try:
-        db.create_all(bind=bind)
-    except OperationalError as exc:
+
+    def _handle_operational_error(exc):
         message = str(exc).lower()
         if "already exists" in message:
             app_logger.info(
@@ -339,6 +370,30 @@ def _safe_create_all(bind=None):
             )
             return
         raise
+
+    def _invoke_create_all():
+        if bind is None:
+            db.create_all()
+        elif _CREATE_ALL_SUPPORTS_BIND:
+            db.create_all(bind=bind)
+        elif _CREATE_ALL_SUPPORTS_BIND_KEY:
+            db.create_all(bind_key=bind)
+        else:
+            _create_tables_for_bind(bind)
+
+    try:
+        _invoke_create_all()
+    except OperationalError as exc:
+        _handle_operational_error(exc)
+    except TypeError as exc:
+        if not bind:
+            raise
+        if "bind" not in str(exc).lower():
+            raise
+        try:
+            _create_tables_for_bind(bind)
+        except OperationalError as op_exc:
+            _handle_operational_error(op_exc)
 
 
 def _fetch_published_blog_articles(limit=None):
