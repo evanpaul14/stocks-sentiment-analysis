@@ -85,6 +85,26 @@ _CREATE_ALL_SUPPORTS_BIND_KEY = bool(
 )
 
 
+def _resolve_sqlalchemy_engine(bind_key=None):
+    """Return the SQLAlchemy engine for a bind with backward compatibility."""
+    if bind_key:
+        engines = getattr(db, "engines", None)
+        if engines:
+            engine = engines.get(bind_key)
+            if engine:
+                return engine
+    else:
+        default_engine = getattr(db, "engine", None)
+        if default_engine is not None:
+            return default_engine
+    get_engine = getattr(db, "get_engine", None)
+    if callable(get_engine):
+        kwargs = {"bind": bind_key} if bind_key else {}
+        return get_engine(app, **kwargs)
+    bind_label = bind_key or "default"
+    raise RuntimeError(f"Unable to locate database engine for bind '{bind_label}'")
+
+
 HOME_META_DESCRIPTION = (
     "Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts."
 )
@@ -131,31 +151,66 @@ except Exception as exc:
     market_summary_logger.warning("Unable to initialize NYSE calendar: %s", exc)
     NYSE_CALENDAR = None
 
+_NYSE_CALENDAR_LOCK = threading.Lock()
+
 
 def _coerce_date(value):
     if isinstance(value, datetime):
-        return value.date()
+        dt_value = value
+        try:
+            if dt_value.tzinfo is None:
+                dt_value = dt_value.replace(tzinfo=EASTERN_TZ)
+            else:
+                dt_value = dt_value.astimezone(EASTERN_TZ)
+        except Exception:
+            return None
+        return dt_value.date()
     if isinstance(value, date):
         return value
     return None
+
+
+def _get_nyse_calendar():
+    global NYSE_CALENDAR
+    if NYSE_CALENDAR is not None:
+        return NYSE_CALENDAR
+    with _NYSE_CALENDAR_LOCK:
+        if NYSE_CALENDAR is not None:
+            return NYSE_CALENDAR
+        try:
+            NYSE_CALENDAR = mcal.get_calendar("NYSE")
+            market_summary_logger.info("NYSE calendar reinitialized after previous failure.")
+        except Exception as exc:
+            market_summary_logger.error("Unable to initialize NYSE calendar: %s", exc)
+            NYSE_CALENDAR = None
+        return NYSE_CALENDAR
 
 
 def is_market_trading_day(value):
     normalized = _coerce_date(value)
     if not normalized:
         return False
-    if not NYSE_CALENDAR:
-        return normalized.weekday() < 5
+    calendar = _get_nyse_calendar()
+    if not calendar:
+        market_summary_logger.error(
+            "NYSE calendar unavailable; treating %s as a market holiday",
+            normalized
+        )
+        return False
     try:
-        valid_days = NYSE_CALENDAR.valid_days(start_date=normalized, end_date=normalized)
-        return bool(len(valid_days))
+        normalized_text = normalized.strftime('%Y-%m-%d')
+        schedule = calendar.schedule(
+            start_date=normalized_text,
+            end_date=normalized_text
+        )
+        return not schedule.empty
     except Exception as exc:
-        market_summary_logger.warning(
+        market_summary_logger.error(
             "NYSE calendar lookup failed for %s: %s",
             normalized,
             exc
         )
-        return normalized.weekday() < 5
+        return False
 
 
 def _localize_datetime(value, target_tz):
@@ -360,7 +415,7 @@ def _delete_blog_article(identifier):
 
 def ensure_blog_article_columns():
     try:
-        engine = db.get_engine(app, bind='blog')
+        engine = _resolve_sqlalchemy_engine('blog')
     except Exception as exc:
         app_logger.warning("Unable to load blog engine for schema sync: %s", exc)
         return
@@ -386,7 +441,7 @@ def _create_tables_for_bind(bind_key):
     if not bind_key:
         raise ValueError("bind_key is required for bound table creation")
     try:
-        engine = db.get_engine(app, bind=bind_key)
+        engine = _resolve_sqlalchemy_engine(bind_key)
     except Exception as exc:
         app_logger.error("Unable to load engine for %s bind: %s", bind_key, exc)
         raise
@@ -1225,6 +1280,7 @@ MARKET_SUMMARY_RELEASE_HOUR = max(0, min(23, _get_int_env("MARKET_SUMMARY_RELEAS
 MARKET_SUMMARY_RELEASE_MINUTE = max(0, min(59, _get_int_env("MARKET_SUMMARY_RELEASE_MINUTE", 15)))
 MARKET_SUMMARY_RETENTION_DAYS = max(30, _get_int_env("MARKET_SUMMARY_RETENTION_DAYS", 90))
 MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "false", "False"}
+_market_summary_generation_lock = threading.Lock()
 
 
 def _fetch_index_snapshot(symbol, label):
@@ -1980,13 +2036,21 @@ def remove_blog_article_sitemap_entry(article):
         return False
 
 
-def ensure_market_summary_for_date(target_date=None, force=False):
+def _ensure_market_summary_for_date_locked(target_date=None, force=False):
     if not MARKET_SUMMARY_ENABLED:
+        market_summary_logger.debug("Market summary generation disabled via MARKET_SUMMARY_ENABLED")
         return None
 
     now_et = datetime.now(EASTERN_TZ)
     summary_date = target_date or now_et.date()
-    if not force and not is_market_trading_day(summary_date):
+
+    is_trading = is_market_trading_day(summary_date)
+    market_summary_logger.debug(
+        "Market summary check for %s: force=%s, is_trading_day=%s",
+        summary_date, force, is_trading
+    )
+
+    if not force and not is_trading:
         market_summary_logger.info(
             "Skipping market summary for %s because NYSE is closed",
             summary_date
@@ -2074,8 +2138,25 @@ def ensure_market_summary_for_date(target_date=None, force=False):
     return target_record
 
 
+def ensure_market_summary_for_date(target_date=None, force=False):
+    if not MARKET_SUMMARY_ENABLED:
+        return None
+    with _market_summary_generation_lock:
+        return _ensure_market_summary_for_date_locked(target_date=target_date, force=force)
+
+
 def run_market_summary_job():
     with app.app_context():
+        now_et = datetime.now(EASTERN_TZ)
+        today = now_et.date()
+
+        if not is_market_trading_day(today):
+            market_summary_logger.info(
+                "Market summary job skipped for %s (NYSE closed)",
+                today
+            )
+            return
+
         try:
             summary = ensure_market_summary_for_date()
             if summary:
@@ -2083,6 +2164,11 @@ def run_market_summary_job():
                     "Market summary refreshed for %s", summary.summary_date
                 )
                 ensure_market_summary_email_sent(summary)
+            else:
+                market_summary_logger.info(
+                    "Market summary job returned no result for %s",
+                    today
+                )
         except Exception as exc:
             market_summary_logger.error("Market summary job failed: %s", exc)
 
