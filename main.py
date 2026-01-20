@@ -3033,7 +3033,8 @@ def writer_portal():
         'write.html',
         is_authenticated=_is_blog_admin(),
         default_author=DEFAULT_ARTICLE_AUTHOR,
-        meta_description=BLOG_PAGE_META_DESCRIPTION
+        meta_description=BLOG_PAGE_META_DESCRIPTION,
+        market_summary_enabled=MARKET_SUMMARY_ENABLED
     )
 
 
@@ -3217,6 +3218,51 @@ def blog_article_unpublish_endpoint(article_identifier):
     return jsonify({
         "article": article.to_dict(),
         "message": "Article reverted to draft."
+    }), 200
+
+
+@app.route('/api/market-summary/generate', methods=['POST'])
+@limiter.limit("10 per hour")
+def market_summary_generate_endpoint():
+    if not MARKET_SUMMARY_ENABLED:
+        return jsonify({"error": "Market summary automation is disabled."}), 503
+    if not _blog_credentials_configured():
+        return jsonify({"error": "Writer access is disabled."}), 503
+    if not _is_blog_admin():
+        return jsonify({"error": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    raw_date = (payload.get('summary_date') or '').strip()
+    target_date = None
+    if raw_date:
+        try:
+            target_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "summary_date must be YYYY-MM-DD."}), 400
+
+    try:
+        summary_record = ensure_market_summary_for_date(target_date=target_date, force=True)
+    except Exception as exc:
+        market_summary_logger.error("Manual market summary refresh failed: %s", exc)
+        return jsonify({"error": "Unable to generate the market summary right now."}), 500
+
+    if not summary_record:
+        return jsonify({"error": "No market summary could be generated for that date."}), 400
+
+    summary_label = None
+    if summary_record.summary_date:
+        summary_label = summary_record.summary_date.strftime('%B %d, %Y')
+    elif summary_record.published_at:
+        try:
+            summary_label = summary_record.published_at.date().strftime('%B %d, %Y')
+        except Exception:
+            summary_label = None
+
+    message = "Market summary refreshed." if not summary_label else f"Market summary refreshed for {summary_label}."
+
+    return jsonify({
+        "summary": serialize_market_summary(summary_record),
+        "message": message
     }), 200
 
 

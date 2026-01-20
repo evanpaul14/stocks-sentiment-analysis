@@ -496,7 +496,7 @@
         }
     </style>
 </head>
-<body data-auth="{{ 'true' if is_authenticated else 'false' }}" data-default-author="{{ default_author }}">
+<body data-auth="{{ 'true' if is_authenticated else 'false' }}" data-default-author="{{ default_author }}" data-market-enabled="{{ 'true' if market_summary_enabled else 'false' }}">
     <div class="page-shell">
         <div class="top-bar">
             <div class="global-status" id="globalStatus"></div>
@@ -596,6 +596,22 @@
                     <div class="empty-state">Nothing stored yet. Your first post will appear here.</div>
                 </div>
             </section>
+
+            <section class="panel requires-auth" id="marketSummaryPanel">
+                <h2>Daily Market Summary</h2>
+                <p style="color: var(--muted); margin-bottom: 18px;">
+                    Pull the latest index snapshots and closing bell headlines, then refresh today's
+                    <span style="color: var(--accent-soft); font-weight: 600;">/market-summary</span> landing page.
+                </p>
+                <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+                    <button type="button" class="primary-btn" id="marketSummaryGenerateBtn">Generate today's wrap</button>
+                </div>
+                <div class="status-line" id="marketSummaryStatus" role="status" aria-live="polite">
+                    {% if not market_summary_enabled %}
+                    Market summary automation is disabled. Flip ENABLE_MARKET_SUMMARY to re-enable this control.
+                    {% endif %}
+                </div>
+            </section>
         </main>
     </div>
 
@@ -626,6 +642,9 @@
         const toolbarButtons = document.querySelectorAll('.toolbar-btn[data-command]');
         const clearEditorBtn = document.getElementById('clearEditor');
         const fontSizeControl = document.getElementById('fontSizeControl');
+        const marketSummaryBtn = document.getElementById('marketSummaryGenerateBtn');
+        const marketSummaryStatus = document.getElementById('marketSummaryStatus');
+        const marketSummaryEnabled = document.body.dataset.marketEnabled === 'true';
         let lastEditorSelectionRange = null;
         let pendingFontSize = null; // Track pending font size for new text input
         const STATEFUL_TOOLBAR_COMMANDS = new Set([
@@ -1400,6 +1419,66 @@
             });
         }
 
+        function formatSummaryDateLabel(summary) {
+            if (!summary) {
+                return 'today';
+            }
+            let iso = summary.summary_date || summary.published_at;
+            if (!iso) {
+                return 'today';
+            }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+                iso = `${iso}T00:00:00Z`;
+            }
+            const date = new Date(iso);
+            if (Number.isNaN(date.getTime())) {
+                return summary.summary_date || 'today';
+            }
+            return date.toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        async function handleManualMarketSummaryGeneration() {
+            if (!marketSummaryBtn || !marketSummaryStatus) {
+                return;
+            }
+            marketSummaryStatus.textContent = '';
+            marketSummaryStatus.className = 'status-line';
+            const originalLabel = marketSummaryBtn.textContent;
+            marketSummaryBtn.disabled = true;
+            marketSummaryBtn.textContent = 'Generating...';
+            try {
+                const response = await fetch('/api/market-summary/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
+                });
+                if (response.status === 401) {
+                    setBodyAuthFlag(false);
+                    throw new Error('Sign in again to trigger the market summary job.');
+                }
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to generate the market summary right now.');
+                }
+                const summaryLabel = formatSummaryDateLabel(data.summary);
+                const successMessage = data.message || `Market summary refreshed for ${summaryLabel}.`;
+                marketSummaryStatus.textContent = successMessage;
+                marketSummaryStatus.className = 'status-line success';
+                globalStatus.textContent = 'Market summary regenerated.';
+            } catch (error) {
+                marketSummaryStatus.textContent = error.message || 'Unable to generate the market summary right now.';
+                marketSummaryStatus.className = 'status-line error';
+            } finally {
+                marketSummaryBtn.disabled = !marketSummaryEnabled;
+                marketSummaryBtn.textContent = originalLabel;
+            }
+        }
+
         async function loadArticles() {
             if (!state.isAuthenticated) return;
             try {
@@ -1605,6 +1684,14 @@
                 }
                 applyFontSize(fontSizeControl.value);
             });
+        }
+        if (marketSummaryBtn) {
+            if (!marketSummaryEnabled) {
+                marketSummaryBtn.disabled = true;
+                marketSummaryBtn.textContent = 'Market summary disabled';
+            } else {
+                marketSummaryBtn.addEventListener('click', handleManualMarketSummaryGeneration);
+            }
         }
 
         bindToolbar();
