@@ -7,7 +7,7 @@ import yfinance as yf
 import re
 import hashlib
 import inspect as pyinspect
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
 import os
@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import pandas_market_calendars as mcal
 
 load_dotenv()
 
@@ -123,6 +124,38 @@ def _utcnow_naive():
 
 
 EASTERN_TZ = ZoneInfo("America/New_York")
+
+try:
+    NYSE_CALENDAR = mcal.get_calendar("NYSE")
+except Exception as exc:
+    market_summary_logger.warning("Unable to initialize NYSE calendar: %s", exc)
+    NYSE_CALENDAR = None
+
+
+def _coerce_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def is_market_trading_day(value):
+    normalized = _coerce_date(value)
+    if not normalized:
+        return False
+    if not NYSE_CALENDAR:
+        return normalized.weekday() < 5
+    try:
+        valid_days = NYSE_CALENDAR.valid_days(start_date=normalized, end_date=normalized)
+        return bool(len(valid_days))
+    except Exception as exc:
+        market_summary_logger.warning(
+            "NYSE calendar lookup failed for %s: %s",
+            normalized,
+            exc
+        )
+        return normalized.weekday() < 5
 
 
 def _localize_datetime(value, target_tz):
@@ -1953,7 +1986,11 @@ def ensure_market_summary_for_date(target_date=None, force=False):
 
     now_et = datetime.now(EASTERN_TZ)
     summary_date = target_date or now_et.date()
-    if not force and summary_date.weekday() >= 5:
+    if not force and not is_market_trading_day(summary_date):
+        market_summary_logger.info(
+            "Skipping market summary for %s because NYSE is closed",
+            summary_date
+        )
         return None
 
     dedupe_market_summaries(summary_date)
@@ -2094,7 +2131,7 @@ def bootstrap_market_summary_if_needed():
     if not MARKET_SUMMARY_ENABLED:
         return
     now_et = datetime.now(EASTERN_TZ)
-    if now_et.weekday() >= 5:
+    if not is_market_trading_day(now_et.date()):
         return
     minutes_now = now_et.hour * 60 + now_et.minute
     release_minutes = MARKET_SUMMARY_RELEASE_HOUR * 60 + MARKET_SUMMARY_RELEASE_MINUTE

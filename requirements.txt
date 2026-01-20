@@ -12,3 +12,4 @@ finnhub-python
 flask_sqlalchemy
 apscheduler
 requests>=2.31.0
+pandas_market_calendars
