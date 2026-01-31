@@ -20,6 +20,4 @@ Allow: /blog
 Allow: /blog/
 Allow: /privacy
 
-Crawl-delay: 1
-
 Sitemap: https://stocksentimentapp.com/sitemap.xml
