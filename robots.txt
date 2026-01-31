@@ -1,13 +1,25 @@
 User-agent: *
 Disallow: /search
+Disallow: /results
 Disallow: /historical
 Disallow: /watchlist
 Disallow: /static/
 Disallow: /google-verification
 Disallow: /write
+Disallow: /api/
+Disallow: /sentiment
+Disallow: /quote/
+Disallow: /stocktwits/
 
 Allow: /
 Allow: /market-summary
+Allow: /market-summary/
 Allow: /trending-list
-Allow: /api
+Allow: /trending-list/
+Allow: /blog
+Allow: /blog/
+Allow: /privacy
+
+Crawl-delay: 1
+
 Sitemap: https://stocksentimentapp.com/sitemap.xml

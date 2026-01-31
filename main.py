@@ -2996,20 +2996,29 @@ def index():
         'index.html',
         page_view='home',
         initial_query='',
-        meta_description=HOME_META_DESCRIPTION
+        meta_description=HOME_META_DESCRIPTION,
+        canonical_url=url_for('index', _external=True)
     )
 
 @app.route('/privacy')
 @limiter.limit("50 per minute")
 def privacy_page():
     """Render the privacy policy page"""
-    return render_template('privacy.html')
+    return render_template(
+        'privacy.html',
+        canonical_url=url_for('privacy_page', _external=True)
+    )
 
 @app.route('/watchlist')
 @limiter.limit("50 per minute")
 def watchlist_page():
     """Render the watchlist page"""
-    return render_template('index.html', page_view='watchlist', initial_query='')
+    return render_template(
+        'index.html',
+        page_view='watchlist',
+        initial_query='',
+        canonical_url=url_for('watchlist_page', _external=True)
+    )
 
 
 @app.route('/results')
@@ -3017,7 +3026,12 @@ def watchlist_page():
 def search_results_page():
     """Render the dedicated search results page"""
     query = (request.args.get('q') or '').strip()
-    return render_template('index.html', page_view='search', initial_query=query)
+    return render_template(
+        'index.html',
+        page_view='search',
+        initial_query=query,
+        canonical_url=url_for('search_results_page', q=query, _external=True) if query else url_for('search_results_page', _external=True)
+    )
 
 
 @app.route('/trending-list')
@@ -3029,7 +3043,8 @@ def trending_board_page():
         page_view='trending',
         initial_query='',
         trending_source='stocktwits',
-        meta_description=TRENDING_META_DESCRIPTION
+        meta_description=TRENDING_META_DESCRIPTION,
+        canonical_url=url_for('trending_board_page', _external=True)
     )
 
 
@@ -3046,7 +3061,8 @@ def trending_board_page_source(source):
         page_view='trending',
         initial_query='',
         trending_source=normalized,
-        meta_description=TRENDING_META_DESCRIPTION
+        meta_description=TRENDING_META_DESCRIPTION,
+        canonical_url=url_for('trending_board_page_source', source=normalized, _external=True)
     )
 
 
@@ -3060,7 +3076,8 @@ def market_summary_page():
         initial_query='',
         market_summary_slug=None,
         initial_market_summary_article=None,
-        meta_description=MARKET_META_DESCRIPTION
+        meta_description=MARKET_META_DESCRIPTION,
+        canonical_url=url_for('market_summary_page', _external=True)
     )
 
 
@@ -3125,7 +3142,8 @@ def blog_listing_page():
         view_mode='list',
         articles=articles,
         meta_description=BLOG_LIST_META_DESCRIPTION,
-        page_title='Market Notes Blog'
+        page_title='Market Notes Blog',
+        canonical_url=url_for('blog_listing_page', _external=True)
     )
 
 
@@ -3144,7 +3162,8 @@ def blog_article_page(slug):
         related_articles=related_articles,
         article=article,
         meta_description=article.title,
-        page_title=article.title
+        page_title=article.title,
+        canonical_url=url_for('blog_article_page', slug=slug, _external=True)
     )
 
 
