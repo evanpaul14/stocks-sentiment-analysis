@@ -3688,6 +3688,11 @@ def robots_txt():
     '''Serve robots.txt file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "robots.txt")
 
+@app.route('/spotify', methods=['GET']) 
+@limiter.limit('5 per minute') 
+def spotify_redirect(): 
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "com.spotify.client_9.1.20_und3fined.ipa")
+
 @app.route('/sitemap.xml', methods=['GET'])
 @limiter.limit("100 per minute")
 def sitemap_xml():
