@@ -1438,23 +1438,28 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
     ) or 'No major headlines captured.'
 
     prompt = (
-        "Write a concise market wrap article (2-3 short paragraphs) for U.S. equities. "
-        "Mention how each major index moved and weave in the headlines when relevant. "
-        "Avoid hype, keep it factual, and stay under 180 words.\n\n"
         f"Date: {summary_date.strftime('%A, %B %d, %Y')}\n"
-        "Index recap:\n"
+        "Today's index performances:\n"
         f"{index_lines}\n\n"
         "Headline digest:\n"
         f"{news_lines}\n"
-        "Do not use markdown headings."
-        "Do not add a title or start with Summary:"
+        "Task: Write a 3-4 sentence summary of today's market session. "
+        "Explain the overall tone (risk-on/off, rally, selloff, mixed), "
+        "the most significant macro or sector drivers, and any notable themes from the headlines."
+        "Avoid hype and keep it factual.\n\n"
+        "Rules:\n"
+        "- Use the index data to anchor the narrative (e.g. whether moves were broad or uneven)\n"
+        "- Incorporate specific details and figures from the headlines where relevant\n"
+        "- Do not reference individual articles or sources by name\n"
+        "- Do not speculate or invent facts not supported by the headlines\n"
+        "- No headers, labels, or preamble — output the summary only\n"
     )
 
     try:
         response = llm7_client.chat.completions.create(
             model=LLM7_MODEL,
             messages=[
-                {"role": "system", "content": "You are a sharp markets reporter."},
+                {"role": "system", "content": "You are a financial markets writer producing a concise end-of-day briefing."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
