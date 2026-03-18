@@ -1292,6 +1292,27 @@ def _fetch_index_snapshot(symbol, label):
         hist = None
 
     close = change = change_pct = None
+
+    # Use the same logic as experimentation.py for DJI to ensure the stored snapshot matches
+    # what you verified in the standalone script.
+    if symbol == "^DJI" and hist is not None and not hist.empty and len(hist) >= 2:
+        try:
+            prev_close = float(hist["Close"].iloc[-2])
+            last_close = float(hist["Close"].iloc[-1])
+            close = last_close
+            change = last_close - prev_close
+            if prev_close:
+                change_pct = (change / prev_close) * 100
+        except Exception:
+            close = change = change_pct = None
+        return {
+            "symbol": symbol,
+            "label": label,
+            "close": close,
+            "change": change,
+            "change_percent": change_pct
+        }
+
     if hist is not None and not hist.empty:
         last_row = hist.tail(1)
         prev_row = hist.tail(2).head(1)
