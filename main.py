@@ -37,6 +37,7 @@ import pandas_market_calendars as mcal
 
 load_dotenv()
 
+# Project-wide constants used for sitemap generation and canonical URLs.
 PROJECT_ROOT = Path(__file__).resolve().parent
 SITEMAP_FILE_PATH = PROJECT_ROOT / "sitemap.xml"
 MARKET_SUMMARY_SITEMAP_BASE_URL = (
@@ -59,6 +60,7 @@ app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ip_log.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Secondary SQLite bind keeps blog content isolated from the primary app DB.
 app.config['SQLALCHEMY_BINDS'] = {
     'blog': 'sqlite:///blog.db'
 }
@@ -72,6 +74,7 @@ if not _secret_key:
 app.secret_key = _secret_key
 db = SQLAlchemy(app)
 
+# SQLAlchemy API support checks for compatibility across flask-sqlalchemy versions.
 try:
     _CREATE_ALL_SIGNATURE = pyinspect.signature(SQLAlchemy.create_all)
 except (ValueError, TypeError):
@@ -145,6 +148,7 @@ def _utcnow_naive():
 
 EASTERN_TZ = ZoneInfo("America/New_York")
 
+# Cache NYSE calendar object once; recover lazily if initialization fails.
 try:
     NYSE_CALENDAR = mcal.get_calendar("NYSE")
 except Exception as exc:
@@ -155,6 +159,7 @@ _NYSE_CALENDAR_LOCK = threading.Lock()
 
 
 def _coerce_date(value):
+    """Normalize datetime/date inputs into an Eastern date, or None if invalid."""
     if isinstance(value, datetime):
         dt_value = value
         try:
@@ -171,6 +176,7 @@ def _coerce_date(value):
 
 
 def _get_nyse_calendar():
+    """Return a cached NYSE calendar instance, rebuilding it on demand if needed."""
     global NYSE_CALENDAR
     if NYSE_CALENDAR is not None:
         return NYSE_CALENDAR
@@ -187,6 +193,7 @@ def _get_nyse_calendar():
 
 
 def is_market_trading_day(value):
+    """Return True when the provided date falls on an NYSE trading session."""
     normalized = _coerce_date(value)
     if not normalized:
         return False
@@ -214,6 +221,7 @@ def is_market_trading_day(value):
 
 
 def _localize_datetime(value, target_tz):
+    """Convert a datetime to the target timezone, assuming UTC for naive inputs."""
     if not value or not target_tz:
         return None
     try:
@@ -225,6 +233,7 @@ def _localize_datetime(value, target_tz):
 
 
 def format_blog_timestamp(value, include_time=True):
+    """Render blog timestamps in Eastern Time for template display."""
     localized = _localize_datetime(value, EASTERN_TZ)
     if not localized:
         return None
@@ -422,6 +431,7 @@ def ensure_blog_article_columns():
     inspector = inspect(engine)
     existing_columns = {col['name'] for col in inspector.get_columns('blog_articles')}
     alter_statements = []
+    # Lightweight migrations for older blog DBs created before publish fields existed.
     if 'is_published' not in existing_columns:
         alter_statements.append(
             "ALTER TABLE blog_articles ADD COLUMN is_published INTEGER NOT NULL DEFAULT 0"
@@ -628,6 +638,7 @@ def ensure_market_summary_unique_index():
         )
 
 with app.app_context():
+    # Bootstraps tables and schema safety checks at startup.
     _safe_create_all()
     _safe_create_all(bind='blog')
     try:
@@ -694,6 +705,7 @@ TRENDING_PAGE_SOURCES = ("stocktwits", "reddit", "volume")
 
 
 def _normalize_trending_page_source(raw_value, default="stocktwits"):
+    """Validate/normalize requested trending source against known source IDs."""
     normalized = (raw_value or "").strip().lower()
     if normalized in TRENDING_PAGE_SOURCES:
         return normalized
@@ -701,6 +713,7 @@ def _normalize_trending_page_source(raw_value, default="stocktwits"):
 
 
 def _get_int_env(var_name, default):
+    """Read an integer environment variable with fallback to a default value."""
     value = os.getenv(var_name)
     if value is None:
         return default
@@ -732,6 +745,7 @@ _sentiment_run_lock = threading.Lock()
 
 
 def _prune_sentiment_run_state_locked(now=None):
+    """Drop expired sentiment run state entries while lock is held."""
     if not _sentiment_run_state:
         return
     now = now or time.time()
@@ -744,6 +758,7 @@ def _prune_sentiment_run_state_locked(now=None):
 
 
 def _should_force_cloudflare_for_run(run_id):
+    """Check whether a sentiment run has been marked to bypass Gemma."""
     if not (run_id and CLOUDFLARE_ENABLED):
         return False
     with _sentiment_run_lock:
@@ -753,6 +768,7 @@ def _should_force_cloudflare_for_run(run_id):
 
 
 def _mark_run_force_cloudflare(run_id):
+    """Mark a sentiment run so future article calls use Cloudflare fallback."""
     if not (run_id and CLOUDFLARE_ENABLED):
         return
     with _sentiment_run_lock:
@@ -789,6 +805,7 @@ MAILGUN_ENABLED = bool(MAILGUN_API_KEY and MAILGUN_DOMAIN and MAILGUN_MARKET_LIS
 
 
 def _build_unsplash_referral_url():
+    """Construct Unsplash attribution URL with app UTM parameters."""
     source_value = (UNSPLASH_APP_NAME or 'stocks-sentiment-analysis').replace(' ', '-').lower()
     return f"https://unsplash.com/?utm_source={source_value}&utm_medium=referral"
 
@@ -799,6 +816,7 @@ def wait_for_ai_rate_slot():
         return
 
     while True:
+        # Sliding-window limiter: drop stale timestamps before admitting a new request.
         now = time.time()
         window_floor = now - AI_RATE_WINDOW_SECONDS
         while _ai_call_timestamps and _ai_call_timestamps[0] < window_floor:
@@ -1293,8 +1311,7 @@ def _fetch_index_snapshot(symbol, label):
 
     close = change = change_pct = None
 
-    # Use the same logic as experimentation.py for DJI to ensure the stored snapshot matches
-    # what you verified in the standalone script.
+    # Preserve custom DJI close-to-close calculation as work around because yfinance's fast_info for DJI is unreliable and often missing data.
     if symbol == "^DJI" and hist is not None and not hist.empty and len(hist) >= 2:
         try:
             prev_close = float(hist["Close"].iloc[-2])
@@ -1953,6 +1970,7 @@ def prune_market_summary_history(cutoff_date=None):
 
 
 def _load_sitemap_tree():
+    """Load sitemap.xml and return (tree, root, path) or Nones when unavailable."""
     sitemap_path = SITEMAP_FILE_PATH
     if not sitemap_path.exists():
         return None, None, None
@@ -1964,6 +1982,7 @@ def _load_sitemap_tree():
 
 
 def _write_sitemap_tree(tree, sitemap_path):
+    """Atomically write a sitemap tree to disk using a temporary file."""
     if tree is None or sitemap_path is None:
         return False
     tmp_path = sitemap_path.with_name(sitemap_path.name + ".tmp")
@@ -1978,6 +1997,7 @@ def _write_sitemap_tree(tree, sitemap_path):
 
 
 def _ensure_sitemap_url(root, loc_value, lastmod_value=None):
+    """Upsert a <url> node for the given loc and optional lastmod."""
     if root is None or not loc_value:
         return None
     ns_uri = SITEMAP_XML_NAMESPACE
@@ -2002,6 +2022,7 @@ def _ensure_sitemap_url(root, loc_value, lastmod_value=None):
 
 
 def _remove_sitemap_entry(loc_value):
+    """Remove a sitemap URL node by exact loc value."""
     if not loc_value:
         return False
     tree, root, sitemap_path = _load_sitemap_tree()
@@ -2044,6 +2065,7 @@ def upsert_market_summary_sitemap_entry(summary_date):
 
 
 def remove_market_summary_sitemap_entry(summary_date):
+    """Remove a market-summary article URL from sitemap.xml for a date."""
     if not summary_date:
         return False
     loc_value = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{summary_date.strftime('%Y-%m-%d')}"
@@ -2114,6 +2136,7 @@ def _ensure_market_summary_for_date_locked(target_date=None, force=False):
         )
         return None
 
+    # Guard against duplicate inserts from concurrent workers.
     dedupe_market_summaries(summary_date)
     existing = MarketSummary.query.filter_by(summary_date=summary_date).first()
     if existing and not force:
@@ -2237,6 +2260,7 @@ _runtime_bootstrap_complete = False
 
 
 def _should_start_market_scheduler():
+    """Return True when runtime conditions allow scheduler startup."""
     if not MARKET_SUMMARY_ENABLED:
         return False
     if os.getenv("FLASK_SKIP_SCHEDULER") == "1":
@@ -2247,6 +2271,7 @@ def _should_start_market_scheduler():
 
 
 def start_market_summary_scheduler():
+    """Start the APScheduler cron job for weekday market-summary generation."""
     global market_summary_scheduler, _scheduler_started
     if _scheduler_started or not _should_start_market_scheduler():
         return
@@ -2271,6 +2296,7 @@ def start_market_summary_scheduler():
 
 
 def bootstrap_market_summary_if_needed():
+    """Generate today's summary at runtime when release time has already passed."""
     if not MARKET_SUMMARY_ENABLED:
         return
     now_et = datetime.now(EASTERN_TZ)
@@ -2301,12 +2327,14 @@ def ensure_market_runtime_bootstrap():
             return
         with app.app_context():
             bootstrap_market_summary_if_needed()
+        # Scheduler starts once per process to avoid duplicate cron jobs.
         start_market_summary_scheduler()
         _runtime_bootstrap_complete = True
 
 
 @app.before_request
 def _ensure_market_runtime_bootstrap():
+    """Ensure one-time runtime bootstrap has executed before handling requests."""
     ensure_market_runtime_bootstrap()
 
 def get_trending_source_data(source, include_prices=True):
@@ -2328,6 +2356,7 @@ def get_trending_source_data(source, include_prices=True):
 
 
 def _should_include_prices(arg_value):
+    """Parse include_prices query args; defaults to True unless explicitly falsey."""
     if arg_value is None:
         return True
     normalized = str(arg_value).strip().lower()
@@ -3535,7 +3564,7 @@ def search_stock():
 
         app_logger.info("/search requested for %s", company_name)
 
-        # Search for stock symbol
+        # Resolve ticker from free-form company input.
         results = search(company_name)
         if not results.get('quotes') or len(results['quotes']) == 0:
             app_logger.info("/search no ticker match for %s", company_name)
@@ -3543,13 +3572,13 @@ def search_stock():
 
         stock_symbol = results['quotes'][0]['symbol'].upper()
 
-        # Get stock information
+        # Hydrate quote + company fundamentals for the selected ticker.
         stock_info = get_stock_info(stock_symbol)
         if not stock_info:
             app_logger.error("/search unable to hydrate stock info for %s", stock_symbol)
             return jsonify({'error': 'Failed to retrieve stock information'}), 500
 
-        # Get historical data for 1 day
+        # Default chart payload (intraday) used to render the initial graph quickly.
         historical_data = get_historical_data(stock_symbol, '1d')
 
         response_data = {
