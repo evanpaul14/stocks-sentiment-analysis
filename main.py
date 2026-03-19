@@ -1930,9 +1930,25 @@ def prune_market_summary_history(cutoff_date=None):
     if cutoff_date > datetime.now(EASTERN_TZ).date():
         return 0
 
-    deleted = MarketSummary.query.filter(MarketSummary.summary_date < cutoff_date).delete()
+    stale_dates = [
+        row[0]
+        for row in (
+            db.session.query(MarketSummary.summary_date)
+            .filter(MarketSummary.summary_date < cutoff_date)
+            .all()
+        )
+        if row and row[0]
+    ]
+
+    deleted = (
+        MarketSummary.query
+        .filter(MarketSummary.summary_date < cutoff_date)
+        .delete(synchronize_session=False)
+    )
     if deleted:
         db.session.commit()
+        for summary_date in stale_dates:
+            remove_market_summary_sitemap_entry(summary_date)
     return deleted
 
 
@@ -2025,6 +2041,21 @@ def upsert_market_summary_sitemap_entry(summary_date):
     _write_sitemap_tree(tree, sitemap_path)
 
     return True
+
+
+def remove_market_summary_sitemap_entry(summary_date):
+    if not summary_date:
+        return False
+    loc_value = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{summary_date.strftime('%Y-%m-%d')}"
+    try:
+        return _remove_sitemap_entry(loc_value)
+    except Exception as exc:
+        market_summary_logger.error(
+            "Unable to remove sitemap entry for market summary %s: %s",
+            summary_date,
+            exc
+        )
+        return False
 
 
 def upsert_blog_article_sitemap_entry(article):
