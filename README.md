@@ -7,10 +7,11 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 ## Features
 - Search stocks by ticker or company name
+- Dedicated pages for watchlist (`/watchlist`), search results (`/results`), and trending dashboards (`/trending-list`)
 - Trending stocks from Reddit (ApeWisdom), StockTwits, and Alpaca
 - Real-time price charts (Chart.js)
 - News aggregation and AI-powered sentiment analysis (Gemma, LLM7, Cloudflare)
-- Market summary dashboard (optional, with daily wrap)
+- Market summary dashboard with daily wrap + email subscription (Mailgun)
 - Unsplash-powered article images
 - Private `/write` page with a mini word processor that saves long-form articles into `blog.db`
 - Rate-limited endpoints for API safety
@@ -29,18 +30,38 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
   Create a `.env` file with these keys:
   ```
   GOOGLE_API_KEY=your_google_gemma_key
+  FLASK_SECRET_KEY=replace_with_random_string
+
+  # Optional: AI
   LLM7_API_KEY=your_llm7_key
   LLM7_BASE_URL=https://api.llm7.io/v1
+  LLM7_MODEL=fast
+
+  # Optional: data sources
   ALPACA_API_KEY_ID=your_alpaca_key
   ALPACA_API_SECRET_KEY=your_alpaca_secret
   FINNHUB_API_KEY=your_finnhub_key
+
+  # Optional: Unsplash image cache (used for article thumbnails)
   UNSPLASH_ACCESS_KEY=your_unsplash_key
-  # Optional: Cloudflare AI
+  UNSPLASH_APP_NAME=stocks-sentiment-analysis
+  UNSPLASH_DEFAULT_QUERY="stock market"
+
+  # Optional: Cloudflare AI fallback sentiment
   CLOUDFLARE_ACCOUNT_ID=your_cf_account
   CLOUDFLARE_API_TOKEN=your_cf_token
+  CLOUDFLARE_SENTIMENT_MODEL=@cf/meta/llama-3-8b-instruct
+
+  # Optional: Market summary email subscription (Mailgun)
+  MAILGUN_API_KEY=your_mailgun_key
+  MAILGUN_DOMAIN=your_mailgun_domain
+  MAILGUN_MARKET_LIST_ADDRESS=marketsummary@your_mailgun_domain
+
+  # Optional: Toggle market summary automation
+  ENABLE_MARKET_SUMMARY=1
+
   # Authenticated writer workspace
   # Required: use a long, random string and keep it stable across deployments
-  FLASK_SECRET_KEY=replace_with_random_string
   BLOG_ADMIN_USERNAME=choose_a_username
   BLOG_ADMIN_PASSWORD=choose_a_password
   BLOG_DEFAULT_AUTHOR=stocksentimentapp.com Team
@@ -54,23 +75,43 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 ## API Endpoints
 
-- `/search` (POST): Search for a stock, returns JSON with `stock_info`, `historical_data`, `articles`, `sentiment_summary`, `overall_sentiment`, and optional `movement_insight`.
+### Pages (HTML)
+- `/` (GET): Main app UI.
+- `/watchlist` (GET): Watchlist view.
+- `/results` (GET): Dedicated search results page.
+- `/trending-list` (GET): Trending dashboards page.
+- `/trending-list/<source>` (GET): Trending dashboard for a specific source.
+- `/market-summary` (GET): Market summary landing page.
+- `/market-summary/stock-market-today` (GET): Always show latest market summary.
+- `/market-summary/<slug>` (GET): Dedicated market summary article page.
+- `/blog` (GET): Blog listing.
+- `/blog/<slug>` (GET): Blog article detail page.
+- `/write` (GET): Auth-only writer workspace with the mini word processor UI.
+- `/confirm` (GET): Market summary subscription confirmation page.
+
+### Public JSON APIs
+- `/search` (POST): Search for a stock; returns JSON with `stock_info`, `historical_data`, `articles`, `sentiment_summary`, `overall_sentiment`, and optional `movement_insight`.
 - `/historical/<symbol>/<period>` (GET): Get historical price data for a symbol and period.
 - `/trending` (GET): Get trending stocks (Reddit/ApeWisdom).
-- `/trending/<source>` (GET): Trending stocks from `stocktwits` or `alpaca`.
+- `/trending/<source>` (GET): Trending stocks from `stocktwits`, `reddit`, or `volume`.
 - `/sentiment` (POST): Analyze sentiment for a stock/news article.
-- `/market-summary` (GET): Landing page for the latest market summary editions (if enabled).
-- `/market-summary/stock-market-today` (GET): SEO-friendly page that always shows the latest market summary article.
-- `/market-summary/<slug>` (GET): Dedicated article page for a specific daily summary (e.g., `/market-summary/2024-07-08`).
+- `/quote/<symbol>` (GET): Quick price/quote lookup.
+- `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
 - `/api/market-summary/latest` (GET): Latest market summary (JSON).
 - `/api/market-summary/archive` (GET): Market summary archive (JSON).
 - `/api/market-summary/<slug>` (GET): Fetch a specific market summary by slug (ISO date or `id-<pk>`).
-- `/quote/<symbol>` (GET): Quick price/quote lookup.
-- `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
-- `/write` (GET): Auth-only writer workspace with the mini word processor UI.
-- `/write/login` (POST): JSON login endpoint that unlocks the writer workspace (`BLOG_ADMIN_*` credentials).
-- `/write/logout` (POST): Ends the writer session.
-- `/api/blog/articles` (GET/POST): Manage private blog articles stored in `blog.db` (requires an authenticated writer session).
+
+### Authenticated APIs (writer/admin)
+- `/api/blog/articles` (GET/POST): Manage private blog articles stored in `blog.db`.
+- `/api/blog/articles/<article_identifier>` (PUT/PATCH/DELETE): Update or delete a draft.
+- `/api/blog/articles/<article_identifier>/publish` (POST): Publish a draft to the public blog.
+- `/api/blog/articles/<article_identifier>/unpublish` (POST): Revert a post back to draft.
+- `/api/market-summary/generate` (POST): Force regenerate the market summary (admin only).
+- `/api/market-summary/subscribe` (POST): Subscribe to market summary email updates (Mailgun).
+
+### Static assets
+- `/robots.txt` (GET): Robots file.
+- `/sitemap.xml` (GET): Sitemap file.
 
 ## Frontend
 
@@ -112,6 +153,8 @@ Optional (degrades gracefully if missing):
 - `FINNHUB_API_KEY`
 - `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`, `UNSPLASH_DEFAULT_QUERY`
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SENTIMENT_MODEL`
+- `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_MARKET_LIST_ADDRESS` (email market summary subscription)
+- `ENABLE_MARKET_SUMMARY` (set to `0` to disable market summary generation)
 - `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
 
 ## Rate Limits
