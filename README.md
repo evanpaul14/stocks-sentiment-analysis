@@ -139,7 +139,6 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 - Add new dependencies to `requirements.txt`
 - Use `curl` or browser to test endpoints
 - Check server logs for errors
-- No automated tests; verify manually
 
 ## Environment Variables
 
