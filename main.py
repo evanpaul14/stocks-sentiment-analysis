@@ -25,6 +25,7 @@ import finnhub
 import json
 import atexit
 import uuid
+import nh3
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -57,9 +58,16 @@ app_logger = logging.getLogger("stocks.app")
 
 
 app = Flask(__name__)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ip_log.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Session cookie configurations for security
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # Secondary SQLite bind keeps blog content isolated from the primary app DB.
 app.config['SQLALCHEMY_BINDS'] = {
     'blog': 'sqlite:///blog.db'
@@ -374,9 +382,34 @@ def _generate_unique_blog_slug(title):
     return slug
 
 
+BLOG_ALLOWED_TAGS = {
+    'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr',
+    'u', 's', 'img', 'span', 'div', 'pre', 'code', 'blockquote',
+    'ul', 'ol', 'li', 'strong', 'em', 'a', 'b', 'i', 'strike'
+}
+
+BLOG_ALLOWED_ATTRS = {
+    '*': {'class', 'style', 'id', 'data-align'},
+    'a': {'href', 'target', 'rel', 'title'},
+    'img': {'src', 'alt', 'title', 'width', 'height'}
+}
+
+def _sanitize_blog_content(raw_html):
+    if not raw_html:
+        return ""
+    return nh3.clean(
+        raw_html,
+        tags=BLOG_ALLOWED_TAGS,
+        attributes=BLOG_ALLOWED_ATTRS
+    )
+
+
 def _create_blog_article(title, content, image_url=None, author=None):
     if not title or not content:
         raise ValueError("Title and content are required")
+    
+    content = _sanitize_blog_content(content)
+    
     normalized_author = (author or DEFAULT_ARTICLE_AUTHOR).strip() or DEFAULT_ARTICLE_AUTHOR
     slug = _generate_unique_blog_slug(title)
     article = BlogArticle(
@@ -3379,7 +3412,7 @@ def blog_article_update_endpoint(article_identifier):
         return jsonify({"error": "Draft not found."}), 404
 
     article.title = title
-    article.content = content
+    article.content = _sanitize_blog_content(content)
     article.image_url = image_url or None
     article.author = author
     article.updated_at = _utcnow_naive()
