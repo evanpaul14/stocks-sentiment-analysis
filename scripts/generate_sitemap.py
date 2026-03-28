@@ -92,7 +92,7 @@ def _collect_summary_dates(db_path: Path) -> list[str]:
     finally:
         connection.close()
 
-    return sorted(dates)
+    return sorted(dates, reverse=True)
 
 
 def _add_url(
@@ -138,7 +138,7 @@ def build_sitemap(
     )
 
     latest_summary_date = stock_market_today_lastmod or (
-        summary_dates[-1] if summary_dates else datetime.now(timezone.utc).date().isoformat()
+        max(summary_dates) if summary_dates else datetime.now(timezone.utc).date().isoformat()
     )
 
     # Required core URLs.
@@ -194,7 +194,7 @@ def main() -> None:
     tree = build_sitemap(base_url, summary_dates, stock_market_today_lastmod)
     write_sitemap(tree, output_path)
 
-    effective_lastmod = stock_market_today_lastmod or (summary_dates[-1] if summary_dates else "(none found)")
+    effective_lastmod = stock_market_today_lastmod or (max(summary_dates) if summary_dates else "(none found)")
     print(f"Generated sitemap: {output_path}")
     print(f"Market summary rows included: {len(summary_dates)}")
     print(f"Date used for stock-market-today lastmod: {effective_lastmod}")
