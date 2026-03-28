@@ -112,6 +112,16 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             .replace(/"/g, '&quot;');
     }
 
+    function escapeHtml(value) {
+        if (value === undefined || value === null) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function formatCurrency(num) {
         if (!Number.isFinite(num)) return '$0.00';
         const sign = num < 0 ? '-' : '';
@@ -642,7 +652,12 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
     function setTrendingListLoading(source) {
         const list = trendingLists[source];
         if (list) {
-            list.innerHTML = '<div class="trending-message" style="color:#9333ea;">Loading...</div>';
+            list.innerHTML = '';
+            const msgEl = document.createElement('div');
+            msgEl.className = 'trending-message';
+            msgEl.style.color = '#9333ea';
+            msgEl.textContent = 'Loading...';
+            list.appendChild(msgEl);
         }
     }
 
@@ -650,7 +665,12 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         const list = trendingLists[source];
         if (!list) return;
         const color = isError ? '#ef4444' : '#888';
-        list.innerHTML = `<div class="trending-message" style="color:${color};">${message}</div>`;
+        list.innerHTML = '';
+        const msgEl = document.createElement('div');
+        msgEl.className = 'trending-message';
+        msgEl.style.color = color;
+        msgEl.textContent = message || 'No data available.';
+        list.appendChild(msgEl);
     }
 
     function isTrendingCacheFresh(entry, includePrices = true) {
@@ -1016,17 +1036,20 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const infoButtonHtml = item.ticker && (item.rank || idx + 1) <= 10
                 ? '<button class="trending-info-btn" type="button" aria-label="View StockTwits summary"><span class="icon">i</span></button>'
                 : '';
+            const safeTicker = escapeHtml(item.ticker || 'N/A');
+            const safeName = escapeHtml(item.name || '');
+            const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
 
             div.innerHTML = `
-                <span class="trending-rank">${item.rank || idx + 1}.</span>
+                <span class="trending-rank">${safeRank}.</span>
                 <div class="trending-card-content">
                     <div class="trending-ticker-row">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-ticker">${safeTicker}</span>
                         ${infoButtonHtml}
                         <span class="trending-change-inline" data-change-inline></span>
                     </div>
                     ${metricsRow}
-                    <span class="trending-name">${item.name || ''}</span>
+                    <span class="trending-name">${safeName}</span>
                 </div>
                 <div class="trending-card-aside" data-change-right></div>
             `;
@@ -1062,21 +1085,25 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const pct = Number(item.pct_increase || 0);
             const pctClass = pct < 0 ? 'negative' : 'positive';
             const pctLabel = `${pct >= 0 ? '+' : ''}${Math.round(pct)}% mentions`;
-            const tag = item.tag ? `<span class="trending-tag">${item.tag}</span>` : '';
+            const tag = item.tag ? `<span class="trending-tag">${escapeHtml(item.tag)}</span>` : '';
             const metricsPieces = [];
             if (tag) metricsPieces.push(tag);
             const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
+            const safeTicker = escapeHtml(item.ticker || 'N/A');
+            const safeName = escapeHtml(item.name || '');
+            const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
+            const safePctLabel = escapeHtml(pctLabel);
 
             div.innerHTML = `
-                <span class="trending-rank">${item.rank || idx + 1}.</span>
+                <span class="trending-rank">${safeRank}.</span>
                 <div class="trending-card-content">
                     <div class="trending-ticker-row">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-ticker">${safeTicker}</span>
                         <span class="trending-change-inline" data-change-inline></span>
                     </div>
                     ${metricsRow}
-                    <span class="trending-name">${item.name || ''}</span>
-                    <span class="trending-pct ${pctClass}">${pctLabel}</span>
+                    <span class="trending-name">${safeName}</span>
+                    <span class="trending-pct ${pctClass}">${safePctLabel}</span>
                 </div>
                 <div class="trending-card-aside" data-change-right></div>
             `;
@@ -1111,16 +1138,19 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const metricsPieces = [];
             if (volumeTag) metricsPieces.push(volumeTag);
             const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
+            const safeTicker = escapeHtml(item.ticker || 'N/A');
+            const safeName = escapeHtml(item.name || '');
+            const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
 
             div.innerHTML = `
-                <span class="trending-rank">${item.rank || idx + 1}.</span>
+                <span class="trending-rank">${safeRank}.</span>
                 <div class="trending-card-content">
                     <div class="trending-ticker-row">
-                        <span class="trending-ticker">${item.ticker || 'N/A'}</span>
+                        <span class="trending-ticker">${safeTicker}</span>
                         <span class="trending-change-inline" data-change-inline></span>
                     </div>
                     ${metricsRow}
-                    <span class="trending-name">${item.name || ''}</span>
+                    <span class="trending-name">${safeName}</span>
                 </div>
                 <div class="trending-card-aside" data-change-right></div>
             `;
@@ -1446,15 +1476,18 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         const { includeRetry = false } = options;
         const container = document.getElementById('errorMessage');
         if (!container) return;
-        const retryHtml = includeRetry
-            ? '<button class="retry-button" type="button" id="retrySearchBtn">Try again</button>'
-            : '';
-        container.innerHTML = `<div class="error-message">${message}</div>${retryHtml}`;
+        container.innerHTML = '';
+        const errorEl = document.createElement('div');
+        errorEl.className = 'error-message';
+        errorEl.textContent = message || 'An unexpected error occurred.';
+        container.appendChild(errorEl);
         if (includeRetry) {
-            const retryBtn = document.getElementById('retrySearchBtn');
-            if (retryBtn) {
-                retryBtn.onclick = () => window.location.reload();
-            }
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'retry-button';
+            retryBtn.type = 'button';
+            retryBtn.textContent = 'Try again';
+            retryBtn.onclick = () => window.location.reload();
+            container.appendChild(retryBtn);
         }
     }
 
@@ -1704,15 +1737,35 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         const description = article.description || 'No summary provided.';
         const actionCopy = article.link ? 'Click to read more' : 'Coverage updated recently';
 
-        articleDiv.innerHTML = `
-            <div class="news-source">${sourceLabel}</div>
-            <div class="news-title">${article.title || 'Untitled coverage'}</div>
-            <div class="news-description">${description}</div>
-            <div class="news-meta">
-                <span>${actionCopy}</span>
-                <span class="${badgeClass}">${badgeText}</span>
-            </div>
-        `;
+        const sourceEl = document.createElement('div');
+        sourceEl.className = 'news-source';
+        sourceEl.textContent = sourceLabel;
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'news-title';
+        titleEl.textContent = article.title || 'Untitled coverage';
+
+        const descriptionEl = document.createElement('div');
+        descriptionEl.className = 'news-description';
+        descriptionEl.textContent = description;
+
+        const metaEl = document.createElement('div');
+        metaEl.className = 'news-meta';
+
+        const actionEl = document.createElement('span');
+        actionEl.textContent = actionCopy;
+
+        const badgeEl = document.createElement('span');
+        badgeEl.className = badgeClass || 'sentiment-badge neutral muted';
+        badgeEl.textContent = badgeText || 'No result';
+
+        metaEl.appendChild(actionEl);
+        metaEl.appendChild(badgeEl);
+
+        articleDiv.appendChild(sourceEl);
+        articleDiv.appendChild(titleEl);
+        articleDiv.appendChild(descriptionEl);
+        articleDiv.appendChild(metaEl);
 
         return articleDiv;
     }
@@ -2060,7 +2113,11 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         } catch (error) {
             console.error('Market summary load error:', error);
             if (marketSummaryLatestEl) {
-                marketSummaryLatestEl.innerHTML = `<div class="market-summary-empty error">${error.message || 'Unable to load market summary.'}</div>`;
+                marketSummaryLatestEl.innerHTML = '';
+                const msgEl = document.createElement('div');
+                msgEl.className = 'market-summary-empty error';
+                msgEl.textContent = (error && error.message) || 'Unable to load market summary.';
+                marketSummaryLatestEl.appendChild(msgEl);
             }
             if (!marketSummarySlug && marketSummaryArchiveEl) {
                 marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty error">Unable to load past editions.</div>';

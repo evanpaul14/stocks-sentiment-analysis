@@ -754,7 +754,7 @@ if LLM7_API_KEY:
             api_key=LLM7_API_KEY
         )
     except Exception as e:
-        print(f"Error initializing LLM7 client: {e}")
+        app_logger.exception("Error initializing LLM7 client: %s", e)
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 finnhub_client = None
@@ -762,7 +762,7 @@ if FINNHUB_API_KEY:
     try:
         finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
     except Exception as e:
-        print(f"Error initializing Finnhub client: {e}")
+        app_logger.exception("Error initializing Finnhub client: %s", e)
 
 # Trending stocks API
 import requests
@@ -963,7 +963,7 @@ def get_price_change_snapshot(symbol):
             if previous_close is None:
                 previous_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
     except Exception as exc:
-        print(f"Error fetching realtime price for {normalized}: {exc}")
+        app_logger.warning("Error fetching realtime price for %s: %s", normalized, exc)
 
     change_percent = None
     if current_price is not None and previous_close not in (None, 0):
@@ -1033,11 +1033,11 @@ def fetch_top_stocks():
         try:
             top20 = sorted(filtered, key=lambda x: x.get("rank", 999))[:20]
         except Exception as sort_exc:
-            print(f"Error sorting trending stocks: {sort_exc}")
+            app_logger.warning("Error sorting trending stocks: %s", sort_exc)
             top20 = []
         return top20
     except Exception as e:
-        print(f"Error fetching trending stocks: {e}")
+        app_logger.warning("Error fetching trending stocks: %s", e)
         return []
 
 def analyze_trending(top10, include_prices=True):
@@ -1115,7 +1115,7 @@ def lookup_company_name(symbol):
         info = ticker.info or {}
         return info.get("longName") or info.get("shortName") or info.get("shortName")
     except Exception as e:
-        print(f"Error looking up company name for {normalized}: {e}")
+        app_logger.warning("Error looking up company name for %s: %s", normalized, e)
         return None
 
 
@@ -1321,7 +1321,7 @@ def fetch_alpaca_most_actives(limit=20, include_prices=True):
             })
         return results
     except Exception as e:
-        print(f"Error fetching Alpaca most actives: {e}")
+        app_logger.warning("Error fetching Alpaca most actives: %s", e)
         return []
 
 
@@ -2380,7 +2380,7 @@ def get_trending_source_data(source, include_prices=True):
         try:
             return analyze_trending(fetch_top_stocks(), include_prices=include_prices)
         except Exception as e:
-            print(f"Error in reddit trending: {e}")
+            app_logger.warning("Error in reddit trending source: %s", e)
             return []
     if normalized == "volume":
         return fetch_alpaca_most_actives(include_prices=include_prices)
@@ -2459,7 +2459,7 @@ def get_stock_info(symbol):
             'yearFounded': year_founded
         }
     except Exception as e:
-        print(f"Error getting stock info: {e}")
+        app_logger.warning("Error getting stock info for %s: %s", normalized_symbol, e)
         return None
 
 
@@ -2509,7 +2509,7 @@ def get_historical_data(symbol, period='1d'):
         return data
 
     except Exception as e:
-        print(f"Error getting historical data: {e}")
+        app_logger.warning("Error getting historical data for %s (%s): %s", normalized_symbol, period, e)
         return []
 
 
@@ -2534,7 +2534,7 @@ def get_news_articles(stock_symbol, num_articles=10):
             })
         return articles
     except Exception as e:
-        print(f"Error getting news: {e}")
+        app_logger.warning("Error getting news for %s: %s", normalized_symbol, e)
         return []
 
 
@@ -2745,7 +2745,7 @@ def fetch_finnhub_company_news(symbol, max_articles=6, lookback_days=5):
             to=end_date.isoformat()
         ) or []
     except Exception as e:
-        print(f"Error fetching Finnhub news for {normalized_symbol}: {e}")
+        app_logger.warning("Error fetching Finnhub news for %s: %s", normalized_symbol, e)
         return []
 
     sanitized = []
@@ -2849,7 +2849,7 @@ def summarize_stock_movement(symbol, company_name, change_percent, articles):
         summary = response.choices[0].message.content.strip()
         return summary
     except Exception as e:
-        print(f"Error generating movement summary: {e}")
+        app_logger.warning("Error generating movement summary for %s: %s", normalized_symbol, e)
         return None
 
 
@@ -3069,10 +3069,14 @@ def analyze_sentiment(article_title, article_description, company_name):
                 break
             retry_delay = extract_retry_delay_seconds(exc)
             if retry_delay:
-                print(f"Gemma quota hit, waiting {retry_delay:.2f}s before retrying...")
+                app_logger.warning(
+                    "Gemma quota hit for %s, waiting %.2fs before retrying",
+                    company_name,
+                    retry_delay
+                )
                 time.sleep(retry_delay)
                 continue
-            print(f"Error analyzing sentiment: {exc}")
+            app_logger.warning("Error analyzing sentiment for %s: %s", company_name, exc)
             backup_reason = backup_reason or 'api_error'
             break
 
@@ -3595,6 +3599,7 @@ def confirm_market_summary_subscription():
 def search_stock():
     '''Search for stock and return info, historical data, news, and sentiment analysis'''
     request_start = time.time()
+    company_name = 'unknown'
     try:
         payload = request.get_json(silent=True)
         if payload is None:
@@ -3647,10 +3652,8 @@ def search_stock():
         return jsonify(response_data)
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        app_logger.exception("/search failed for %s", company_name if 'company_name' in locals() else 'unknown')
-        return jsonify({'error': str(e)}), 500
+        app_logger.exception("/search failed for %s", company_name)
+        return jsonify({'error': 'Unable to process search right now.'}), 500
 
 
 @app.route('/historical/<symbol>/<period>', methods=['GET'])
@@ -3661,8 +3664,8 @@ def get_historical(symbol, period):
         data = get_historical_data(symbol, period)
         return jsonify({'data': data})
     except Exception as e:
-        print(f"Error getting historical data: {e}")
-        return jsonify({'error': str(e)}), 500
+        app_logger.exception("/historical failed for %s (%s): %s", symbol, period, e)
+        return jsonify({'error': 'Unable to retrieve historical data right now.'}), 500
 
 
 @app.route('/sentiment', methods=['POST'])
