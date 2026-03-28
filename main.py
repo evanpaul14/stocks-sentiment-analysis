@@ -1,41 +1,42 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, redirect, session
-from flask_sqlalchemy import SQLAlchemy
-from google import genai
-from pygooglenews import GoogleNews
-from yahooquery import search
-import yfinance as yf
-import re
-import hashlib
-import inspect as pyinspect
-from datetime import datetime, timedelta, timezone, date
-from email.utils import parsedate_to_datetime
-from dotenv import load_dotenv
-import os
-import logging
-import hmac
-import math
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-import time
-from collections import deque
-import threading
-from functools import lru_cache
-import cloudscraper
-from openai import OpenAI
-import finnhub
-import json
 import atexit
+from collections import deque
+from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from functools import lru_cache
+import hashlib
+import hmac
+import inspect as pyinspect
+import json
+import logging
+import math
+import os
+from pathlib import Path
+import re
+import threading
+import time
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import uuid
-import nh3
+import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import func, text, inspect
-from sqlalchemy.exc import IntegrityError, OperationalError
-from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
-from pathlib import Path
-import xml.etree.ElementTree as ET
+import cloudscraper
+from dotenv import load_dotenv
+import finnhub
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_sqlalchemy import SQLAlchemy
+from google import genai
+import nh3
+from openai import OpenAI
 import pandas_market_calendars as mcal
+from pygooglenews import GoogleNews
+from sqlalchemy import func, inspect, text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from werkzeug.middleware.proxy_fix import ProxyFix
+from yahooquery import Ticker, search
+import yfinance as yf
 
 load_dotenv()
 
@@ -59,7 +60,6 @@ app_logger = logging.getLogger("stocks.app")
 
 
 app = Flask(__name__)
-from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -1348,63 +1348,45 @@ MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "f
 _market_summary_generation_lock = threading.Lock()
 
 
-def _fetch_index_snapshot(symbol, label):
-    ticker = yf.Ticker(symbol)
-    try:
-        hist = ticker.history(period="2d")
-    except Exception as exc:
-        market_summary_logger.warning("Index history error for %s: %s", symbol, exc)
-        hist = None
+def _fetch_index_snapshot(symbol, label, quote_data=None):
+    info = quote_data if isinstance(quote_data, dict) else {}
 
-    close = change = change_pct = None
-
-    # Preserve custom DJI close-to-close calculation as work around because yfinance's fast_info for DJI is unreliable and often missing data.
-    if symbol == "^DJI" and hist is not None and not hist.empty and len(hist) >= 2:
+    if not info:
         try:
-            prev_close = float(hist["Close"].iloc[-2])
-            last_close = float(hist["Close"].iloc[-1])
-            close = last_close
-            change = last_close - prev_close
-            if prev_close:
-                change_pct = (change / prev_close) * 100
-        except Exception:
-            close = change = change_pct = None
-        return {
-            "symbol": symbol,
-            "label": label,
-            "close": _normalize_json_number(close),
-            "change": _normalize_json_number(change),
-            "change_percent": _normalize_json_number(change_pct)
-        }
+            info = (Ticker(symbol).price or {}).get(symbol, {})
+        except Exception as exc:
+            market_summary_logger.warning("Index quote error for %s: %s", symbol, exc)
+            info = {}
 
-    if hist is not None and not hist.empty:
-        last_row = hist.tail(1)
-        prev_row = hist.tail(2).head(1)
-        try:
-            close = float(last_row["Close"].iloc[0])
-        except Exception:
-            close = None
-        if close is not None and prev_row is not None and not prev_row.empty:
-            try:
-                prev_close = float(prev_row["Close"].iloc[0])
-                change = close - prev_close
-                if prev_close:
-                    change_pct = (change / prev_close) * 100
-            except Exception:
-                change = change_pct = None
+    if not isinstance(info, dict):
+        info = {}
+
+    if info.get("error"):
+        market_summary_logger.warning("Index quote payload contained error for %s", symbol)
+        info = {}
+
     return {
         "symbol": symbol,
         "label": label,
-        "close": _normalize_json_number(close),
-        "change": _normalize_json_number(change),
-        "change_percent": _normalize_json_number(change_pct)
+        "close": _normalize_json_number(info.get("regularMarketPrice")),
+        "change": _normalize_json_number(info.get("regularMarketChange")),
+        "change_percent": _normalize_json_number(info.get("regularMarketChangePercent"))
     }
 
 
 def get_market_index_snapshots():
+    symbols = [symbol for symbol, _ in MARKET_SUMMARY_INDEXES]
+    price_data = {}
+
+    try:
+        price_data = Ticker(symbols).price or {}
+    except Exception as exc:
+        market_summary_logger.warning("Batch index quote fetch failed: %s", exc)
+        price_data = {}
+
     snapshots = []
     for symbol, label in MARKET_SUMMARY_INDEXES:
-        snapshot = _fetch_index_snapshot(symbol, label)
+        snapshot = _fetch_index_snapshot(symbol, label, price_data.get(symbol))
         if snapshot:
             snapshots.append(snapshot)
     return snapshots
@@ -1507,9 +1489,10 @@ def generate_market_summary_text(summary_date, snapshots, headlines):
         f"{index_lines}\n\n"
         "Headline digest:\n"
         f"{news_lines}\n"
-        "Task: Write a 3-4 sentence summary of today's market session. "
+        "Task: Write a two paragraph summary of today's market session. "
         "Explain the overall tone (risk-on/off, rally, selloff, mixed), "
         "the most significant macro or sector drivers, and any notable themes from the headlines."
+        "Be as detailed as possible with information given while still being concise and easy to read."
         "Avoid hype and keep it factual.\n\n"
         "Rules:\n"
         "- Use the index data to anchor the narrative (e.g. whether moves were broad or uneven)\n"
