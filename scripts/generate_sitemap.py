@@ -13,6 +13,11 @@ from pathlib import Path
 import sqlite3
 import xml.etree.ElementTree as ET
 
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parent.parent
+DEFAULT_DB_PATH = PROJECT_ROOT / "instance" / "ip_log.db"
+DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "sitemap.xml"
+
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 SCHEMA_LOCATION = (
@@ -29,13 +34,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--db",
         dest="db_path",
-        default="instance/ip_log.db",
-        help="Path to SQLite database (default: instance/ip_log.db)",
+        default=str(DEFAULT_DB_PATH),
+        help=(
+            "Path to SQLite database. Relative paths are resolved from project root "
+            f"(default: {DEFAULT_DB_PATH})."
+        ),
     )
     parser.add_argument(
         "--output",
-        default="sitemap.xml",
-        help="Output sitemap path (default: sitemap.xml)",
+        default=str(DEFAULT_OUTPUT_PATH),
+        help=(
+            "Output sitemap path. Relative paths are resolved from project root "
+            f"(default: {DEFAULT_OUTPUT_PATH})."
+        ),
     )
     parser.add_argument(
         "--base-url",
@@ -164,8 +175,18 @@ def write_sitemap(tree: ET.ElementTree, output_path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
-    db_path = Path(args.db_path).expanduser().resolve()
-    output_path = Path(args.output).expanduser().resolve()
+    db_path = Path(args.db_path).expanduser()
+    if not db_path.is_absolute():
+        db_path = (PROJECT_ROOT / db_path).resolve()
+    else:
+        db_path = db_path.resolve()
+
+    output_path = Path(args.output).expanduser()
+    if not output_path.is_absolute():
+        output_path = (PROJECT_ROOT / output_path).resolve()
+    else:
+        output_path = output_path.resolve()
+
     base_url = _normalize_base_url(args.base_url)
     stock_market_today_lastmod = _validate_iso_date(args.stock_market_today_lastmod)
 
