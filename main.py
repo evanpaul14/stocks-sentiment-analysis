@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import os
 import logging
 import hmac
+import math
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import time
@@ -181,6 +182,19 @@ def _coerce_date(value):
     if isinstance(value, date):
         return value
     return None
+
+
+def _normalize_json_number(value):
+    """Convert numeric values to a JSON-safe form (no NaN/Inf)."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
 
 
 def _get_nyse_calendar():
@@ -1358,9 +1372,9 @@ def _fetch_index_snapshot(symbol, label):
         return {
             "symbol": symbol,
             "label": label,
-            "close": close,
-            "change": change,
-            "change_percent": change_pct
+            "close": _normalize_json_number(close),
+            "change": _normalize_json_number(change),
+            "change_percent": _normalize_json_number(change_pct)
         }
 
     if hist is not None and not hist.empty:
@@ -1381,9 +1395,9 @@ def _fetch_index_snapshot(symbol, label):
     return {
         "symbol": symbol,
         "label": label,
-        "close": close,
-        "change": change,
-        "change_percent": change_pct
+        "close": _normalize_json_number(close),
+        "change": _normalize_json_number(change),
+        "change_percent": _normalize_json_number(change_pct)
     }
 
 
@@ -1591,6 +1605,19 @@ def serialize_market_summary(record):
         headlines = json.loads(record.headline_sources or '[]')
     except json.JSONDecodeError:
         headlines = []
+
+    # Ensure float fields are JSON-safe for strict parsers (no NaN/Inf values)
+    sanitized_indices = []
+    for item in indices:
+        if not isinstance(item, dict):
+            continue
+        sanitized_indices.append({
+            **item,
+            'close': _normalize_json_number(item.get('close')),
+            'change': _normalize_json_number(item.get('change')),
+            'change_percent': _normalize_json_number(item.get('change_percent')),
+        })
+    indices = sanitized_indices
 
     def _serialize_datetime(value):
         if not value:
