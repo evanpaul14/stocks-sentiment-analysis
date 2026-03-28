@@ -197,6 +197,29 @@ def _normalize_json_number(value):
     return number
 
 
+def normalize_ticker_symbol(symbol):
+    """Normalize ticker symbols by dropping anything after a dot suffix."""
+    normalized = (symbol or "").strip().upper()
+    if not normalized:
+        return ""
+    return normalized.split(".", 1)[0].strip()
+
+
+def normalize_search_query(value):
+    """Normalize user search text only when it looks like a ticker symbol."""
+    normalized = (value or "").strip()
+    if not normalized:
+        return ""
+
+    if " " in normalized:
+        return normalized
+
+    if "." in normalized:
+        return normalize_ticker_symbol(normalized)
+
+    return normalized
+
+
 def _get_nyse_calendar():
     """Return a cached NYSE calendar instance, rebuilding it on demand if needed."""
     global NYSE_CALENDAR
@@ -773,11 +796,11 @@ def _get_int_env(var_name, default):
 BLOG_ARTICLE_FETCH_LIMIT = max(1, _get_int_env("BLOG_ARTICLE_FETCH_LIMIT", 50))
 
 
-GEMMA_SENTIMENT_TIMEOUT_SECONDS = max(1, _get_int_env("GEMMA_SENTIMENT_TIMEOUT_SECONDS", 8))
+GEMMA_BACKUP_SENTIMENT_TIMEOUT_SECONDS = max(1, _get_int_env("GEMMA_SENTIMENT_TIMEOUT_SECONDS", 3))
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_SENTIMENT_MODEL = os.getenv("CLOUDFLARE_SENTIMENT_MODEL", "@cf/meta/llama-3-8b-instruct")
-CLOUDFLARE_TIMEOUT_SECONDS = max(3, _get_int_env("CLOUDFLARE_TIMEOUT_SECONDS", 10))
+CLOUDFLARE_TIMEOUT_SECONDS = max(1, _get_int_env("CLOUDFLARE_TIMEOUT_SECONDS", 3))
 CLOUDFLARE_BASE_URL = (
     f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/"
     if CLOUDFLARE_ACCOUNT_ID else None
@@ -785,46 +808,6 @@ CLOUDFLARE_BASE_URL = (
 CLOUDFLARE_ENABLED = bool(CLOUDFLARE_BASE_URL and CLOUDFLARE_API_TOKEN)
 _cloudflare_session = requests.Session() if CLOUDFLARE_ENABLED else None
 _cloudflare_headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"} if CLOUDFLARE_ENABLED else {}
-
-SENTIMENT_RUN_STATE_TTL_SECONDS = max(60, _get_int_env("SENTIMENT_RUN_STATE_TTL_SECONDS", 300))
-_sentiment_run_state = {}
-_sentiment_run_lock = threading.Lock()
-
-
-def _prune_sentiment_run_state_locked(now=None):
-    """Drop expired sentiment run state entries while lock is held."""
-    if not _sentiment_run_state:
-        return
-    now = now or time.time()
-    expired = [
-        run_id for run_id, meta in _sentiment_run_state.items()
-        if now - meta.get('ts', now) > SENTIMENT_RUN_STATE_TTL_SECONDS
-    ]
-    for run_id in expired:
-        _sentiment_run_state.pop(run_id, None)
-
-
-def _should_force_cloudflare_for_run(run_id):
-    """Check whether a sentiment run has been marked to bypass Gemma."""
-    if not (run_id and CLOUDFLARE_ENABLED):
-        return False
-    with _sentiment_run_lock:
-        _prune_sentiment_run_state_locked()
-        entry = _sentiment_run_state.get(run_id)
-        return bool(entry and entry.get('force_cloudflare'))
-
-
-def _mark_run_force_cloudflare(run_id):
-    """Mark a sentiment run so future article calls use Cloudflare fallback."""
-    if not (run_id and CLOUDFLARE_ENABLED):
-        return
-    with _sentiment_run_lock:
-        _prune_sentiment_run_state_locked()
-        _sentiment_run_state[run_id] = {
-            'ts': time.time(),
-            'force_cloudflare': True
-        }
-
 
 AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
 AI_RATE_WINDOW_SECONDS = max(1, _get_int_env("GEMMA_RATE_WINDOW_SECONDS", 60))
@@ -946,7 +929,9 @@ def get_price_change_snapshot(symbol):
     if not symbol:
         return {"price": None, "change_percent": None}
 
-    normalized = symbol.upper()
+    normalized = normalize_ticker_symbol(symbol)
+    if not normalized:
+        return {"price": None, "change_percent": None}
     now = time.time()
     cached = _price_snapshot_cache.get(normalized)
     if cached and (now - cached["timestamp"]) < PRICE_CACHE_TTL_SECONDS:
@@ -1059,7 +1044,7 @@ def analyze_trending(top10, include_prices=True):
     """Analyze trending stocks and apply tags based on percent increase and rank changes"""
     results = []
     for rec in top10:
-        ticker = rec.get("ticker")
+        ticker = normalize_ticker_symbol(rec.get("ticker"))
         if not ticker:
             continue
         name = html.unescape(rec.get("name", ""))
@@ -1122,19 +1107,20 @@ def analyze_trending(top10, include_prices=True):
 @lru_cache(maxsize=256)
 def lookup_company_name(symbol):
     """Resolve ticker to company name via yfinance"""
-    if not symbol:
+    normalized = normalize_ticker_symbol(symbol)
+    if not normalized:
         return None
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(normalized)
         info = ticker.info or {}
         return info.get("longName") or info.get("shortName") or info.get("shortName")
     except Exception as e:
-        print(f"Error looking up company name for {symbol}: {e}")
+        print(f"Error looking up company name for {normalized}: {e}")
         return None
 
 
 def _cache_stocktwits_summary(symbol, name, summary_text, summary_meta, watchlist_count=None):
-    normalized = (symbol or "").upper()
+    normalized = normalize_ticker_symbol(symbol)
     if not normalized:
         return
     normalized_summary = _normalize_stocktwits_summary(summary_text)
@@ -1150,7 +1136,7 @@ def _cache_stocktwits_summary(symbol, name, summary_text, summary_meta, watchlis
 
 
 def get_stocktwits_summary_entry(symbol):
-    normalized = (symbol or "").upper()
+    normalized = normalize_ticker_symbol(symbol)
     if not normalized:
         return None
 
@@ -1193,7 +1179,7 @@ def _fetch_stocktwits_symbols(limit=20):
 
 
 def _refresh_stocktwits_summary(symbol, *, limit=60):
-    normalized = (symbol or "").upper()
+    normalized = normalize_ticker_symbol(symbol)
     if not normalized:
         return None
 
@@ -1213,7 +1199,7 @@ def _refresh_stocktwits_summary(symbol, *, limit=60):
         return None
 
     for sym in symbols:
-        current_symbol = (sym.get("symbol") or "").upper()
+        current_symbol = normalize_ticker_symbol(sym.get("symbol"))
         if current_symbol != normalized:
             continue
         raw_summary, summary_meta, company_name = _extract_stocktwits_summary_parts(sym)
@@ -1247,7 +1233,9 @@ def fetch_stocktwits_trending(limit=20, include_prices=True):
                 last_price = sym.get("price")
                 change_pct = sym.get("change_percent")
 
-            symbol = (sym.get("symbol") or "").upper()
+            symbol = normalize_ticker_symbol(sym.get("symbol"))
+            if not symbol:
+                continue
             resolved_price = last_price
             resolved_change_pct = change_pct
             if include_prices and (resolved_price is None or resolved_change_pct is None):
@@ -1312,7 +1300,9 @@ def fetch_alpaca_most_actives(limit=20, include_prices=True):
             change_pct = rec.get("change_percent") or rec.get("percent_change")
             price = rec.get("price") or rec.get("last") or rec.get("close")
             volume = rec.get("volume") or rec.get("volume_1d")
-            symbol = (rec.get("symbol") or "").upper()
+            symbol = normalize_ticker_symbol(rec.get("symbol"))
+            if not symbol:
+                continue
             resolved_name = rec.get("name") or lookup_company_name(symbol) or symbol or "Unknown"
             if include_prices and (price is None or change_pct is None):
                 snapshot = get_price_change_snapshot(symbol)
@@ -2408,8 +2398,11 @@ def _should_include_prices(arg_value):
 
 def get_stock_info(symbol):
     """Get stock information using yfinance"""
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    if not normalized_symbol:
+        return None
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(normalized_symbol)
         info = ticker.info
 
         # Get current price data
@@ -2436,7 +2429,7 @@ def get_stock_info(symbol):
                 ceo_name = officer.get('name', 'N/A')
                 break
         return {
-            'symbol': symbol,
+            'symbol': normalized_symbol,
             'price': current_price,
             'change': change,
             'changePercent': change_percent,
@@ -2453,7 +2446,7 @@ def get_stock_info(symbol):
             'volume': info.get('volume', 0),
             'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh', 0),
             'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow', 0),
-            'companyName': info.get('longName') or info.get('shortName', symbol),
+            'companyName': info.get('longName') or info.get('shortName', normalized_symbol),
             'ceo': ceo_name,
             'employees': info.get('fullTimeEmployees'),
             'city': info.get('city'),
@@ -2472,8 +2465,11 @@ def get_stock_info(symbol):
 
 def get_historical_data(symbol, period='1d'):
     """Get historical price data using yfinance"""
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    if not normalized_symbol:
+        return []
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(normalized_symbol)
 
         if period == '1d':
             hist = ticker.history(period='5d', interval='5m')
@@ -2485,7 +2481,7 @@ def get_historical_data(symbol, period='1d'):
             end = datetime.now()
             start = end - timedelta(days=7)
             hist = yf.download(
-                symbol,
+                normalized_symbol,
                 start=start,
                 end=end,
                 interval='1h',
@@ -2519,9 +2515,12 @@ def get_historical_data(symbol, period='1d'):
 
 def get_news_articles(stock_symbol, num_articles=10):
     """Get news articles using Google News"""
+    normalized_symbol = normalize_ticker_symbol(stock_symbol)
+    if not normalized_symbol:
+        return []
     try:
         gn = GoogleNews(lang='en', country='US')
-        search_result = gn.search(stock_symbol + " stock")
+        search_result = gn.search(normalized_symbol + " stock")
         entries = search_result.get('entries', [])
 
         articles = []
@@ -2732,7 +2731,8 @@ def enrich_articles_with_unsplash_images(articles, fallback_query=None):
 
 
 def fetch_finnhub_company_news(symbol, max_articles=6, lookback_days=5):
-    if not finnhub_client or not symbol:
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    if not finnhub_client or not normalized_symbol:
         return []
 
     end_date = datetime.utcnow().date()
@@ -2740,12 +2740,12 @@ def fetch_finnhub_company_news(symbol, max_articles=6, lookback_days=5):
 
     try:
         raw_articles = finnhub_client.company_news(
-            symbol,
+            normalized_symbol,
             _from=start_date.isoformat(),
             to=end_date.isoformat()
         ) or []
     except Exception as e:
-        print(f"Error fetching Finnhub news for {symbol}: {e}")
+        print(f"Error fetching Finnhub news for {normalized_symbol}: {e}")
         return []
 
     sanitized = []
@@ -2803,6 +2803,8 @@ def summarize_stock_movement(symbol, company_name, change_percent, articles):
     if not llm7_client or not articles:
         return None
 
+    normalized_symbol = normalize_ticker_symbol(symbol)
+
     bullet_lines = []
     for idx, article in enumerate(articles, start=1):
         published = article.get("publishedAt") or "Unknown time"
@@ -2814,7 +2816,7 @@ def summarize_stock_movement(symbol, company_name, change_percent, articles):
     change_direction = "up" if change_percent >= 0 else "down"
     change_abs = abs(change_percent)
     prompt = (
-        f"Company: {company_name} ({symbol})\n"
+        f"Company: {company_name} ({normalized_symbol})\n"
         f"Intraday move: {change_direction} {change_abs:.2f}% today.\n\n"
         "Recent catalysts:\n"
         + "\n".join(bullet_lines)
@@ -2869,7 +2871,9 @@ def build_movement_insight(stock_info):
     if change_percent is None or abs(change_percent) < 3:
         return None
 
-    symbol = stock_info.get('symbol')
+    symbol = normalize_ticker_symbol(stock_info.get('symbol'))
+    if not symbol:
+        return None
     company_name = stock_info.get('companyName') or symbol
     articles = fetch_finnhub_company_news(symbol)
     article_source_label = "Finnhub"
@@ -3004,35 +3008,33 @@ def analyze_sentiment_cloudflare(article_title, article_description, company_nam
         response.raise_for_status()
         data = response.json()
     except Exception as exc:
-        app_logger.warning("Cloudflare sentiment request failed: %s", exc)
+        app_logger.warning("[Cloudflare primary] Request failed, falling back to Gemma: %s", exc)
         return None
 
     result_payload = data.get('result') or {}
     raw_text = result_payload.get('response') or result_payload.get('output') or ''
     sentiment = _extract_sentiment_label(raw_text)
     if sentiment:
-        app_logger.info("[Cloudflare AI] Sentiment resolved via fallback for %s", company_name)
+        app_logger.info("[Cloudflare primary] Sentiment resolved for %s", company_name)
     return sentiment
 
 
-def analyze_sentiment_gemma(article_title, article_description, company_name, run_id=None):
-    """Analyze sentiment using Google Gemma AI with Cloudflare fallback for slow/error cases."""
-    if _should_force_cloudflare_for_run(run_id):
-        fallback = analyze_sentiment_cloudflare(article_title, article_description, company_name)
-        if fallback:
-            app_logger.info(
-                "Using Cloudflare sentiment due to prior fallback for run %s (company=%s)",
-                run_id,
-                company_name
-            )
-            return fallback
-        app_logger.warning(
-            "Cloudflare forced fallback did not return a sentiment for run %s", run_id
-        )
-        return 'neutral'
+def analyze_sentiment(article_title, article_description, company_name):
+    """Analyze sentiment using Cloudflare as primary provider and Gemma as backup."""
+    # Primary path: Cloudflare first. If unavailable/failing, fall back to Gemma.
+    cloudflare_sentiment = analyze_sentiment_cloudflare(
+        article_title,
+        article_description,
+        company_name
+    )
+    if cloudflare_sentiment:
+        return cloudflare_sentiment
+
+    app_logger.info("[Sentiment] Falling back to Gemma backup for %s", company_name)
+
     prompt = _build_sentiment_prompt(company_name, article_title, article_description)
 
-    fallback_reason = None
+    backup_reason = None
     last_exception = None
     gemma_result = None
 
@@ -3049,21 +3051,21 @@ def analyze_sentiment_gemma(article_title, article_description, company_name, ru
 
             raw_text = getattr(response, 'text', '')
             app_logger.info(
-                "[Gemma] Sentiment raw (attempt=%s, company=%s): %s",
+                "[Gemma backup] Sentiment raw (attempt=%s, company=%s): %s",
                 attempt + 1,
                 company_name,
                 str(raw_text)[:240]
             )
             sentiment = _extract_sentiment_label(raw_text) or 'neutral'
             gemma_result = sentiment
-            if elapsed > GEMMA_SENTIMENT_TIMEOUT_SECONDS:
-                fallback_reason = f"slow_response_{elapsed:.2f}s"
+            if elapsed > GEMMA_BACKUP_SENTIMENT_TIMEOUT_SECONDS:
+                backup_reason = f"slow_response_{elapsed:.2f}s"
                 break
             return sentiment
         except Exception as exc:
             last_exception = exc
             if _is_model_overloaded_error(exc):
-                fallback_reason = 'model_overloaded'
+                backup_reason = 'model_overloaded'
                 break
             retry_delay = extract_retry_delay_seconds(exc)
             if retry_delay:
@@ -3071,17 +3073,10 @@ def analyze_sentiment_gemma(article_title, article_description, company_name, ru
                 time.sleep(retry_delay)
                 continue
             print(f"Error analyzing sentiment: {exc}")
-            fallback_reason = fallback_reason or 'api_error'
+            backup_reason = backup_reason or 'api_error'
             break
 
-    if fallback_reason and CLOUDFLARE_ENABLED:
-        _mark_run_force_cloudflare(run_id)
-        fallback = analyze_sentiment_cloudflare(article_title, article_description, company_name)
-        if fallback:
-            app_logger.info("Using Cloudflare sentiment fallback (reason=%s)", fallback_reason)
-            return fallback
-
-    if gemma_result is not None and not fallback_reason:
+    if gemma_result is not None and not backup_reason:
         return gemma_result
 
     if gemma_result is not None:
@@ -3093,17 +3088,23 @@ def analyze_sentiment_gemma(article_title, article_description, company_name, ru
     return 'neutral'
 
 
+def analyze_sentiment_gemma(article_title, article_description, company_name, run_id=None):
+    """Backward-compatible wrapper for legacy call sites; use analyze_sentiment()."""
+    return analyze_sentiment(article_title, article_description, company_name)
+
+
 def build_sentiment_payload(symbol, company_name=None, *, sentiment_run_id=None):
-    articles = get_news_articles(symbol, 10)
-    fallback_query = f"{company_name or symbol} stock market"
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    if not normalized_symbol:
+        return [], {"positive": 0, "negative": 0, "neutral": 0}, "neutral"
+
+    articles = get_news_articles(normalized_symbol, 10)
     sentiment_summary = {"positive": 0, "negative": 0, "neutral": 0}
-    run_id = str(sentiment_run_id).strip() if sentiment_run_id else f"bulk-{uuid.uuid4().hex}"
     for article in articles:
-        sentiment = analyze_sentiment_gemma(
+        sentiment = analyze_sentiment(
             article['title'],
             article['description'],
-            company_name or symbol,
-            run_id=run_id
+            company_name or normalized_symbol
         )
         article['sentiment'] = sentiment
         if sentiment in sentiment_summary:
@@ -3608,12 +3609,16 @@ def search_stock():
         app_logger.info("/search requested for %s", company_name)
 
         # Resolve ticker from free-form company input.
-        results = search(company_name)
+        search_query = normalize_search_query(company_name)
+        results = search(search_query)
         if not results.get('quotes') or len(results['quotes']) == 0:
             app_logger.info("/search no ticker match for %s", company_name)
             return jsonify({'error': 'Company not found'}), 404
 
-        stock_symbol = results['quotes'][0]['symbol'].upper()
+        stock_symbol = normalize_ticker_symbol(results['quotes'][0].get('symbol'))
+        if not stock_symbol:
+            app_logger.info("/search quote matched but symbol was invalid for %s", company_name)
+            return jsonify({'error': 'Company not found'}), 404
 
         # Hydrate quote + company fundamentals for the selected ticker.
         stock_info = get_stock_info(stock_symbol)
@@ -3670,13 +3675,9 @@ def analyze_article_sentiment():
 
     title = (payload.get('title') or '').strip()
     description = payload.get('description') or ''
-    company_name = (payload.get('company_name') or payload.get('symbol') or '').strip()
+    normalized_symbol = normalize_ticker_symbol(payload.get('symbol'))
+    company_name = (payload.get('company_name') or normalized_symbol or '').strip()
     article_id = payload.get('article_id')
-    raw_run_id = payload.get('sentiment_run_id')
-    if raw_run_id is None:
-        sentiment_run_id = None
-    else:
-        sentiment_run_id = str(raw_run_id).strip() or None
 
     if not title:
         return jsonify({'error': 'Title is required for sentiment analysis'}), 400
@@ -3684,7 +3685,7 @@ def analyze_article_sentiment():
         company_name = 'the company'
 
     try:
-        sentiment = analyze_sentiment_gemma(title, description, company_name, run_id=sentiment_run_id)
+        sentiment = analyze_sentiment(title, description, company_name)
     except RuntimeError as sentiment_exc:
         if str(sentiment_exc) == 'MODEL_OVERLOADED':
             return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
@@ -3752,7 +3753,7 @@ def market_summary_article(summary_slug):
 @app.route('/quote/<symbol>', methods=['GET'])
 @limiter.limit("300 per minute")
 def quote(symbol):
-    normalized = (symbol or "").strip().upper()
+    normalized = normalize_ticker_symbol(symbol)
     if not normalized:
         return jsonify({"error": "Symbol is required"}), 400
 
@@ -3785,7 +3786,7 @@ def trending_stocks_source(source):
 @app.route('/stocktwits/<symbol>/summary', methods=['GET'])
 @limiter.limit("30 per minute")
 def stocktwits_summary(symbol):
-    normalized = (symbol or "").upper()
+    normalized = normalize_ticker_symbol(symbol)
     entry = get_stocktwits_summary_entry(normalized)
     if not entry:
         summary_logger.warning(
