@@ -3714,7 +3714,7 @@ def confirm_market_summary_subscription():
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
 def search_stock():
-    '''Search for stock and return info, historical data, news, and sentiment analysis'''
+    '''Search for stock and return initial quote, chart, and news data quickly.'''
     request_start = time.time()
     company_name = 'unknown'
     try:
@@ -3757,9 +3757,6 @@ def search_stock():
             'articles': get_news_articles(stock_symbol, 10)
         }
 
-        movement_insight = build_movement_insight(stock_info)
-        if movement_insight:
-            response_data['movement_insight'] = movement_insight
         app_logger.info(
             "/search completed for %s (%s) in %.2fs",
             company_name,
@@ -3771,6 +3768,34 @@ def search_stock():
     except Exception as e:
         app_logger.exception("/search failed for %s", company_name)
         return jsonify({'error': 'Unable to process search right now.'}), 500
+
+
+@app.route('/movement-insight', methods=['POST'])
+@limiter.limit("20 per minute")
+def get_movement_insight():
+    """Build movement insight for >3% movers after initial search data loads."""
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({'error': 'Request body must be valid JSON'}), 400
+
+    try:
+        stock_info = payload.get('stock_info') if isinstance(payload.get('stock_info'), dict) else None
+
+        # Fallback path for callers that only provide a ticker.
+        if not stock_info:
+            symbol = normalize_ticker_symbol(payload.get('symbol'))
+            if not symbol:
+                return jsonify({'error': 'Stock info or symbol is required'}), 400
+
+            stock_info = get_stock_info(symbol)
+            if not stock_info:
+                return jsonify({'error': 'Failed to retrieve stock information'}), 500
+
+        movement_insight = build_movement_insight(stock_info)
+        return jsonify({'movement_insight': movement_insight})
+    except Exception:
+        app_logger.exception("/movement-insight failed")
+        return jsonify({'error': 'Unable to retrieve movement insight right now.'}), 500
 
 
 @app.route('/historical/<symbol>/<period>', methods=['GET'])

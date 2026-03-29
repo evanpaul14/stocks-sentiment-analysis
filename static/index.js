@@ -1,6 +1,7 @@
 let chart = null;
 let currentSymbol = null;
 let historicalData = {};
+let activeMovementInsightRequestId = 0;
 const movementBox = document.getElementById('movementBox');
 const movementSummaryEl = document.getElementById('movementSummary');
 const movementMetaEl = document.getElementById('movementMeta');
@@ -1688,6 +1689,8 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         }
 
         showTrendingSection(false);
+        activeMovementInsightRequestId += 1;
+        renderMovementInsight(null);
         document.getElementById('loading').style.display = 'block';
         document.getElementById('results').style.display = 'none';
         document.getElementById('errorMessage').innerHTML = '';
@@ -1716,6 +1719,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             displayResults(data);
             currentSymbol = data.stock_info.symbol;
             historicalData = { '1d': data.historical_data };
+            loadMovementInsight(data.stock_info);
 
             document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.chart-tab[data-period="1d"]').classList.add('active');
@@ -1762,7 +1766,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         updateWatchlistToggle(stockInfo.symbol, stockInfo.companyName, stockInfo.price);
         updateWatchlistSnapshot(stockInfo.symbol, stockInfo.price, stockInfo.companyName);
         const articles = data.articles || [];
-        renderMovementInsight(data.movement_insight);
+        renderMovementInsight(null);
         hideWatchlistForStockView();
 
         document.getElementById('companyName').textContent = stockInfo.companyName;
@@ -1881,6 +1885,61 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             newsContainer,
             pendingNotice
         );
+    }
+
+    function renderMovementInsightLoading(changePercent) {
+        if (!movementBox || !movementSummaryEl || !movementMetaEl || !movementSourcesEl) {
+            return;
+        }
+
+        movementBox.style.display = 'block';
+        movementSummaryEl.textContent = 'Loading what\'s happening...';
+
+        const normalizedChangePercent = Number(changePercent);
+        movementMetaEl.textContent = Number.isFinite(normalizedChangePercent)
+            ? `Moved ${formatSignedPercentage(normalizedChangePercent)} today`
+            : 'Intraday move > 3%';
+
+        movementSourcesEl.innerHTML = '';
+        movementSourcesEl.style.display = 'none';
+    }
+
+    async function loadMovementInsight(stockInfo) {
+        const changePercent = Number(stockInfo && stockInfo.changePercent);
+        if (!Number.isFinite(changePercent) || Math.abs(changePercent) < 3) {
+            renderMovementInsight(null);
+            return;
+        }
+
+        const requestId = ++activeMovementInsightRequestId;
+        renderMovementInsightLoading(changePercent);
+
+        try {
+            const response = await fetch('/movement-insight', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ stock_info: stockInfo })
+            });
+
+            const payload = await response.json();
+            if (requestId !== activeMovementInsightRequestId) {
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error((payload && payload.error) || 'Failed to load movement insight');
+            }
+
+            renderMovementInsight(payload.movement_insight || null);
+        } catch (error) {
+            if (requestId !== activeMovementInsightRequestId) {
+                return;
+            }
+            console.warn('Movement insight load error:', error);
+            renderMovementInsight(null);
+        }
     }
 
     async function progressivelyAnalyzeSentiment(articles, companyName, runId, targetContainer, pendingElement) {
@@ -2120,6 +2179,10 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
     }
 
     function renderMovementInsight(insight) {
+        if (!movementBox || !movementSummaryEl || !movementMetaEl || !movementSourcesEl) {
+            return;
+        }
+
         if (!insight || !insight.summary) {
             movementBox.style.display = 'none';
             movementSummaryEl.textContent = '';
