@@ -108,6 +108,8 @@ let homePrimaryPanel = 'watchlist';
 let homePanelInitialized = false;
 let homeTrendingInitialized = false;
 let watchlistPriceRefreshPromise = null;
+let marketSummaryLatestArticleId = null;
+let marketSummaryArchiveItems = [];
 let activeSentimentRunId = 0;
 let latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
 const sentimentStatusEl = document.getElementById('sentimentStatus');
@@ -1139,8 +1141,49 @@ function initializeSearchSuggestions() {
         }
 
         if (marketSummaryStatsRowsEl) {
-            marketSummaryStatsRowsEl.innerHTML = '<div class="stat-row"><span class="stat-label">Status</span><span class="stat-value">Loading...</span></div>';
+            marketSummaryStatsRowsEl.innerHTML = '<div class="market-summary-empty loading-state"><span class="loading-dot"></span><span>Loading week at a glance...</span></div>';
         }
+    }
+
+    function setMarketSummaryLatestLoading(message = 'Loading latest market summary...') {
+        if (!marketSummaryLatestEl) return;
+        marketSummaryLatestEl.innerHTML = `<div class="market-summary-empty loading-state"><span class="loading-dot"></span><span>${escapeHtml(message)}</span></div>`;
+    }
+
+    function setMarketSummaryArchiveLoading(message = 'Loading archive...') {
+        if (!marketSummaryArchiveEl || marketSummarySlug) return;
+        marketSummaryArchiveEl.style.display = '';
+        marketSummaryArchiveEl.innerHTML = `<div class="market-summary-empty loading-state"><span class="loading-dot"></span><span>${escapeHtml(message)}</span></div>`;
+    }
+
+    function setMarketSummaryStatsLoading(message = 'Loading week at a glance...') {
+        if (!marketSummaryStatsRowsEl) return;
+        marketSummaryStatsRowsEl.innerHTML = `<div class="market-summary-empty loading-state"><span class="loading-dot"></span><span>${escapeHtml(message)}</span></div>`;
+    }
+
+    function renderMarketSummaryLatestError(message) {
+        if (!marketSummaryLatestEl) return;
+        marketSummaryLatestEl.innerHTML = '';
+        const msgEl = document.createElement('div');
+        msgEl.className = 'market-summary-empty error';
+        msgEl.textContent = message || 'Unable to load market summary.';
+        marketSummaryLatestEl.appendChild(msgEl);
+    }
+
+    function renderMarketSummaryArchiveError(message) {
+        if (!marketSummaryArchiveEl || marketSummarySlug) return;
+        marketSummaryArchiveEl.innerHTML = '';
+        const msgEl = document.createElement('div');
+        msgEl.className = 'market-summary-empty error';
+        msgEl.textContent = message || 'Unable to load past editions.';
+        marketSummaryArchiveEl.appendChild(msgEl);
+    }
+
+    function syncMarketSummaryArchive() {
+        if (marketSummarySlug || !marketSummaryArchiveEl) {
+            return;
+        }
+        renderMarketSummaryArchive(marketSummaryArchiveItems, marketSummaryLatestArticleId);
     }
 
     function isTrendingCacheFresh(entry, includePrices = true) {
@@ -2842,72 +2885,90 @@ function initializeSearchSuggestions() {
         homeTrendingInitialized = true;
     }
 
-    async function loadMarketSummaryContent() {
-        if (!marketSummarySectionEl) return;
-        setMarketSummaryLoadingState(true);
-        try {
-            if (marketSummarySlug) {
-                let standaloneArticle = initialMarketSummaryArticle;
-                let weekGlanceItems = [];
-                try {
-                    const articlePayload = await fetchJson(`/api/market-summary/${encodeURIComponent(marketSummarySlug)}`);
-                    if (articlePayload && articlePayload.article) {
-                        standaloneArticle = articlePayload.article;
-                    }
-                    weekGlanceItems = (articlePayload && articlePayload.week_glance) || [];
-                } catch (error) {
-                    if (!standaloneArticle) {
-                        throw error;
-                    }
+    async function loadMarketSummaryLatest() {
+        setMarketSummaryLatestLoading();
+
+        if (marketSummarySlug) {
+            let standaloneArticle = initialMarketSummaryArticle;
+            try {
+                const articlePayload = await fetchJson(`/api/market-summary/${encodeURIComponent(marketSummarySlug)}`);
+                if (articlePayload && articlePayload.article) {
+                    standaloneArticle = articlePayload.article;
                 }
+            } catch (error) {
                 if (!standaloneArticle) {
-                    throw new Error('Market summary article unavailable.');
+                    throw error;
                 }
-                renderMarketSummaryLatest(standaloneArticle);
-                renderMarketSummaryStats(weekGlanceItems.length ? weekGlanceItems : (standaloneArticle.indices || []));
-                if (marketSummaryArchiveHeadingEl) {
-                    marketSummaryArchiveHeadingEl.style.display = 'none';
-                }
-                if (marketSummaryArchiveEl) {
-                    marketSummaryArchiveEl.innerHTML = '';
-                    marketSummaryArchiveEl.style.display = 'none';
-                }
-                setMarketSummaryLoadingState(false);
-                return;
             }
-            const [latestPayload, archivePayload] = await Promise.all([
-                fetchJson('/api/market-summary/latest'),
-                fetchJson('/api/market-summary/archive?limit=12')
-            ]);
-            const latestArticle = latestPayload && latestPayload.article;
-            const archiveItems = (archivePayload && archivePayload.articles) || [];
-            renderMarketSummaryLatest(latestArticle);
-            renderMarketSummaryArchive(archiveItems, latestArticle && latestArticle.id);
-            renderMarketSummaryStats((latestPayload && latestPayload.week_glance) || (latestArticle && latestArticle.indices) || []);
+
+            if (!standaloneArticle) {
+                throw new Error('Market summary article unavailable.');
+            }
+            marketSummaryLatestArticleId = standaloneArticle.id || null;
+            renderMarketSummaryLatest(standaloneArticle);
+            return;
+        }
+
+        const latestPayload = await fetchJson('/api/market-summary/latest');
+        const latestArticle = latestPayload && latestPayload.article;
+        marketSummaryLatestArticleId = (latestArticle && latestArticle.id) || null;
+        renderMarketSummaryLatest(latestArticle || null);
+        syncMarketSummaryArchive();
+    }
+
+    async function loadMarketSummaryWeekGlance() {
+        setMarketSummaryStatsLoading();
+        try {
+            const payload = await fetchJson('/api/market-summary/week-glance');
+            const weekGlance = (payload && payload.week_glance) || [];
+            renderMarketSummaryStats(weekGlance);
+        } catch (error) {
+            console.error('Week at a glance load error:', error);
+            renderMarketSummaryStats([]);
+        }
+    }
+
+    async function loadMarketSummaryArchive() {
+        if (marketSummarySlug) {
             if (marketSummaryArchiveHeadingEl) {
-                marketSummaryArchiveHeadingEl.style.display = '';
+                marketSummaryArchiveHeadingEl.style.display = 'none';
             }
             if (marketSummaryArchiveEl) {
-                marketSummaryArchiveEl.style.display = '';
-            }
-            setMarketSummaryLoadingState(false);
-        } catch (error) {
-            console.error('Market summary load error:', error);
-            setMarketSummaryLoadingState(false);
-            renderMarketSummaryStats([]);
-            if (marketSummaryLatestEl) {
-                marketSummaryLatestEl.innerHTML = '';
-                const msgEl = document.createElement('div');
-                msgEl.className = 'market-summary-empty error';
-                msgEl.textContent = (error && error.message) || 'Unable to load market summary.';
-                marketSummaryLatestEl.appendChild(msgEl);
-            }
-            if (!marketSummarySlug && marketSummaryArchiveEl) {
-                marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty error">Unable to load past editions.</div>';
-            } else if (marketSummaryArchiveEl) {
                 marketSummaryArchiveEl.innerHTML = '';
+                marketSummaryArchiveEl.style.display = 'none';
             }
+            return;
         }
+
+        if (marketSummaryArchiveHeadingEl) {
+            marketSummaryArchiveHeadingEl.style.display = '';
+        }
+        setMarketSummaryArchiveLoading();
+
+        const archivePayload = await fetchJson('/api/market-summary/archive?limit=12');
+        marketSummaryArchiveItems = (archivePayload && archivePayload.articles) || [];
+        syncMarketSummaryArchive();
+    }
+
+    function loadMarketSummaryContent() {
+        if (!marketSummarySectionEl) return;
+
+        marketSummaryLatestArticleId = null;
+        marketSummaryArchiveItems = [];
+
+        const tasks = [
+            loadMarketSummaryLatest().catch((error) => {
+                console.error('Latest market summary load error:', error);
+                renderMarketSummaryLatestError((error && error.message) || 'Unable to load market summary.');
+            }),
+            loadMarketSummaryWeekGlance(),
+            loadMarketSummaryArchive().catch((error) => {
+                console.error('Market summary archive load error:', error);
+                renderMarketSummaryArchiveError((error && error.message) || 'Unable to load past editions.');
+            })
+        ];
+
+        Promise.allSettled(tasks);
     }
     // Hide trending-section after a search, show on home
     function showTrendingSection(show) {

@@ -3863,7 +3863,14 @@ def market_summary_latest():
             "error": "Market summary unavailable yet. New articles publish at 4:15 PM ET on trading days."
         }), 404
     return jsonify({
-        "article": serialize_market_summary(latest),
+        "article": serialize_market_summary(latest)
+    })
+
+
+@app.route('/api/market-summary/week-glance', methods=['GET'])
+@limiter.limit("30 per minute")
+def market_summary_week_glance():
+    return jsonify({
         "week_glance": get_market_week_glance()
     })
 
@@ -3896,8 +3903,7 @@ def market_summary_article(summary_slug):
             "error": "Market summary article not found."
         }), 404
     return jsonify({
-        "article": serialize_market_summary(record),
-        "week_glance": get_market_week_glance()
+        "article": serialize_market_summary(record)
     })
 
 
