@@ -975,6 +975,7 @@ function initializeSearchSuggestions() {
             });
 
             const symbolCell = document.createElement('td');
+            symbolCell.dataset.label = 'Symbol';
             const left = document.createElement('div');
             left.className = 'ticker-cell';
             const logo = document.createElement('div');
@@ -994,6 +995,7 @@ function initializeSearchSuggestions() {
             symbolCell.appendChild(left);
 
             const priceCell = document.createElement('td');
+            priceCell.dataset.label = 'Price';
             if (Number.isFinite(item.lastPrice)) {
                 const priceEl = document.createElement('div');
                 priceEl.className = 'price-val';
@@ -1002,6 +1004,7 @@ function initializeSearchSuggestions() {
             }
 
             const updatedCell = document.createElement('td');
+            updatedCell.dataset.label = 'Updated';
             const updatedEl = document.createElement('div');
             updatedEl.className = 'watchlist-updated';
             updatedEl.textContent = item.lastUpdated
@@ -1010,6 +1013,7 @@ function initializeSearchSuggestions() {
             updatedCell.appendChild(updatedEl);
 
             const removeCell = document.createElement('td');
+            removeCell.dataset.label = 'Actions';
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'watchlist-remove-btn';

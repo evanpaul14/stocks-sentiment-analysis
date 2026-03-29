@@ -314,6 +314,15 @@
                 </div>
 
                 <aside class="market-right-col {% if market_summary_slug|default('', true) %}is-hidden{% endif %}">
+                    <div class="stats-card market-summary-overview">
+                        <div class="stats-title">Week at a Glance</div>
+                        <div id="marketSummaryStatsRows">
+                            <div class="stat-row"><span class="stat-label">S&amp;P 500</span><span class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-label">Nasdaq</span><span class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-label">Dow Jones</span><span class="stat-value">--</span></div>
+                        </div>
+                    </div>
+
                     <div class="market-summary-signup subscribe-card" id="marketSummarySignupCard">
                         <div class="subscribe-header">
                             <div class="subscribe-icon">📬</div>
@@ -331,15 +340,6 @@
                             <p class="market-summary-signup-status" id="marketSummarySignupStatus" aria-live="polite"></p>
                         </div>
                         <div class="subscribe-footer">No spam. Unsubscribe anytime.<br>Sent only on trading days.</div>
-                    </div>
-
-                    <div class="stats-card">
-                        <div class="stats-title">Week at a Glance</div>
-                        <div id="marketSummaryStatsRows">
-                            <div class="stat-row"><span class="stat-label">S&amp;P 500</span><span class="stat-value">--</span></div>
-                            <div class="stat-row"><span class="stat-label">Nasdaq</span><span class="stat-value">--</span></div>
-                            <div class="stat-row"><span class="stat-label">Dow Jones</span><span class="stat-value">--</span></div>
-                        </div>
                     </div>
                 </aside>
             </div>
