@@ -28,6 +28,8 @@ body {
     color: var(--text);
     font-family: var(--body);
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     padding-bottom: 48px;
 }
 
@@ -174,6 +176,8 @@ body {
 
 main.container {
     padding-top: 88px;
+    flex: 1 0 auto;
+    width: 100%;
 }
 
 .loading {
@@ -1952,12 +1956,18 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
 }
 
 .site-footer {
-    margin-top: 60px;
+    margin-top: auto;
     padding: 30px 0;
     border-top: 1px solid #222;
-    text-align: center;
+    text-align: right;
     color: #71717a;
     font-size: 14px;
+}
+
+.site-footer .container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
 }
 
 .site-footer a {
@@ -2502,7 +2512,7 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
 }
 .site-footer-links {
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
     gap: 24px;
     margin-bottom: 12px;
     flex-wrap: wrap;
