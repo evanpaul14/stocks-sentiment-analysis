@@ -31,11 +31,23 @@ function buildTrendingPath(source) {
     const normalized = normalizeTrendingSource(source);
     return `/trending-list/${normalized}`;
 }
+
+function queueIdleWork(callback, timeoutMs = 500) {
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(callback, { timeout: timeoutMs });
+        return;
+    }
+    setTimeout(callback, 120);
+}
+
 const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
-const TRENDING_INCLUDE_PRICES = false;
+const TRENDING_INCLUDE_PRICES = true;
 const trendingCache = {};
 const trendingFetchPromises = {};
 const trendingPriceHydrations = new Map();
+const loadedTrendingSources = new Set();
+let trendingLazyObserver = null;
+let trendingLazyInitialized = false;
 const stocktwitsSummaryCache = new Map();
 const stocktwitsSummaryPromises = new Map();
 let stocktwitsSummaryPopover = null;
@@ -55,6 +67,7 @@ const marketSummarySectionEl = document.getElementById('marketSummarySection');
 const marketSummaryLatestEl = document.getElementById('marketSummaryLatest');
 const marketSummaryArchiveEl = document.getElementById('marketSummaryArchive');
 const marketSummaryArchiveHeadingEl = document.getElementById('marketSummaryArchiveHeading');
+const marketSummaryStatsRowsEl = document.getElementById('marketSummaryStatsRows');
 const marketSummaryFormEl = document.getElementById('marketSummarySignupForm');
 const marketSummaryEmailInputEl = document.getElementById('marketSummaryEmail');
 const marketSummarySignupStatusEl = document.getElementById('marketSummarySignupStatus');
@@ -152,23 +165,18 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
     }
 
     function buildTrendChangeBadge(value, extraClass = '') {
-        const rawString = value === null || value === undefined ? '' : String(value);
-        const forceNeutral = rawString.toLowerCase().includes('e');
         const num = Number(value);
-        if (!Number.isFinite(num) && !forceNeutral) return '';
-        const renderNeutral = () => {
-            const classes = ['trending-change', 'neutral'];
-            if (extraClass) classes.push(extraClass);
-            return `<span class="${classes.join(' ')}">0.00%</span>`;
-        };
-        if (forceNeutral || Object.is(num, 0)) {
-            return renderNeutral();
+        if (!Number.isFinite(num)) return '';
+        const classes = ['ticker-change'];
+        if (Object.is(num, 0)) {
+            classes.push('neutral');
+        } else if (num > 0) {
+            classes.push('up');
+        } else {
+            classes.push('down');
         }
-        const direction = num >= 0 ? 'positive' : 'negative';
-        const classes = ['trending-change', direction];
         if (extraClass) classes.push(extraClass);
-        const qualifier = num >= 0 ? 'up' : 'down';
-        return `<span class="${classes.join(' ')}">${qualifier} ${formatSignedPercentage(num)}</span>`;
+        return `<span class="${classes.join(' ')}">${formatSignedPercentage(num)}</span>`;
     }
 
     function updateTrendingChangeBadges(itemEl, changeValue) {
@@ -189,7 +197,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         const list = trendingLists[source];
         if (!list || !ticker) return null;
         const normalized = ticker.toUpperCase();
-        return Array.from(list.querySelectorAll('.trending-item')).find(item => {
+        return Array.from(list.querySelectorAll('.ticker-row, .trending-item')).find(item => {
             return (item.dataset.ticker || '').toUpperCase() === normalized;
         }) || null;
     }
@@ -270,6 +278,143 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         return `${dateStr}, ${hourStr}:${min} ${ampm}`;
     }
 
+    function parseMarketSummaryDate(rawValue) {
+        if (!rawValue) return null;
+        if (rawValue instanceof Date) {
+            return Number.isNaN(rawValue.getTime()) ? null : rawValue;
+        }
+        const text = String(rawValue).trim();
+        if (!text) return null;
+
+        // Parse date-only fields (YYYY-MM-DD) as local calendar dates to avoid timezone shifts.
+        const dateOnlyMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateOnlyMatch) {
+            const year = Number(dateOnlyMatch[1]);
+            const month = Number(dateOnlyMatch[2]);
+            const day = Number(dateOnlyMatch[3]);
+            const localDate = new Date(year, month - 1, day);
+            if (!Number.isNaN(localDate.getTime())) {
+                return localDate;
+            }
+        }
+
+        const parsed = new Date(text);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function resolveMarketSummaryDate(record) {
+        if (!record) return null;
+        return (
+            parseMarketSummaryDate(record.summary_date)
+            || parseMarketSummaryDate(record.published_at)
+            || parseMarketSummaryDate(record.created_at)
+        );
+    }
+
+    function toLocalMidnight(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    function buildMarketSummaryDateMeta(record, { isLatest = false, referenceDate = null } = {}) {
+        const parsed = resolveMarketSummaryDate(record);
+        if (!parsed) {
+            return {
+                context: isLatest ? 'Latest edition' : 'Recent edition',
+                dayName: 'Market Summary',
+                dayDate: 'Date unavailable'
+            };
+        }
+
+        const contextBase = isLatest ? 'Latest edition' : 'Recent edition';
+        let context = contextBase;
+        const localParsed = toLocalMidnight(parsed);
+        const localReference = toLocalMidnight(referenceDate);
+
+        if (localParsed && localReference) {
+            const diffMs = localReference.getTime() - localParsed.getTime();
+            const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays === 0) {
+                context = 'Today';
+            } else if (diffDays === 1) {
+                context = 'Yesterday';
+            } else if (diffDays > 1) {
+                context = `${diffDays} days ago`;
+            }
+        }
+
+        return {
+            context,
+            dayName: parsed.toLocaleDateString(undefined, { weekday: 'long' }),
+            dayDate: parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        };
+    }
+
+    function renderMarketSummaryStats(items) {
+        if (!marketSummaryStatsRowsEl) return;
+        const source = Array.isArray(items) ? items : [];
+
+        const summaryTargets = [
+            { label: 'S&P 500', aliases: ['s&p 500', 'sp500', 'spx', '^gspc', 'gspc'], symbols: ['^gspc', 'gspc', 'spx'] },
+            { label: 'Nasdaq', aliases: ['nasdaq', 'nasdaq composite', 'ixic', '^ixic', 'nasdaq 100', 'ndx'], symbols: ['^ixic', 'ixic', 'ndx'] },
+            { label: 'Dow Jones', aliases: ['dow jones', 'dow', 'djia', '^dji', 'dji'], symbols: ['^dji', 'dji', 'djia'] }
+        ];
+
+        const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const normalizeCompact = (value) => normalize(value).replace(/\s+/g, '');
+        const parseMetricNumber = (value) => {
+            if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+            if (typeof value === 'string') {
+                const cleaned = value.replace(/[%,$\s]/g, '');
+                const parsed = Number(cleaned);
+                return Number.isFinite(parsed) ? parsed : NaN;
+            }
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : NaN;
+        };
+
+        const findMatch = (aliases, symbols) => {
+            const normalizedAliases = aliases.map(alias => normalizeCompact(alias));
+            const normalizedSymbols = symbols.map(symbol => normalizeCompact(symbol));
+
+            // Prefer exact symbol match when week_glance payload includes canonical index symbols.
+            const symbolHit = source.find(item => {
+                const symbol = normalizeCompact(item && item.symbol);
+                return symbol && normalizedSymbols.includes(symbol);
+            });
+            if (symbolHit) return symbolHit;
+
+            return source.find(item => {
+                const haystack = normalizeCompact(`${item && item.label} ${item && item.symbol}`);
+                return normalizedAliases.some(alias => alias && haystack.includes(alias));
+            }) || null;
+        };
+
+        marketSummaryStatsRowsEl.innerHTML = '';
+        summaryTargets.forEach(target => {
+            const match = findMatch(target.aliases, target.symbols);
+            const rawChange = parseMetricNumber(match && (match.week_change_percent ?? match.change_percent));
+            const rawClose = parseMetricNumber(match && match.close);
+            let valueText = '--';
+            let valueClass = 'stat-value';
+
+            if (Number.isFinite(rawChange)) {
+                valueText = formatSignedPercentage(rawChange);
+                valueClass += rawChange >= 0 ? ' stat-value-positive' : ' stat-value-negative';
+            } else if (Number.isFinite(rawClose)) {
+                valueText = formatCurrency(rawClose);
+            }
+
+            const row = document.createElement('div');
+            row.className = 'stat-row';
+            row.innerHTML = `
+                <span class="stat-label">${escapeHtml(target.label)}</span>
+                <span class="${valueClass}">${escapeHtml(valueText)}</span>
+            `;
+            marketSummaryStatsRowsEl.appendChild(row);
+        });
+    }
+
     function renderSentimentSummaryUI(counts, completedTotal = 0, loading = false) {
         updateSentimentProgress(completedTotal, Boolean(loading));
         const positive = counts.positive || 0;
@@ -282,14 +427,52 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             summaryEl.classList.toggle('is-loading', Boolean(loading));
         }
 
-        function percent(val) {
-             if (!total) return loading ? '...' : '0%';
-            return ((val / total) * 100).toFixed(0) + '%';
+        function percentValue(val) {
+            if (!total) return 0;
+            return Math.round((val / total) * 100);
         }
 
-        document.getElementById('positiveCount').textContent = percent(positive);
-        document.getElementById('negativeCount').textContent = percent(negative);
-        document.getElementById('neutralCount').textContent = percent(neutral);
+        function percentText(val) {
+            if (!total) return loading ? '...' : '0%';
+            return `${percentValue(val)}%`;
+        }
+
+        const positivePct = percentValue(positive);
+        const negativePct = percentValue(negative);
+        const neutralPct = Math.max(0, 100 - positivePct - negativePct);
+
+        document.getElementById('positiveCount').textContent = percentText(positive);
+        document.getElementById('negativeCount').textContent = percentText(negative);
+        document.getElementById('neutralCount').textContent = percentText(neutral);
+
+        const positiveBar = document.getElementById('positiveBar');
+        const neutralBar = document.getElementById('neutralBar');
+        const negativeBar = document.getElementById('negativeBar');
+        if (positiveBar) positiveBar.style.width = `${positivePct}%`;
+        if (neutralBar) neutralBar.style.width = `${neutralPct}%`;
+        if (negativeBar) negativeBar.style.width = `${negativePct}%`;
+
+        const donutPrimary = document.getElementById('sentimentDonutPrimary');
+        const donutSecondary = document.getElementById('sentimentDonutSecondary');
+        const positiveArc = document.getElementById('positiveArc');
+        const neutralArc = document.getElementById('neutralArc');
+        const negativeArc = document.getElementById('negativeArc');
+        const circumference = 2 * Math.PI * 30;
+        const positiveArcLen = (positivePct / 100) * circumference;
+        const neutralArcLen = (neutralPct / 100) * circumference;
+        const negativeArcLen = (negativePct / 100) * circumference;
+        if (positiveArc) {
+            positiveArc.setAttribute('stroke-dasharray', `${positiveArcLen} ${circumference}`);
+            positiveArc.setAttribute('stroke-dashoffset', '0');
+        }
+        if (neutralArc) {
+            neutralArc.setAttribute('stroke-dasharray', `${neutralArcLen} ${circumference}`);
+            neutralArc.setAttribute('stroke-dashoffset', `${-positiveArcLen}`);
+        }
+        if (negativeArc) {
+            negativeArc.setAttribute('stroke-dasharray', `${negativeArcLen} ${circumference}`);
+            negativeArc.setAttribute('stroke-dashoffset', `${-(positiveArcLen + neutralArcLen)}`);
+        }
 
         const overallElement = document.getElementById('overallSentiment');
         let overall = '—';
@@ -306,8 +489,21 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         } else if (loading) {
             overall = '…';
         }
-        overallElement.textContent = (overall || '—').toUpperCase();
-        overallElement.className = 'sentiment-value ' + overallClass;
+        const overallLabelMap = {
+            positive: '↑ Overall Bullish',
+            negative: '↓ Overall Bearish',
+            neutral: '→ Overall Neutral'
+        };
+        const overallLabel = total > 0 ? (overallLabelMap[overall] || '→ Overall Neutral') : (loading ? 'Analyzing…' : 'No sentiment');
+        overallElement.textContent = overallLabel;
+        overallElement.className = `overall-sent sentiment-value ${overallClass}`;
+
+        if (donutPrimary) {
+            donutPrimary.textContent = total > 0 ? `${Math.max(positivePct, neutralPct, negativePct)}%` : '0%';
+        }
+        if (donutSecondary) {
+            donutSecondary.textContent = total > 0 ? (overall || 'neutral') : 'neutral';
+        }
     }
 
     function resetSentimentSummaryUI() {
@@ -493,11 +689,13 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         if (!watchlistToggleBtn) return;
         if (!symbol) {
             watchlistToggleBtn.style.display = 'none';
+            watchlistToggleBtn.classList.add('is-hidden');
             watchlistToggleBtn.removeAttribute('data-symbol');
             return;
         }
         const normalized = symbol.toUpperCase();
         watchlistToggleBtn.style.display = 'inline-flex';
+        watchlistToggleBtn.classList.remove('is-hidden');
         watchlistToggleBtn.dataset.symbol = normalized;
         watchlistToggleBtn.dataset.company = companyName || normalized;
         if (Number.isFinite(price)) {
@@ -535,40 +733,50 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         }
         watchlistListEl.innerHTML = '';
         items.forEach(item => {
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'watchlist-item';
-            itemDiv.title = `${item.symbol} · Click to load`;
-            itemDiv.addEventListener('click', () => {
+            const row = document.createElement('tr');
+            row.className = 'watchlist-row';
+            row.title = `${item.symbol} · Click to load`;
+            row.addEventListener('click', () => {
                 document.getElementById('companyInput').value = item.symbol;
                 searchStock();
             });
 
+            const symbolCell = document.createElement('td');
             const left = document.createElement('div');
-            left.className = 'watchlist-item-left';
+            left.className = 'ticker-cell';
+            const logo = document.createElement('div');
+            logo.className = 'ticker-logo';
+            logo.textContent = item.symbol.charAt(0);
             const symbolEl = document.createElement('div');
-            symbolEl.className = 'watchlist-symbol';
+            symbolEl.className = 'ticker-text-sym';
             symbolEl.textContent = item.symbol;
             const nameEl = document.createElement('div');
-            nameEl.className = 'watchlist-name';
+            nameEl.className = 'ticker-text-name';
             nameEl.textContent = item.companyName || '';
-            left.appendChild(symbolEl);
-            left.appendChild(nameEl);
+            const labelWrap = document.createElement('div');
+            labelWrap.appendChild(symbolEl);
+            labelWrap.appendChild(nameEl);
+            left.appendChild(logo);
+            left.appendChild(labelWrap);
+            symbolCell.appendChild(left);
 
-            const meta = document.createElement('div');
-            meta.className = 'watchlist-meta';
+            const priceCell = document.createElement('td');
             if (Number.isFinite(item.lastPrice)) {
                 const priceEl = document.createElement('div');
-                priceEl.className = 'watchlist-price';
+                priceEl.className = 'price-val';
                 priceEl.textContent = formatCurrency(item.lastPrice);
-                meta.appendChild(priceEl);
+                priceCell.appendChild(priceEl);
             }
+
+            const updatedCell = document.createElement('td');
             const updatedEl = document.createElement('div');
             updatedEl.className = 'watchlist-updated';
             updatedEl.textContent = item.lastUpdated
                 ? `Updated ${formatRelativeTimeFromISOString(item.lastUpdated)}`
                 : 'Tap to refresh';
-            meta.appendChild(updatedEl);
+            updatedCell.appendChild(updatedEl);
 
+            const removeCell = document.createElement('td');
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'watchlist-remove-btn';
@@ -581,11 +789,13 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
                     updateWatchlistToggle(item.symbol, item.companyName, Number(watchlistToggleBtn.dataset.price));
                 }
             });
-            meta.appendChild(removeBtn);
+            removeCell.appendChild(removeBtn);
 
-            itemDiv.appendChild(left);
-            itemDiv.appendChild(meta);
-            watchlistListEl.appendChild(itemDiv);
+            row.appendChild(symbolCell);
+            row.appendChild(priceCell);
+            row.appendChild(updatedCell);
+            row.appendChild(removeCell);
+            watchlistListEl.appendChild(row);
         });
         if (isWatchlistPage) {
             watchlistSectionEl.style.display = '';
@@ -1015,43 +1225,41 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         list.innerHTML = '';
         items.slice(0, 10).forEach((item, idx) => {
             const div = document.createElement('div');
-            div.className = 'trending-item';
+            div.className = 'ticker-row';
             div.dataset.ticker = (item.ticker || '').toUpperCase();
             div.onclick = () => {
                 document.getElementById('companyInput').value = item.ticker;
                 searchStock();
             };
 
-            const watchersCount = Number(item.watchlist_count);
-            let watchersTag = '';
-            if (Number.isFinite(watchersCount) && watchersCount > 0) {
-                watchersTag = `<span class="trending-tag">${formatNumber(watchersCount)} watchers</span>`;
-            } else {
-                watchersTag = '<span class="trending-tag" style="background:rgba(88,28,135,0.25);color:#e9d5ff;">Watchers N/A</span>';
-            }
             const changeValue = item.price_change_percent ?? item.change_percent;
-            const metricsPieces = [];
-            if (watchersTag) metricsPieces.push(watchersTag);
-            const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
-            const infoButtonHtml = item.ticker && (item.rank || idx + 1) <= 10
-                ? '<button class="trending-info-btn" type="button" aria-label="View StockTwits summary"><span class="icon">i</span></button>'
-                : '';
+            const priceValue = formatOptionalCurrency(item.price);
+            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
+            const safePriceText = escapeHtml(priceValue || '--');
+            const trendingScore = Number(item.trending_score);
+            const scoreLabel = Number.isFinite(trendingScore) ? trendingScore.toFixed(2) : '--';
             const safeTicker = escapeHtml(item.ticker || 'N/A');
             const safeName = escapeHtml(item.name || '');
             const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
+            const infoButtonHtml = item.ticker && (item.rank || idx + 1) <= 10
+                ? '<button class="trending-info-btn" type="button" aria-label="View StockTwits summary"><span class="icon">i</span></button>'
+                : '';
 
             div.innerHTML = `
-                <span class="trending-rank">${safeRank}.</span>
-                <div class="trending-card-content">
-                    <div class="trending-ticker-row">
-                        <span class="trending-ticker">${safeTicker}</span>
-                        ${infoButtonHtml}
-                        <span class="trending-change-inline" data-change-inline></span>
-                    </div>
-                    ${metricsRow}
-                    <span class="trending-name">${safeName}</span>
+                <span class="ticker-rank">${safeRank}</span>
+                <div class="ticker-info">
+                    <div class="ticker-symbol">${safeTicker} ${infoButtonHtml}</div>
+                    <div class="ticker-name">${safeName}</div>
+                    <span class="trending-change-inline" data-change-inline></span>
                 </div>
-                <div class="trending-card-aside" data-change-right></div>
+                <div class="score-wrap">
+                    <div class="score-val">${scoreLabel}</div>
+                    <div class="score-label">Trend Score</div>
+                </div>
+                <div class="ticker-right">
+                    <div class="ticker-price ${priceClass}">${safePriceText}</div>
+                    <div data-change-right></div>
+                </div>
             `;
             const infoBtn = div.querySelector('.trending-info-btn');
             if (infoBtn) {
@@ -1076,7 +1284,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         list.innerHTML = '';
         items.slice(0, 10).forEach((item, idx) => {
             const div = document.createElement('div');
-            div.className = 'trending-item';
+            div.className = 'ticker-row';
             div.dataset.ticker = (item.ticker || '').toUpperCase();
             div.onclick = () => {
                 document.getElementById('companyInput').value = item.ticker;
@@ -1085,29 +1293,31 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const pct = Number(item.pct_increase || 0);
             const pctClass = pct < 0 ? 'negative' : 'positive';
             const pctLabel = `${pct >= 0 ? '+' : ''}${Math.round(pct)}% mentions`;
-            const tag = item.tag ? `<span class="trending-tag">${escapeHtml(item.tag)}</span>` : '';
-            const metricsPieces = [];
-            if (tag) metricsPieces.push(tag);
-            const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
             const safeTicker = escapeHtml(item.ticker || 'N/A');
             const safeName = escapeHtml(item.name || '');
             const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
             const safePctLabel = escapeHtml(pctLabel);
+            const mentionsLabel = Number.isFinite(Number(item.mentions)) ? `${formatNumber(Number(item.mentions))} mentions` : safePctLabel;
+            const changeValue = item.price_change_percent ?? item.change_percent;
+            const priceValue = formatOptionalCurrency(item.price);
+            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
+            const safePriceText = escapeHtml(priceValue || '--');
 
             div.innerHTML = `
-                <span class="trending-rank">${safeRank}.</span>
-                <div class="trending-card-content">
-                    <div class="trending-ticker-row">
-                        <span class="trending-ticker">${safeTicker}</span>
-                        <span class="trending-change-inline" data-change-inline></span>
-                    </div>
-                    ${metricsRow}
-                    <span class="trending-name">${safeName}</span>
-                    <span class="trending-pct ${pctClass}">${safePctLabel}</span>
+                <span class="ticker-rank">${safeRank}</span>
+                <div class="ticker-info">
+                    <div class="ticker-symbol">${safeTicker}</div>
+                    <div class="ticker-name">${safeName}</div>
+                    <div class="ticker-mentions">${mentionsLabel}</div>
+                    <div class="ticker-mentions-delta ${pctClass}">${safePctLabel}</div>
+                    <span class="trending-change-inline" data-change-inline></span>
                 </div>
-                <div class="trending-card-aside" data-change-right></div>
+                <div class="ticker-right">
+                    <div class="ticker-price ${priceClass}">${safePriceText}</div>
+                    <div data-change-right></div>
+                </div>
             `;
-            updateTrendingChangeBadges(div, item.price_change_percent);
+            updateTrendingChangeBadges(div, changeValue);
             list.appendChild(div);
         });
     }
@@ -1123,7 +1333,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         list.innerHTML = '';
         items.slice(0, 10).forEach((item, idx) => {
             const div = document.createElement('div');
-            div.className = 'trending-item';
+            div.className = 'ticker-row';
             div.dataset.ticker = (item.ticker || '').toUpperCase();
             div.onclick = () => {
                 document.getElementById('companyInput').value = item.ticker;
@@ -1133,26 +1343,26 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const volumeLabel = Number.isFinite(volumeCount) && volumeCount > 0
                 ? `${formatNumber(volumeCount)} shares`
                 : 'Volume unavailable';
-            const volumeTag = `<span class="trending-tag">${volumeLabel}</span>`;
             const changeValue = item.price_change_percent ?? item.change_percent;
-            const metricsPieces = [];
-            if (volumeTag) metricsPieces.push(volumeTag);
-            const metricsRow = metricsPieces.length ? `<div class="trending-metrics-row">${metricsPieces.join('')}</div>` : '';
             const safeTicker = escapeHtml(item.ticker || 'N/A');
             const safeName = escapeHtml(item.name || '');
             const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
+            const priceValue = formatOptionalCurrency(item.price);
+            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
+            const safePriceText = escapeHtml(priceValue || '--');
 
             div.innerHTML = `
-                <span class="trending-rank">${safeRank}.</span>
-                <div class="trending-card-content">
-                    <div class="trending-ticker-row">
-                        <span class="trending-ticker">${safeTicker}</span>
-                        <span class="trending-change-inline" data-change-inline></span>
-                    </div>
-                    ${metricsRow}
-                    <span class="trending-name">${safeName}</span>
+                <span class="ticker-rank">${safeRank}</span>
+                <div class="ticker-info">
+                    <div class="ticker-symbol">${safeTicker}</div>
+                    <div class="ticker-name">${safeName}</div>
+                    <div class="ticker-mentions">${volumeLabel}</div>
+                    <span class="trending-change-inline" data-change-inline></span>
                 </div>
-                <div class="trending-card-aside" data-change-right></div>
+                <div class="ticker-right">
+                    <div class="ticker-price ${priceClass}">${safePriceText}</div>
+                    <div data-change-right></div>
+                </div>
             `;
             updateTrendingChangeBadges(div, changeValue);
             list.appendChild(div);
@@ -1249,24 +1459,89 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             marketSummaryLatestEl.innerHTML = '<div class="market-summary-empty">Latest edition is not available yet. Check back after 4:15 PM ET.</div>';
             return;
         }
-        const card = document.createElement('article');
-        card.className = 'market-summary-card';
-        const titleEl = document.createElement('h2');
-        titleEl.className = 'market-summary-title';
-        titleEl.textContent = article.title || 'Market Summary';
-        const metaEl = document.createElement('div');
-        metaEl.className = 'market-summary-meta';
-        metaEl.textContent = `Published ${formatMarketSummaryTimestamp(article.published_at || article.created_at)}`;
-        const heroEl = renderMarketSummaryHero(article.image, article.title);
-        const bodyEl = document.createElement('div');
-        bodyEl.className = 'market-summary-body';
-        createParagraphNodes(bodyEl, article.body);
-        card.appendChild(titleEl);
-        card.appendChild(metaEl);
-        if (heroEl) {
-            card.appendChild(heroEl);
+
+        const buildSummaryChips = (indices) => {
+            if (!Array.isArray(indices) || !indices.length) {
+                return '<span class="chip chip-neutral">No index data</span>';
+            }
+            return indices.slice(0, 3).map((idx) => {
+                const label = escapeHtml(idx.label || idx.symbol || 'Index');
+                const raw = Number(idx.change_percent);
+                if (Number.isFinite(raw)) {
+                    const cls = raw > 0 ? 'chip-up' : (raw < 0 ? 'chip-down' : 'chip-neutral');
+                    return `<span class="chip ${cls}">${label} ${formatSignedPercentage(raw)}</span>`;
+                }
+                return `<span class="chip chip-neutral">${label} —</span>`;
+            }).join('');
+        };
+
+        const buildSummaryBody = (bodyText, expanded = false) => {
+            const text = (bodyText || '').trim();
+            if (!text) {
+                return '<div class="summary-body">Summary coming soon.</div>';
+            }
+            return `<div class="summary-body${expanded ? ' expanded' : ''}">${escapeHtml(text)}</div>`;
+        };
+
+        if (!marketSummarySlug) {
+            const meta = buildMarketSummaryDateMeta(article, {
+                isLatest: true,
+                referenceDate: new Date()
+            });
+            const headline = escapeHtml(article.title || 'Market Summary');
+            const card = document.createElement('article');
+            card.className = 'summary-card latest';
+            card.innerHTML = `
+                <div class="summary-card-top">
+                    <div class="day-col">
+                        <div class="day-context">${escapeHtml(meta.context)}</div>
+                        <div class="day-name">${escapeHtml(meta.dayName)} <span class="latest-badge">LATEST</span></div>
+                        <div class="day-date">${escapeHtml(meta.dayDate)}</div>
+                    </div>
+                    <div class="divider-v"></div>
+                    <div class="summary-content">
+                        <div class="summary-headline">${headline}</div>
+                        ${buildSummaryBody(article.body, true)}
+                    </div>
+                </div>
+                <div class="summary-card-footer">
+                    <div class="index-chips">${buildSummaryChips(article.indices || [])}</div>
+                </div>
+            `;
+            if (article.permalink) {
+                card.addEventListener('click', () => {
+                    window.location.href = article.permalink;
+                });
+            }
+            marketSummaryLatestEl.appendChild(card);
+            return;
         }
+
+        const meta = buildMarketSummaryDateMeta(article);
+        const card = document.createElement('article');
+        card.className = 'summary-card summary-card-detail';
+        card.innerHTML = `
+            <div class="summary-card-top summary-card-detail-top">
+                <div class="day-col">
+                    <div class="day-context">${escapeHtml(meta.context)}</div>
+                    <div class="day-name">${escapeHtml(meta.dayName)}</div>
+                    <div class="day-date">${escapeHtml(meta.dayDate)}</div>
+                </div>
+                <div class="divider-v"></div>
+                <div class="summary-content">
+                    <div class="summary-headline">${escapeHtml(article.title || 'Market Summary')}</div>
+                    <div class="summary-detail-published">Published ${escapeHtml(formatMarketSummaryTimestamp(article.published_at || article.created_at))}</div>
+                </div>
+            </div>
+        `;
+        const heroEl = renderMarketSummaryHero(article.image, article.title);
+        if (heroEl) card.appendChild(heroEl);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'summary-detail-body';
+        createParagraphNodes(bodyEl, article.body);
         card.appendChild(bodyEl);
+
         const indicesEl = renderMarketSummaryIndices(article.indices || []);
         if (indicesEl) {
             card.appendChild(indicesEl);
@@ -1298,69 +1573,56 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             marketSummaryArchiveEl.innerHTML = '<div class="market-summary-empty">No earlier editions</div>';
             return;
         }
-        const list = document.createElement('ul');
-        list.className = 'market-summary-archive-list';
-        filtered.forEach(item => {
-            const li = document.createElement('li');
-            li.className = 'market-summary-archive-entry';
-            const link = document.createElement('a');
-            link.className = 'market-summary-archive-link';
-            const href = item.permalink || (item.slug ? `/market-summary/${encodeURIComponent(item.slug)}` : '/market-summary');
-            link.href = href;
-            link.setAttribute('aria-label', `Read ${item.title || 'market summary'}`);
 
-            const thumb = document.createElement('div');
-            thumb.className = 'market-summary-archive-thumb';
-            if (item.image && item.image.url) {
-                const img = document.createElement('img');
-                img.src = item.image.url;
-                img.alt = item.image.description || `Thumbnail for ${item.title || 'market summary'}`;
-                img.loading = 'lazy';
-                thumb.appendChild(img);
-            } else {
-                thumb.classList.add('is-placeholder');
-                const placeholder = document.createElement('span');
-                const seed = item.summary_date || item.published_at || item.created_at;
-                if (seed) {
-                    const placeholderDate = new Date(seed);
-                    if (!Number.isNaN(placeholderDate.getTime())) {
-                        placeholder.textContent = placeholderDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                    } else {
-                        placeholder.textContent = 'SSA';
-                    }
-                } else {
-                    placeholder.textContent = 'SSA';
-                }
-                thumb.appendChild(placeholder);
+        const buildSummaryChips = (indices) => {
+            if (!Array.isArray(indices) || !indices.length) {
+                return '<span class="chip chip-neutral">No index data</span>';
             }
+            return indices.slice(0, 3).map((idx) => {
+                const label = escapeHtml(idx.label || idx.symbol || 'Index');
+                const raw = Number(idx.change_percent);
+                if (Number.isFinite(raw)) {
+                    const cls = raw > 0 ? 'chip-up' : (raw < 0 ? 'chip-down' : 'chip-neutral');
+                    return `<span class="chip ${cls}">${label} ${formatSignedPercentage(raw)}</span>`;
+                }
+                return `<span class="chip chip-neutral">${label} —</span>`;
+            }).join('');
+        };
 
-            const info = document.createElement('div');
-            info.className = 'market-summary-archive-info';
-            const title = document.createElement('div');
-            title.className = 'market-summary-archive-title';
-            title.textContent = item.title || 'Market Summary';
-            const meta = document.createElement('div');
-            meta.className = 'market-summary-archive-meta';
-            meta.textContent = `Published ${formatMarketSummaryTimestamp(item.published_at || item.created_at)}`;
-            info.appendChild(title);
-            info.appendChild(meta);
+        const referenceDate = new Date();
+        filtered.forEach((item) => {
+            const href = item.permalink || (item.slug ? `/market-summary/${encodeURIComponent(item.slug)}` : '/market-summary');
+            const meta = buildMarketSummaryDateMeta(item, { referenceDate });
 
-            link.appendChild(thumb);
-            link.appendChild(info);
-            li.appendChild(link);
-            list.appendChild(li);
+            const card = document.createElement('a');
+            card.className = 'summary-card';
+            card.href = href;
+            card.setAttribute('aria-label', `Read ${item.title || 'market summary'}`);
+            card.innerHTML = `
+                <div class="summary-card-top">
+                    <div class="day-col">
+                        <div class="day-context">${escapeHtml(meta.context)}</div>
+                        <div class="day-name">${escapeHtml(meta.dayName)}</div>
+                        <div class="day-date">${escapeHtml(meta.dayDate)}</div>
+                    </div>
+                    <div class="divider-v"></div>
+                    <div class="summary-content">
+                        <div class="summary-headline">${escapeHtml(item.title || 'Market Summary')}</div>
+                        <div class="summary-body">${escapeHtml((item.body || '').trim() || 'Summary coming soon.')}</div>
+                    </div>
+                </div>
+                <div class="summary-card-footer">
+                    <div class="index-chips">${buildSummaryChips(item.indices || [])}</div>
+                </div>
+            `;
+            marketSummaryArchiveEl.appendChild(card);
         });
-        marketSummaryArchiveEl.appendChild(list);
     }
 
     function setActiveTrendingColumn(source) {
         const columns = document.querySelectorAll('.trending-column');
         columns.forEach(column => {
-            if (column.dataset.source === source) {
-                column.classList.add('active');
-            } else {
-                column.classList.remove('active');
-            }
+            column.classList.add('active');
         });
     }
 
@@ -1504,6 +1766,14 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         hideWatchlistForStockView();
 
         document.getElementById('companyName').textContent = stockInfo.companyName;
+        const symbolEl = document.getElementById('companySymbol');
+        if (symbolEl) {
+            symbolEl.textContent = stockInfo.symbol || '--';
+        }
+        const logoEl = document.getElementById('stockLogo');
+        if (logoEl) {
+            logoEl.textContent = (stockInfo.symbol || '?').charAt(0);
+        }
         document.getElementById('stockPrice').textContent = formatCurrency(stockInfo.price);
 
         const changeClass = stockInfo.change >= 0 ? 'positive' : 'negative';
@@ -1537,28 +1807,34 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         aboutTextElement.dataset.fullText = fullDescription;
         aboutTextElement.dataset.shortText = shortText;
         aboutTextElement.textContent = aboutTextElement.dataset.shortText;
+        aboutTextElement.classList.remove('expanded');
 
         if (needsToggle) {
             toggleBtn.style.display = 'inline';
-            toggleBtn.textContent = 'View More';
+            toggleBtn.classList.remove('is-hidden');
+            toggleBtn.textContent = 'Read more ↓';
             toggleBtn.dataset.expanded = 'false';
             toggleBtn.onclick = () => {
                 const expanded = toggleBtn.dataset.expanded === 'true';
                 if (expanded) {
                     aboutTextElement.textContent = aboutTextElement.dataset.shortText;
-                    toggleBtn.textContent = 'View More';
+                    aboutTextElement.classList.remove('expanded');
+                    toggleBtn.textContent = 'Read more ↓';
                     toggleBtn.dataset.expanded = 'false';
                 } else {
                     aboutTextElement.textContent = aboutTextElement.dataset.fullText;
-                    toggleBtn.textContent = 'View Less';
+                    aboutTextElement.classList.add('expanded');
+                    toggleBtn.textContent = 'Read less ↑';
                     toggleBtn.dataset.expanded = 'true';
                 }
             };
         } else {
             toggleBtn.style.display = 'none';
+            toggleBtn.classList.add('is-hidden');
             toggleBtn.textContent = '';
             toggleBtn.dataset.expanded = 'false';
             toggleBtn.onclick = null;
+            aboutTextElement.classList.remove('expanded');
         }
         document.getElementById('ceo').textContent = stockInfo.ceo || 'N/A';
         document.getElementById('employees').textContent = stockInfo.employees ? formatNumber(stockInfo.employees) : 'N/A';
@@ -1587,7 +1863,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         newsContainer.innerHTML = '';
 
         if (articles.length === 0) {
-            newsContainer.innerHTML = '<div style="color:#888;">No news articles available.</div>';
+            newsContainer.innerHTML = '<div class="news-pending">No news articles available.</div>';
             renderSentimentSummaryUI(latestSentimentCounts, 0, false);
             setSentimentStatus('No articles to analyze.');
             return;
@@ -1722,9 +1998,77 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         };
     }
 
+    function sanitizeNewsText(value, fallback = '') {
+        const raw = (value || '').toString().trim();
+        if (!raw) {
+            return fallback;
+        }
+
+        const entityDecoder = document.createElement('textarea');
+        entityDecoder.innerHTML = raw;
+        const decoded = (entityDecoder.value || raw).trim();
+
+        const parsed = new DOMParser().parseFromString(decoded, 'text/html');
+        const readable = (parsed.body?.textContent || decoded)
+            .replace(/\u00a0/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        return readable || fallback;
+    }
+
+    function decodeHtmlEntities(value) {
+        const entityDecoder = document.createElement('textarea');
+        entityDecoder.innerHTML = (value || '').toString();
+        return entityDecoder.value || (value || '').toString();
+    }
+
+    function buildNewsDescriptionContent(article) {
+        const descriptionWrapper = document.createElement('span');
+        const rawDescription = (article.description || '').toString().trim();
+
+        if (!rawDescription) {
+            descriptionWrapper.textContent = 'No summary provided.';
+            return descriptionWrapper;
+        }
+
+        const decoded = decodeHtmlEntities(rawDescription).trim();
+        const parsed = new DOMParser().parseFromString(decoded, 'text/html');
+        const embeddedLink = parsed.body.querySelector('a[href]');
+
+        const linkEl = document.createElement('a');
+        const linkHref = embeddedLink?.getAttribute('href') || article.link || '';
+        const linkText = embeddedLink
+            ? sanitizeNewsText(embeddedLink.textContent, 'Read article')
+            : sanitizeNewsText(decoded, 'No summary provided.');
+
+        if (linkHref) {
+            linkEl.href = linkHref;
+            linkEl.target = '_blank';
+            linkEl.rel = 'noopener noreferrer';
+            linkEl.textContent = linkText;
+            linkEl.addEventListener('click', event => event.stopPropagation());
+            descriptionWrapper.appendChild(linkEl);
+        } else {
+            descriptionWrapper.textContent = linkText;
+        }
+
+        const embeddedSource = sanitizeNewsText(parsed.body.querySelector('font')?.textContent || '', '');
+        const sourceText = embeddedSource || sanitizeNewsText(article.source, '');
+        if (sourceText && descriptionWrapper.childNodes.length) {
+            descriptionWrapper.appendChild(document.createTextNode('  '));
+            const sourceEl = document.createElement('span');
+            sourceEl.className = 'news-description-source';
+            sourceEl.textContent = sourceText;
+            descriptionWrapper.appendChild(sourceEl);
+        }
+
+        return descriptionWrapper;
+    }
+
     function buildNewsArticleElement(article, badgeText, badgeClass) {
         const articleDiv = document.createElement('div');
-        articleDiv.className = 'news-article';
+        articleDiv.className = 'news-article news-item';
 
         if (article.link) {
             articleDiv.addEventListener('click', () => window.open(article.link, '_blank'));
@@ -1733,39 +2077,44 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         }
 
         const publishedDate = article.publishedAt ? formatDate(article.publishedAt) : 'Recently updated';
-        const sourceLabel = article.source ? `${article.source} • ${publishedDate}` : publishedDate;
-        const description = article.description || 'No summary provided.';
-        const actionCopy = article.link ? 'Click to read more' : 'Coverage updated recently';
+        const sourceLabel = sanitizeNewsText(article.source, 'News');
+        let tagClass = 'tag-neu';
+        if ((badgeClass || '').includes('positive')) {
+            tagClass = 'tag-pos';
+        } else if ((badgeClass || '').includes('negative')) {
+            tagClass = 'tag-neg';
+        }
 
-        const sourceEl = document.createElement('div');
-        sourceEl.className = 'news-source';
-        sourceEl.textContent = sourceLabel;
+        const sentimentTagEl = document.createElement('span');
+        sentimentTagEl.className = `news-sent-tag ${tagClass}`;
+        sentimentTagEl.textContent = (badgeText || 'N/A').slice(0, 3);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'news-body';
 
         const titleEl = document.createElement('div');
-        titleEl.className = 'news-title';
-        titleEl.textContent = article.title || 'Untitled coverage';
-
-        const descriptionEl = document.createElement('div');
-        descriptionEl.className = 'news-description';
-        descriptionEl.textContent = description;
+        titleEl.className = 'news-title news-title-text';
+        titleEl.textContent = sanitizeNewsText(article.title, 'Untitled coverage');
 
         const metaEl = document.createElement('div');
         metaEl.className = 'news-meta';
 
-        const actionEl = document.createElement('span');
-        actionEl.textContent = actionCopy;
+        const sourceEl = document.createElement('span');
+        sourceEl.className = 'news-source';
+        sourceEl.textContent = sourceLabel;
 
-        const badgeEl = document.createElement('span');
-        badgeEl.className = badgeClass || 'sentiment-badge neutral muted';
-        badgeEl.textContent = badgeText || 'No result';
+        const timeEl = document.createElement('span');
+        timeEl.className = 'news-time';
+        timeEl.textContent = publishedDate;
 
-        metaEl.appendChild(actionEl);
-        metaEl.appendChild(badgeEl);
+        metaEl.appendChild(sourceEl);
+        metaEl.appendChild(timeEl);
 
-        articleDiv.appendChild(sourceEl);
-        articleDiv.appendChild(titleEl);
-        articleDiv.appendChild(descriptionEl);
-        articleDiv.appendChild(metaEl);
+        bodyEl.appendChild(titleEl);
+        bodyEl.appendChild(metaEl);
+
+        articleDiv.appendChild(sentimentTagEl);
+        articleDiv.appendChild(bodyEl);
 
         return articleDiv;
     }
@@ -1951,7 +2300,11 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             loadMarketSummaryContent();
         } else if (isTrendingPage) {
             showTrendingSection(true);
-            loadTrendingStocks();
+            initializeTrendingLazyLoading({
+                eagerSource: currentTrendingSource,
+                includePrices: TRENDING_INCLUDE_PRICES,
+                idlePrefetch: true
+            });
             const canonicalPath = buildTrendingPath(currentTrendingSource);
             if (window.location.pathname !== canonicalPath) {
                 navigateToTrendingSource(currentTrendingSource, { replaceState: true });
@@ -2033,6 +2386,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
                 const items = data.data || [];
                 setTrendingCache(source, items, includePrices);
                 renderTrendingData(source, items);
+                loadedTrendingSources.add(source);
                 if (!includePrices) {
                     hydrateTrendingPrices(source, items);
                 }
@@ -2058,19 +2412,112 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         return fetchPromise;
     }
 
+    function loadTrendingSourcesAsync(sources, options = {}) {
+        const sourceList = (Array.isArray(sources) ? sources : TRENDING_SOURCES)
+            .map(source => normalizeTrendingSource(source));
+        const uniqueSources = Array.from(new Set(sourceList));
+        return Promise.allSettled(uniqueSources.map(source => loadTrendingSource(source, options)));
+    }
+
+    function disconnectTrendingLazyObserver() {
+        if (!trendingLazyObserver) return;
+        trendingLazyObserver.disconnect();
+        trendingLazyObserver = null;
+    }
+
+    function initializeTrendingLazyLoading(options = {}) {
+        const {
+            eagerSource = currentTrendingSource,
+            includePrices = TRENDING_INCLUDE_PRICES,
+            idlePrefetch = true
+        } = options;
+
+        if (trendingLazyInitialized) {
+            return;
+        }
+        trendingLazyInitialized = true;
+
+        const columns = Array.from(document.querySelectorAll('#trendingColumns .trending-column[data-source]'));
+        if (!columns.length) {
+            loadTrendingStocks({ includePrices });
+            return;
+        }
+
+        const loadSourceIfNeeded = (source) => {
+            const normalized = normalizeTrendingSource(source);
+            if (loadedTrendingSources.has(normalized)) {
+                return;
+            }
+            loadTrendingSource(normalized, { includePrices });
+        };
+
+        const prioritizedSource = normalizeTrendingSource(eagerSource);
+        loadSourceIfNeeded(prioritizedSource);
+
+        if (typeof window !== 'undefined' && typeof window.IntersectionObserver === 'function') {
+            trendingLazyObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) {
+                        return;
+                    }
+                    const source = entry.target && entry.target.dataset ? entry.target.dataset.source : null;
+                    if (!source) {
+                        return;
+                    }
+                    loadSourceIfNeeded(source);
+                    if (trendingLazyObserver) {
+                        trendingLazyObserver.unobserve(entry.target);
+                    }
+                });
+            }, {
+                rootMargin: '220px 0px',
+                threshold: 0.01
+            });
+
+            columns.forEach((column) => {
+                const source = column.dataset ? column.dataset.source : null;
+                if (!source || normalizeTrendingSource(source) === prioritizedSource) {
+                    return;
+                }
+                trendingLazyObserver.observe(column);
+            });
+        } else {
+            loadTrendingSourcesAsync(
+                columns
+                    .map(column => column.dataset && column.dataset.source)
+                    .filter(source => source && normalizeTrendingSource(source) !== prioritizedSource),
+                { includePrices }
+            );
+        }
+
+        if (idlePrefetch) {
+            queueIdleWork(() => {
+                const remaining = columns
+                    .map(column => column.dataset && column.dataset.source)
+                    .filter(Boolean)
+                    .filter(source => !loadedTrendingSources.has(normalizeTrendingSource(source)));
+                if (remaining.length) {
+                    loadTrendingSourcesAsync(remaining, { includePrices });
+                }
+            }, 900);
+        }
+    }
+
     function loadTrendingStocks(options = {}) {
         const mergedOptions = {
             includePrices: TRENDING_INCLUDE_PRICES,
             ...options
         };
-        TRENDING_SOURCES.forEach(source => {
-            loadTrendingSource(source, mergedOptions);
-        });
+        loadTrendingSourcesAsync(TRENDING_SOURCES, mergedOptions);
     }
 
     function ensureHomeTrendingLoaded() {
         if (homeTrendingInitialized || isTrendingPage) return;
-        loadTrendingStocks();
+        initializeTrendingLazyLoading({
+            eagerSource: 'stocktwits',
+            includePrices: TRENDING_INCLUDE_PRICES,
+            idlePrefetch: true
+        });
         homeTrendingInitialized = true;
     }
 
@@ -2079,14 +2526,23 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         try {
             if (marketSummarySlug) {
                 let standaloneArticle = initialMarketSummaryArticle;
-                if (!standaloneArticle) {
+                let weekGlanceItems = [];
+                try {
                     const articlePayload = await fetchJson(`/api/market-summary/${encodeURIComponent(marketSummarySlug)}`);
-                    standaloneArticle = articlePayload && articlePayload.article;
+                    if (articlePayload && articlePayload.article) {
+                        standaloneArticle = articlePayload.article;
+                    }
+                    weekGlanceItems = (articlePayload && articlePayload.week_glance) || [];
+                } catch (error) {
+                    if (!standaloneArticle) {
+                        throw error;
+                    }
                 }
                 if (!standaloneArticle) {
                     throw new Error('Market summary article unavailable.');
                 }
                 renderMarketSummaryLatest(standaloneArticle);
+                renderMarketSummaryStats(weekGlanceItems.length ? weekGlanceItems : (standaloneArticle.indices || []));
                 if (marketSummaryArchiveHeadingEl) {
                     marketSummaryArchiveHeadingEl.style.display = 'none';
                 }
@@ -2104,6 +2560,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             const archiveItems = (archivePayload && archivePayload.articles) || [];
             renderMarketSummaryLatest(latestArticle);
             renderMarketSummaryArchive(archiveItems, latestArticle && latestArticle.id);
+            renderMarketSummaryStats((latestPayload && latestPayload.week_glance) || (latestArticle && latestArticle.indices) || []);
             if (marketSummaryArchiveHeadingEl) {
                 marketSummaryArchiveHeadingEl.style.display = '';
             }
@@ -2112,6 +2569,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             }
         } catch (error) {
             console.error('Market summary load error:', error);
+            renderMarketSummaryStats([]);
             if (marketSummaryLatestEl) {
                 marketSummaryLatestEl.innerHTML = '';
                 const msgEl = document.createElement('div');
@@ -2147,32 +2605,14 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             trendingSection.style.display = 'none';
         }
     }
-    function resetHomeView() {
-        if (!isHomePage) {
-            window.location.href = '/';
-            return;
-        }
-        const inputEl = document.getElementById('companyInput');
-        if (inputEl) inputEl.value = '';
-        const resultsEl = document.getElementById('results');
-        if (resultsEl) resultsEl.style.display = 'none';
-        const errorEl = document.getElementById('errorMessage');
-        if (errorEl) errorEl.innerHTML = '';
-        const targetPanel = watchlistHasEntries ? 'watchlist' : 'trending';
-        setHomePrimaryPanel(targetPanel);
-    }
-
     function openTrendingPage() {
         navigateToTrendingSource('stocktwits');
     }
 
     if (homeTitleEl) {
         homeTitleEl.addEventListener('click', (event) => {
-            if (!isHomePage) {
-                return;
-            }
             event.preventDefault();
-            resetHomeView();
+            window.location.href = '/';
         });
     }
 
@@ -2247,3 +2687,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             setTrendingTabsActive(restoredSource);
         });
     }
+
+    window.addEventListener('beforeunload', () => {
+        disconnectTrendingLazyObserver();
+    });

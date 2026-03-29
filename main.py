@@ -1233,6 +1233,11 @@ def fetch_stocktwits_trending(limit=20, include_prices=True):
                 last_price = sym.get("price")
                 change_pct = sym.get("change_percent")
 
+            raw_trending_score = sym.get("trending_score")
+            if raw_trending_score is None and isinstance(sym.get("trends"), dict):
+                raw_trending_score = sym.get("trends", {}).get("trending_score")
+            trending_score = _normalize_json_number(raw_trending_score)
+
             symbol = normalize_ticker_symbol(sym.get("symbol"))
             if not symbol:
                 continue
@@ -1262,6 +1267,7 @@ def fetch_stocktwits_trending(limit=20, include_prices=True):
                 "rank": idx,
                 "ticker": symbol,
                 "name": company_name,
+                "trending_score": trending_score,
                 "watchlist_count": sym.get("watchlist_count"),
                 "change_percent": resolved_change_pct,
                 "price": resolved_price,
@@ -1336,6 +1342,12 @@ MARKET_SUMMARY_RELEASE_MINUTE = max(0, min(59, _get_int_env("MARKET_SUMMARY_RELE
 MARKET_SUMMARY_RETENTION_DAYS = max(30, _get_int_env("MARKET_SUMMARY_RETENTION_DAYS", 90))
 MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "false", "False"}
 _market_summary_generation_lock = threading.Lock()
+MARKET_WEEK_GLANCE_TTL_SECONDS = max(60, _get_int_env("MARKET_WEEK_GLANCE_TTL_SECONDS", 300))
+_market_week_glance_lock = threading.Lock()
+_market_week_glance_cache = {
+    "expires_at": 0.0,
+    "data": []
+}
 
 
 def _fetch_index_snapshot(symbol, label, quote_data=None):
@@ -1380,6 +1392,112 @@ def get_market_index_snapshots():
         if snapshot:
             snapshots.append(snapshot)
     return snapshots
+
+
+def _extract_history_closes(history_payload):
+    closes = []
+    if history_payload is None:
+        return closes
+
+    try:
+        if hasattr(history_payload, "sort_index") and hasattr(history_payload, "iterrows"):
+            sorted_frame = history_payload.sort_index()
+            for _, row in sorted_frame.iterrows():
+                close_value = None
+                if hasattr(row, "get"):
+                    close_value = row.get("close")
+                else:
+                    try:
+                        close_value = row["close"]
+                    except Exception:
+                        close_value = None
+                normalized = _normalize_json_number(close_value)
+                if normalized is not None:
+                    closes.append(normalized)
+            return closes
+    except Exception:
+        return closes
+
+    if isinstance(history_payload, dict):
+        candidates = history_payload.get("close")
+        if isinstance(candidates, list):
+            for value in candidates:
+                normalized = _normalize_json_number(value)
+                if normalized is not None:
+                    closes.append(normalized)
+    return closes
+
+
+def _fetch_index_week_glance(symbol):
+    try:
+        history_payload = Ticker(symbol).history(period="1wk", interval="1d")
+    except Exception as exc:
+        market_summary_logger.warning("Index history fetch failed for %s: %s", symbol, exc)
+        return {
+            "week_change_percent": None,
+            "week_start_close": None,
+            "week_end_close": None
+        }
+
+    closes = _extract_history_closes(history_payload)
+    if len(closes) < 2:
+        return {
+            "week_change_percent": None,
+            "week_start_close": None,
+            "week_end_close": closes[-1] if closes else None
+        }
+
+    start_close = closes[0]
+    end_close = closes[-1]
+    week_change_percent = None
+    if start_close not in (None, 0):
+        week_change_percent = _normalize_json_number(((end_close - start_close) / start_close) * 100.0)
+
+    return {
+        "week_change_percent": week_change_percent,
+        "week_start_close": _normalize_json_number(start_close),
+        "week_end_close": _normalize_json_number(end_close)
+    }
+
+
+def get_market_week_glance(force_refresh=False):
+    now_ts = time.time()
+    if not force_refresh:
+        cached_data = _market_week_glance_cache.get("data") or []
+        expires_at = float(_market_week_glance_cache.get("expires_at") or 0.0)
+        if cached_data and expires_at > now_ts:
+            return cached_data
+
+    with _market_week_glance_lock:
+        now_ts = time.time()
+        if not force_refresh:
+            cached_data = _market_week_glance_cache.get("data") or []
+            expires_at = float(_market_week_glance_cache.get("expires_at") or 0.0)
+            if cached_data and expires_at > now_ts:
+                return cached_data
+
+        snapshots = get_market_index_snapshots()
+        snapshot_map = {item.get("symbol"): item for item in snapshots if isinstance(item, dict)}
+
+        rows = []
+        as_of = datetime.now(timezone.utc).isoformat()
+        for symbol, label in MARKET_SUMMARY_INDEXES:
+            week_payload = _fetch_index_week_glance(symbol)
+            snapshot = snapshot_map.get(symbol) or {}
+            rows.append({
+                "symbol": symbol,
+                "label": label,
+                "close": _normalize_json_number(snapshot.get("close")),
+                "change_percent": _normalize_json_number(snapshot.get("change_percent")),
+                "week_change_percent": _normalize_json_number(week_payload.get("week_change_percent")),
+                "week_start_close": _normalize_json_number(week_payload.get("week_start_close")),
+                "week_end_close": _normalize_json_number(week_payload.get("week_end_close")),
+                "as_of": as_of
+            })
+
+        _market_week_glance_cache["data"] = rows
+        _market_week_glance_cache["expires_at"] = now_ts + MARKET_WEEK_GLANCE_TTL_SECONDS
+        return rows
 
 
 def get_market_news_digest(max_articles=None):
@@ -2463,7 +2581,7 @@ def get_stock_info(symbol):
         return None
 
 
-def get_historical_data(symbol, period='1d'):
+def get_historical_data(symbol, period='1d', interval=None):
     """Get historical price data using yfinance"""
     normalized_symbol = normalize_ticker_symbol(symbol)
     if not normalized_symbol:
@@ -2471,31 +2589,30 @@ def get_historical_data(symbol, period='1d'):
     try:
         ticker = yf.Ticker(normalized_symbol)
 
+        # Keep frontend labels unchanged: treat legacy weekly aliases as 5 trading days.
+        if period in ['7d', '1w']:
+            period = '5d'
+
+        interval_map = {
+            '1d': '5m',
+            '5d': '15m',
+            '1mo': '90m'
+        }
+        resolved_interval = interval or interval_map.get(period)
+
         if period == '1d':
-            hist = ticker.history(period='5d', interval='5m')
+            hist = ticker.history(period='5d', interval=resolved_interval or '5m')
             if not hist.empty:
                 last_date = hist.index[-1].date()
                 hist = hist[hist.index.date == last_date]
 
-        elif period in ['7d', '1w']:
-            end = datetime.now()
-            start = end - timedelta(days=7)
-            hist = yf.download(
-                normalized_symbol,
-                start=start,
-                end=end,
-                interval='1h',
-                prepost=True,
-                progress=False
-            )
+        elif period == '5d':
+            # 1W chart in the UI maps to 5d; use denser intraday candles.
+            hist = ticker.history(period='5d', interval=resolved_interval or '15m')
 
         else:
-            interval = None
-            if period == '1mo':
-                interval = '90m'
-
-            if interval:
-                hist = ticker.history(period=period, interval=interval)
+            if resolved_interval:
+                hist = ticker.history(period=period, interval=resolved_interval)
             else:
                 hist = ticker.history(period=period)
 
@@ -3720,7 +3837,10 @@ def market_summary_latest():
         return jsonify({
             "error": "Market summary unavailable yet. New articles publish at 4:15 PM ET on trading days."
         }), 404
-    return jsonify({"article": serialize_market_summary(latest)})
+    return jsonify({
+        "article": serialize_market_summary(latest),
+        "week_glance": get_market_week_glance()
+    })
 
 
 @app.route('/api/market-summary/archive', methods=['GET'])
@@ -3750,7 +3870,10 @@ def market_summary_article(summary_slug):
         return jsonify({
             "error": "Market summary article not found."
         }), 404
-    return jsonify({"article": serialize_market_summary(record)})
+    return jsonify({
+        "article": serialize_market_summary(record),
+        "week_glance": get_market_week_glance()
+    })
 
 
 @app.route('/quote/<symbol>', methods=['GET'])
