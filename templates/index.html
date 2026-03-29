@@ -139,6 +139,7 @@
         </section>
         {% endif %}
 
+        {% if page_view == 'trending' %}
         <section class="trending-section" id="trendingSection" aria-labelledby="trendingHeading">
             <div class="page-header">
                 <div class="live-badge"><span class="live-dot"></span>LIVE</div>
@@ -169,6 +170,7 @@
                 </div>
             </div>
         </section>
+        {% endif %}
 
         <section class="watchlist-section {% if page_view != 'watchlist' %}is-hidden{% endif %}" id="watchlistSection" aria-labelledby="watchlistHeading">
             <h2 class="section-title" id="watchlistHeading">My Watchlist</h2>

@@ -725,7 +725,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
                 showWatchlistSection(false);
             }
             if (isHomePage) {
-                setHomePrimaryPanel('trending');
+                setHomePrimaryPanel('watchlist');
             }
             return 0;
         }
@@ -1092,24 +1092,19 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
 
     function setHomePrimaryPanel(panel) {
         if (!isHomePage) return;
-        const normalizedPanel = panel === 'trending' ? 'trending' : 'watchlist';
-        homePrimaryPanel = normalizedPanel;
-        const shouldShowWatchlist = watchlistHasEntries && normalizedPanel === 'watchlist';
-        const shouldShowTrending = !shouldShowWatchlist;
+        homePrimaryPanel = 'watchlist';
+        const shouldShowWatchlist = watchlistHasEntries;
         showWatchlistSection(shouldShowWatchlist);
-        showTrendingSection(shouldShowTrending);
+        showTrendingSection(false);
         if (shouldShowWatchlist) {
             refreshWatchlistPrices();
-        } else if (shouldShowTrending) {
-            ensureHomeTrendingLoaded();
         }
     }
 
     function initializeHomePanel(watchlistCount) {
         if (!isHomePage || homePanelInitialized) return;
         homePanelInitialized = true;
-        const targetPanel = watchlistCount > 0 ? 'watchlist' : 'trending';
-        setHomePrimaryPanel(targetPanel);
+        setHomePrimaryPanel('watchlist');
     }
 
     async function fetchQuote(symbol) {
