@@ -96,7 +96,8 @@
         <div class="nav-center">
             <div class="search-wrap">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                <input type="text" id="companyInput" placeholder="Search ticker, company...">
+                <input type="text" id="companyInput" placeholder="Search ticker, company name..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-controls="searchSuggestions" aria-expanded="false">
+                <div id="searchSuggestions" class="search-suggestions is-hidden" role="listbox" aria-label="Recent searches"></div>
             </div>
             <button onclick="searchStock()" id="searchBtn" class="search-btn" aria-label="Search" title="Search" data-umami-event="search button">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -113,6 +114,13 @@
         <div id="errorMessage"></div>
 
         {% if page_view == 'home' %}
+        <div class="home-scroll-bg" aria-hidden="true">
+            <span class="home-scroll-orb orb-a"></span>
+            <span class="home-scroll-orb orb-b"></span>
+            <span class="home-scroll-orb orb-c"></span>
+            <span class="home-scroll-grid"></span>
+        </div>
+
         <section class="home-hero" aria-labelledby="homeHeroTitle">
             <div class="home-hero-badge">Market Intelligence Platform</div>
             <h1 id="homeHeroTitle">Track market momentum, sentiment, and volume from one dashboard.</h1>
@@ -134,6 +142,107 @@
                 <article class="home-feature-card">
                     <h3>Daily Market Recap</h3>
                     <p>Review index moves, headline drivers, and macro context in a clean daily summary.</p>
+                </article>
+            </div>
+
+            <div class="home-kpis" aria-label="Platform capabilities">
+                <div class="home-kpi-item">
+                    <span class="home-kpi-value">3</span>
+                    <span class="home-kpi-label">Trend Sources</span>
+                </div>
+                <div class="home-kpi-item">
+                    <span class="home-kpi-value">Live</span>
+                    <span class="home-kpi-label">Quote Refresh</span>
+                </div>
+                <div class="home-kpi-item">
+                    <span class="home-kpi-value">Daily</span>
+                    <span class="home-kpi-label">Market Recap</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="home-insights" aria-labelledby="homeInsightsTitle">
+            <div class="home-insights-header">
+                <h2 id="homeInsightsTitle">Move Faster With Real-Time Insights</h2>
+                <p>Built for a tight loop: discover what is moving, validate with news sentiment, and keep your highest-conviction symbols one click away.</p>
+            </div>
+            <div class="home-insights-grid">
+                <article class="home-insight-card">
+                    <h3>1. Discover</h3>
+                    <p>Scan social and volume dashboards to quickly spot where market attention is concentrated right now.</p>
+                </article>
+                <article class="home-insight-card">
+                    <h3>2. Validate</h3>
+                    <p>Run article-level sentiment analysis to separate momentum backed by coverage from short-lived noise.</p>
+                </article>
+                <article class="home-insight-card">
+                    <h3>3. Track</h3>
+                    <p>Save names to your watchlist and follow pricing snapshots as market conditions change throughout the session.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="home-use-cases" aria-labelledby="homeUseCasesTitle">
+            <div class="home-section-header">
+                <h2 id="homeUseCasesTitle">Built For Real Trading Workflows</h2>
+                <p>Whether you are scanning premarket movers or reviewing your watchlist after the close, the dashboard is structured around quick decisions and clear context.</p>
+            </div>
+            <div class="home-use-cases-grid">
+                <article class="home-use-case-card">
+                    <h3>Premarket Scan</h3>
+                    <p>Identify early premarket attention, then validate it against price behavior and relevant coverage.</p>
+                    <ul>
+                        <li>Prioritize volume-supported symbols</li>
+                        <li>Review sentiment direction</li>
+                        <li>Create an opening watchlist</li>
+                    </ul>
+                </article>
+                <article class="home-use-case-card">
+                    <h3>Intraday Validation</h3>
+                    <p>As momentum shifts intraday, assess whether the move is supported by meaningful catalysts.</p>
+                    <ul>
+                        <li>Review the latest headlines</li>
+                        <li>Evaluate sentiment at a glance</li>
+                        <li>Monitor live price snapshots</li>
+                    </ul>
+                </article>
+                <article class="home-use-case-card">
+                    <h3>After-Hours Review</h3>
+                    <p>Summarize the day&apos;s key drivers and prepare a focused plan for the next session.</p>
+                    <ul>
+                        <li>Review index-level drivers</li>
+                        <li>Save symbols for follow-up</li>
+                        <li>Define tomorrow&apos;s priorities</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+
+        <section class="home-workflow" aria-labelledby="homeWorkflowTitle">
+            <div class="home-section-header">
+                <h2 id="homeWorkflowTitle">What You Can Do In Minutes</h2>
+                <p>Each module is designed to answer a practical question fast: what is moving, why it may be moving, and whether it belongs in your active list.</p>
+            </div>
+            <div class="home-workflow-grid">
+                <article class="home-workflow-card">
+                    <span class="home-workflow-label">Signal</span>
+                    <h3>Find Where Attention Is Concentrated</h3>
+                    <p>Browse trend sources for social velocity and volume clues without switching between multiple tools.</p>
+                </article>
+                <article class="home-workflow-card">
+                    <span class="home-workflow-label">Context</span>
+                    <h3>Understand The News Narrative</h3>
+                    <p>Run ticker-specific sentiment to evaluate how current headlines align with market direction and participation.</p>
+                </article>
+                <article class="home-workflow-card">
+                    <span class="home-workflow-label">Action</span>
+                    <h3>Track High-Conviction Names</h3>
+                    <p>Save symbols into your watchlist to monitor snapshots throughout the day and revisit them in your next review cycle.</p>
+                </article>
+                <article class="home-workflow-card">
+                    <span class="home-workflow-label">Recap</span>
+                    <h3>Close The Loop With Daily Summaries</h3>
+                    <p>Use the market recap view to connect sentiment, major movers, and broader market tone in one clean briefing.</p>
                 </article>
             </div>
         </section>
@@ -175,7 +284,7 @@
         <section class="watchlist-section {% if page_view != 'watchlist' %}is-hidden{% endif %}" id="watchlistSection" aria-labelledby="watchlistHeading">
             <h2 class="section-title" id="watchlistHeading">My Watchlist</h2>
             <div id="watchlistEmptyState" class="watchlist-empty">Save tickers to build a personalized list you can revisit with one click.</div>
-            <table class="watchlist-table">
+            <table class="watchlist-table is-hidden" id="watchlistTable">
                 <thead>
                     <tr>
                         <th class="watchlist-col-symbol">Symbol</th>
@@ -189,7 +298,7 @@
         </section>
 
         <section class="market-summary-section {% if page_view != 'market' %}is-hidden{% endif %}" id="marketSummarySection" aria-labelledby="marketSummaryHeading">
-            <a href="/market-summary" id="marketSummaryBackBtn" class="market-summary-back-btn {% if not market_summary_slug|default('', true) %}is-hidden{% endif %}">Back to Market Summary</a>
+            <a href="/market-summary" id="marketSummaryBackBtn" class="market-summary-back-btn {% if page_view != 'market' or not market_summary_slug|default('', true) %}is-hidden{% endif %}">Back to Market Summary</a>
             <div class="page-header market-page-header">
                 <h2 class="section-title" id="marketSummaryHeading">Market Summaries</h2>
                 <p class="section-subtitle">Daily sentiment-driven recaps for the trading week.</p>

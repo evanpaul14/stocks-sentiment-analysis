@@ -60,8 +60,13 @@ const sentenceAbbreviations = new Set([
     'sr', 'jr', 'dr', 'mr', 'mrs', 'ms', 'prof', 'dept', 'st'
 ]);
 const WATCHLIST_STORAGE_KEY = 'ssa_watchlist_v1';
+const RECENT_SEARCH_STORAGE_KEY = 'ssa_recent_searches_v1';
+const MAX_RECENT_SEARCH_ITEMS = 8;
+const companyInputEl = document.getElementById('companyInput');
+const searchSuggestionsEl = document.getElementById('searchSuggestions');
 const watchlistToggleBtn = document.getElementById('watchlistToggleBtn');
 const watchlistListEl = document.getElementById('watchlistList');
+const watchlistTableEl = document.getElementById('watchlistTable');
 const watchlistEmptyStateEl = document.getElementById('watchlistEmptyState');
 const watchlistSectionEl = document.getElementById('watchlistSection');
 const marketSummarySectionEl = document.getElementById('marketSummarySection');
@@ -74,6 +79,7 @@ const marketSummaryEmailInputEl = document.getElementById('marketSummaryEmail');
 const marketSummarySignupStatusEl = document.getElementById('marketSummarySignupStatus');
 const marketSummarySignupButtonEl = document.getElementById('marketSummarySignupButton');
 const marketSummarySlug = document.body.dataset.marketArticleSlug || '';
+const marketSummaryBackBtnEl = document.getElementById('marketSummaryBackBtn');
 const initialMarketSummaryArticleEl = document.getElementById('initialMarketSummaryArticle');
 let initialMarketSummaryArticle = null;
 if (initialMarketSummaryArticleEl) {
@@ -110,6 +116,224 @@ const sentimentProgressBarEl = sentimentProgressEl ? sentimentProgressEl.querySe
 let sentimentBatchSize = 0;
 const SENTIMENT_REQUEST_TIMEOUT_MS = 25000;
 const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
+let recentSearches = [];
+let visibleSearchSuggestions = [];
+let activeSearchSuggestionIndex = -1;
+
+function initializeHomeScrollEffect() {
+    if (!isHomePage || typeof window === 'undefined') return;
+    const scrollBackground = document.querySelector('.home-scroll-bg');
+    if (!scrollBackground) return;
+
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return;
+    }
+
+    const docStyle = document.documentElement.style;
+    let targetY = window.scrollY || window.pageYOffset || 0;
+    let renderedY = targetY;
+    let rafId = null;
+
+    const renderFromY = (y) => {
+        docStyle.setProperty('--home-shift-a', `${(y * 0.07).toFixed(2)}px`);
+        docStyle.setProperty('--home-shift-b', `${(y * -0.05).toFixed(2)}px`);
+        docStyle.setProperty('--home-shift-c', `${(y * 0.03).toFixed(2)}px`);
+        docStyle.setProperty('--home-grid-shift', `${(y * -0.015).toFixed(2)}px`);
+        docStyle.setProperty('--home-tilt', `${(y * 0.0015).toFixed(3)}deg`);
+    };
+
+    const animate = () => {
+        const delta = targetY - renderedY;
+        renderedY += delta * 0.12;
+        if (Math.abs(delta) < 0.2) {
+            renderedY = targetY;
+        }
+        renderFromY(renderedY);
+
+        if (Math.abs(targetY - renderedY) >= 0.2) {
+            rafId = window.requestAnimationFrame(animate);
+        } else {
+            rafId = null;
+        }
+    };
+
+    const onScroll = () => {
+        targetY = window.scrollY || window.pageYOffset || 0;
+        if (rafId === null) {
+            rafId = window.requestAnimationFrame(animate);
+        }
+    };
+
+    renderFromY(targetY);
+    window.addEventListener('scroll', onScroll, { passive: true });
+}
+
+function loadRecentSearches() {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem(RECENT_SEARCH_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map(item => (item || '').toString().trim())
+            .filter(Boolean)
+            .slice(0, MAX_RECENT_SEARCH_ITEMS);
+    } catch (error) {
+        console.error('Unable to read recent searches:', error);
+        return [];
+    }
+}
+
+function saveRecentSearches() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(RECENT_SEARCH_STORAGE_KEY, JSON.stringify(recentSearches.slice(0, MAX_RECENT_SEARCH_ITEMS)));
+    } catch (error) {
+        console.error('Unable to save recent searches:', error);
+    }
+}
+
+function addRecentSearch(query) {
+    const normalized = (query || '').trim();
+    if (!normalized) return;
+    recentSearches = [
+        normalized,
+        ...recentSearches.filter(item => item.toLowerCase() !== normalized.toLowerCase())
+    ].slice(0, MAX_RECENT_SEARCH_ITEMS);
+    saveRecentSearches();
+}
+
+function getMatchingRecentSearches(query) {
+    const normalized = (query || '').trim().toLowerCase();
+    if (!normalized) {
+        return recentSearches.slice(0, MAX_RECENT_SEARCH_ITEMS);
+    }
+
+    const startsWith = [];
+    const includes = [];
+    recentSearches.forEach((item) => {
+        const lowered = item.toLowerCase();
+        if (lowered.startsWith(normalized)) {
+            startsWith.push(item);
+        } else if (lowered.includes(normalized)) {
+            includes.push(item);
+        }
+    });
+
+    return [...startsWith, ...includes].slice(0, MAX_RECENT_SEARCH_ITEMS);
+}
+
+function setSearchSuggestionsExpandedState(expanded) {
+    if (!companyInputEl) return;
+    companyInputEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function hideSearchSuggestions() {
+    if (!searchSuggestionsEl) return;
+    searchSuggestionsEl.classList.add('is-hidden');
+    searchSuggestionsEl.innerHTML = '';
+    visibleSearchSuggestions = [];
+    activeSearchSuggestionIndex = -1;
+    setSearchSuggestionsExpandedState(false);
+}
+
+function updateActiveSearchSuggestion() {
+    if (!searchSuggestionsEl) return;
+    const buttons = searchSuggestionsEl.querySelectorAll('.search-suggestion-item');
+    buttons.forEach((button, idx) => {
+        button.classList.toggle('is-active', idx === activeSearchSuggestionIndex);
+    });
+}
+
+function handleSearchSuggestionSelect(value) {
+    if (!companyInputEl) return;
+    companyInputEl.value = value;
+    hideSearchSuggestions();
+    searchStock(value);
+}
+
+function renderSearchSuggestions(query = '') {
+    if (!searchSuggestionsEl) return;
+
+    const matches = getMatchingRecentSearches(query);
+    if (!matches.length) {
+        hideSearchSuggestions();
+        return;
+    }
+
+    visibleSearchSuggestions = matches;
+    activeSearchSuggestionIndex = -1;
+    searchSuggestionsEl.innerHTML = `
+        <div class="search-suggestions-header">Recent Searches</div>
+        ${matches.map(item => `
+            <button type="button" class="search-suggestion-item" role="option" data-value="${escapeAttribute(item)}">
+                <span class="search-suggestion-value">${escapeHtml(item)}</span>
+                <span class="search-suggestion-meta">Use Search</span>
+            </button>
+        `).join('')}
+    `;
+
+    searchSuggestionsEl.classList.remove('is-hidden');
+    setSearchSuggestionsExpandedState(true);
+
+    const buttons = searchSuggestionsEl.querySelectorAll('.search-suggestion-item');
+    buttons.forEach((button) => {
+        button.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+        });
+        button.addEventListener('click', () => {
+            handleSearchSuggestionSelect(button.dataset.value || '');
+        });
+    });
+}
+
+function initializeSearchSuggestions() {
+    if (!companyInputEl || !searchSuggestionsEl) return;
+    recentSearches = loadRecentSearches();
+
+    companyInputEl.addEventListener('focus', () => {
+        renderSearchSuggestions(companyInputEl.value);
+    });
+
+    companyInputEl.addEventListener('input', () => {
+        renderSearchSuggestions(companyInputEl.value);
+    });
+
+    companyInputEl.addEventListener('keydown', (event) => {
+        if (!visibleSearchSuggestions.length) return;
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            activeSearchSuggestionIndex = (activeSearchSuggestionIndex + 1) % visibleSearchSuggestions.length;
+            updateActiveSearchSuggestion();
+            return;
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            activeSearchSuggestionIndex = (activeSearchSuggestionIndex - 1 + visibleSearchSuggestions.length) % visibleSearchSuggestions.length;
+            updateActiveSearchSuggestion();
+            return;
+        }
+
+        if (event.key === 'Enter' && activeSearchSuggestionIndex >= 0) {
+            event.preventDefault();
+            handleSearchSuggestionSelect(visibleSearchSuggestions[activeSearchSuggestionIndex]);
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            hideSearchSuggestions();
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest || !event.target.closest('.search-wrap')) {
+            hideSearchSuggestions();
+        }
+    });
+}
 
     function formatNumber(num) {
         if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
@@ -716,6 +940,9 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         watchlistHasEntries = items.length > 0;
         if (!items.length) {
             watchlistListEl.innerHTML = '';
+            if (watchlistTableEl) {
+                watchlistTableEl.classList.add('is-hidden');
+            }
             if (watchlistEmptyStateEl) {
                 watchlistEmptyStateEl.style.display = 'block';
             }
@@ -731,6 +958,9 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         }
         if (watchlistEmptyStateEl) {
             watchlistEmptyStateEl.style.display = 'none';
+        }
+        if (watchlistTableEl) {
+            watchlistTableEl.classList.remove('is-hidden');
         }
         watchlistListEl.innerHTML = '';
         items.forEach(item => {
@@ -863,25 +1093,54 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
     function setTrendingListLoading(source) {
         const list = trendingLists[source];
         if (list) {
-            list.innerHTML = '';
-            const msgEl = document.createElement('div');
-            msgEl.className = 'trending-message';
-            msgEl.style.color = '#9333ea';
-            msgEl.textContent = 'Loading...';
-            list.appendChild(msgEl);
+            list.innerHTML = '<div class="trending-message loading-state"><span class="loading-dot"></span><span>Gathering trending data...</span></div>';
         }
     }
 
     function showTrendingMessage(source, message, isError = false) {
         const list = trendingLists[source];
         if (!list) return;
-        const color = isError ? '#ef4444' : '#888';
         list.innerHTML = '';
         const msgEl = document.createElement('div');
-        msgEl.className = 'trending-message';
-        msgEl.style.color = color;
+        msgEl.className = `trending-message ${isError ? 'error' : ''}`;
         msgEl.textContent = message || 'No data available.';
         list.appendChild(msgEl);
+    }
+
+    function setMarketSummaryLoadingState(active, message = 'Loading market summary...') {
+        if (!isMarketPage) return;
+
+        if (marketSummaryBackBtnEl) {
+            if (marketSummarySlug) {
+                marketSummaryBackBtnEl.classList.remove('is-hidden');
+            } else {
+                marketSummaryBackBtnEl.classList.add('is-hidden');
+            }
+        }
+
+        if (!active) {
+            return;
+        }
+
+        const loadingMarkup = `<div class="market-summary-empty loading-state"><span class="loading-dot"></span><span>${escapeHtml(message)}</span></div>`;
+
+        if (marketSummaryLatestEl) {
+            marketSummaryLatestEl.innerHTML = loadingMarkup;
+        }
+
+        if (marketSummaryArchiveEl) {
+            if (marketSummarySlug) {
+                marketSummaryArchiveEl.innerHTML = '';
+                marketSummaryArchiveEl.style.display = 'none';
+            } else {
+                marketSummaryArchiveEl.style.display = '';
+                marketSummaryArchiveEl.innerHTML = loadingMarkup;
+            }
+        }
+
+        if (marketSummaryStatsRowsEl) {
+            marketSummaryStatsRowsEl.innerHTML = '<div class="stat-row"><span class="stat-label">Status</span><span class="stat-value">Loading...</span></div>';
+        }
     }
 
     function isTrendingCacheFresh(entry, includePrices = true) {
@@ -1674,6 +1933,9 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             return;
         }
 
+        addRecentSearch(companyName);
+        hideSearchSuggestions();
+
         if (!isSearchPage) {
             window.location.href = `/results?q=${encodeURIComponent(companyName)}`;
             return;
@@ -2315,6 +2577,8 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+        initializeHomeScrollEffect();
+        initializeSearchSuggestions();
         const tabs = document.querySelectorAll('.chart-tab');
 
         tabs.forEach(tab => {
@@ -2401,7 +2665,6 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         }
     }
 
-    const companyInputEl = document.getElementById('companyInput');
     if (companyInputEl) {
         companyInputEl.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -2581,6 +2844,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
 
     async function loadMarketSummaryContent() {
         if (!marketSummarySectionEl) return;
+        setMarketSummaryLoadingState(true);
         try {
             if (marketSummarySlug) {
                 let standaloneArticle = initialMarketSummaryArticle;
@@ -2608,6 +2872,7 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
                     marketSummaryArchiveEl.innerHTML = '';
                     marketSummaryArchiveEl.style.display = 'none';
                 }
+                setMarketSummaryLoadingState(false);
                 return;
             }
             const [latestPayload, archivePayload] = await Promise.all([
@@ -2625,8 +2890,10 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
             if (marketSummaryArchiveEl) {
                 marketSummaryArchiveEl.style.display = '';
             }
+            setMarketSummaryLoadingState(false);
         } catch (error) {
             console.error('Market summary load error:', error);
+            setMarketSummaryLoadingState(false);
             renderMarketSummaryStats([]);
             if (marketSummaryLatestEl) {
                 marketSummaryLatestEl.innerHTML = '';
@@ -2704,6 +2971,9 @@ const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
         marketSummaryBtnEl.addEventListener('click', (event) => {
             if (isMarketPage && !marketSummarySlug) {
                 event.preventDefault();
+                if (marketSummaryBackBtnEl) {
+                    marketSummaryBackBtnEl.classList.add('is-hidden');
+                }
             }
         });
     }
