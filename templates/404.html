@@ -11,8 +11,91 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #111118;
+            --border: #1e1e2e;
+            --border2: #252535;
+            --text: #e8e8f0;
+            --text-muted: #6b6b85;
+            --accent: #7c6aff;
+            --body: 'DM Sans', sans-serif;
+            --display: 'Syne', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body.error-page {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--body);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
             padding-bottom: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding-left: 24px;
+            padding-right: 24px;
+        }
+
+        .top-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 10px 24px;
+            background: rgba(10, 10, 15, 0.92);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(16px);
+        }
+
+        .nav-logo {
+            font-family: var(--display);
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--text);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .nav-logo span {
+            color: var(--accent);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .nav-pill-btn {
+            padding: 7px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border2);
+            background: rgba(22, 22, 31, 0.9);
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .nav-pill-btn:hover {
+            color: var(--text);
+            border-color: var(--accent);
         }
 
         .error-page main.container {
@@ -66,8 +149,7 @@
             flex-wrap: wrap;
         }
 
-        .home-link,
-        .secondary-link {
+        .home-link {
             display: inline-block;
             padding: 10px 14px;
             border-radius: 10px;
@@ -89,18 +171,55 @@
             transform: translateY(-1px);
         }
 
-        .secondary-link {
-            color: var(--text);
-            border: 1px solid var(--border2);
-            background: rgba(22, 22, 31, 0.9);
+        .site-footer {
+            margin-top: auto;
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            text-align: right;
+            color: #71717a;
+            font-size: 14px;
         }
 
-        .secondary-link:hover {
-            border-color: var(--accent);
-            transform: translateY(-1px);
+        .site-footer .container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .site-footer-links {
+            display: flex;
+            justify-content: flex-end;
+            gap: 24px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .site-footer a {
+            color: #a78bfa;
+            text-decoration: none;
+        }
+
+        .site-footer a:hover {
+            text-decoration: underline;
         }
 
         @media (max-width: 640px) {
+            .container {
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .top-nav {
+                padding: 10px 14px;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .nav-links {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
             .error-page main.container {
                 min-height: calc(100vh - 60px - 114px);
                 padding-top: 154px;
@@ -115,18 +234,7 @@
 </head>
 <body class="error-page" data-page="error">
     <header class="top-nav" aria-label="Main navigation">
-        <div class="nav-logo-wrap">
-            <a class="home-title-link nav-logo" href="/">Stock Sentiment Analysis<span>.</span></a>
-        </div>
-        <div class="nav-center">
-            <div class="search-wrap">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                <input type="text" placeholder="Search ticker, company name..." autocomplete="off" aria-label="Search disabled on error pages" disabled>
-            </div>
-            <button class="search-btn" aria-label="Search disabled on error pages" disabled>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            </button>
-        </div>
+        <a class="nav-logo" href="/">Stock Sentiment Analysis<span>.</span></a>
         <nav class="nav-links" aria-label="Primary links">
             <a class="nav-pill-btn" href="/trending-list">Trending</a>
             <a class="nav-pill-btn" href="/watchlist">Watchlist</a>
@@ -141,7 +249,6 @@
             <p class="error-message">The page you requested may have moved, been removed, or never existed.</p>
             <div class="error-actions">
                 <a href="/" class="home-link">Go to Homepage</a>
-                <a href="/trending-list" class="secondary-link">View Trending</a>
             </div>
         </section>
     </main>
