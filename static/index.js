@@ -275,7 +275,7 @@ function renderSearchSuggestions(query = '') {
         ${matches.map(item => `
             <button type="button" class="search-suggestion-item" role="option" data-value="${escapeAttribute(item)}">
                 <span class="search-suggestion-value">${escapeHtml(item)}</span>
-                <span class="search-suggestion-meta">Use Search</span>
+                <span class="search-suggestion-meta">→</span>
             </button>
         `).join('')}
     `;
@@ -2210,7 +2210,13 @@ function initializeSearchSuggestions() {
             displayResults(data);
             currentSymbol = data.stock_info.symbol;
             historicalData = { '1d': data.historical_data };
-            loadMovementInsight(data.stock_info);
+            const initialMovementInsight = normalizeMovementInsightPayload(data);
+            if (initialMovementInsight) {
+                activeMovementInsightRequestId += 1;
+                renderMovementInsight(initialMovementInsight);
+            } else {
+                loadMovementInsight(data.stock_info);
+            }
 
             document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.chart-tab[data-period="1d"]').classList.add('active');
@@ -2383,8 +2389,9 @@ function initializeSearchSuggestions() {
             return;
         }
 
+        movementBox.classList.remove('is-hidden');
         movementBox.style.display = 'block';
-        movementSummaryEl.textContent = 'Loading what\'s happening...';
+        movementSummaryEl.textContent = 'Loading...';
 
         const normalizedChangePercent = Number(changePercent);
         movementMetaEl.textContent = Number.isFinite(normalizedChangePercent)
@@ -2393,6 +2400,41 @@ function initializeSearchSuggestions() {
 
         movementSourcesEl.innerHTML = '';
         movementSourcesEl.style.display = 'none';
+    }
+
+    function normalizeMovementInsightPayload(payload) {
+        if (!payload) return null;
+
+        const rawInsight = payload.movement_insight
+            || payload.movementInsight
+            || payload.whats_happening
+            || payload.whatsHappening
+            || payload.what_is_happening;
+
+        if (!rawInsight) return null;
+
+        if (typeof rawInsight === 'string') {
+            return {
+                summary: rawInsight,
+                changePercent: payload.changePercent
+            };
+        }
+
+        if (typeof rawInsight === 'object') {
+            const summary = rawInsight.summary
+                || rawInsight.whats_happening
+                || rawInsight.whatsHappening
+                || rawInsight.what_is_happening;
+
+            if (!summary) return null;
+
+            return {
+                ...rawInsight,
+                summary
+            };
+        }
+
+        return null;
     }
 
     async function loadMovementInsight(stockInfo) {
@@ -2423,7 +2465,7 @@ function initializeSearchSuggestions() {
                 throw new Error((payload && payload.error) || 'Failed to load movement insight');
             }
 
-            renderMovementInsight(payload.movement_insight || null);
+            renderMovementInsight(normalizeMovementInsightPayload(payload));
         } catch (error) {
             if (requestId !== activeMovementInsightRequestId) {
                 return;
@@ -2675,6 +2717,7 @@ function initializeSearchSuggestions() {
         }
 
         if (!insight || !insight.summary) {
+            movementBox.classList.add('is-hidden');
             movementBox.style.display = 'none';
             movementSummaryEl.textContent = '';
             movementMetaEl.textContent = '';
@@ -2682,6 +2725,7 @@ function initializeSearchSuggestions() {
             return;
         }
 
+        movementBox.classList.remove('is-hidden');
         movementBox.style.display = 'block';
         const changePercent = Number(insight.changePercent);
         movementMetaEl.textContent = Number.isFinite(changePercent)
