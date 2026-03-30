@@ -3515,6 +3515,17 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
     font-weight: 500;
 }
 
+.ticker-price.loading-shimmer {
+    display: inline-block;
+    width: 64px;
+    height: 1em;
+    border-radius: 999px;
+    color: transparent;
+    background: linear-gradient(90deg, rgba(58, 58, 85, 0.25) 0%, rgba(124, 106, 255, 0.45) 50%, rgba(58, 58, 85, 0.25) 100%);
+    background-size: 220% 100%;
+    animation: shimmer 1.2s linear infinite;
+}
+
 .ticker-price.up {
     color: var(--up);
 }

@@ -42,10 +42,14 @@ function queueIdleWork(callback, timeoutMs = 500) {
 }
 
 const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
-const TRENDING_INCLUDE_PRICES = true;
+const TRENDING_INCLUDE_PRICES = false;
+const TRENDING_QUOTE_CACHE_TTL_MS = 60 * 1000;
 const trendingCache = {};
 const trendingFetchPromises = {};
 const trendingPriceHydrations = new Map();
+const trendingQuoteCache = new Map();
+const trendingQuotePromises = new Map();
+const trendingBatchPriceRequests = {};
 const loadedTrendingSources = new Set();
 let trendingLazyObserver = null;
 let trendingLazyInitialized = false;
@@ -434,6 +438,185 @@ function initializeSearchSuggestions() {
         const targetItem = findTrendingItemElement(source, ticker);
         if (!targetItem) return;
         updateTrendingChangeBadges(targetItem, changePercent);
+    }
+
+    async function fetchTrendingPricesBatch(symbols) {
+        const response = await fetch('/trending/prices', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ symbols })
+        });
+        if (!response.ok) {
+            throw new Error('Failed to load trending prices');
+        }
+        return response.json();
+    }
+
+    function getFreshTrendingQuote(ticker) {
+        const normalized = (ticker || '').toUpperCase();
+        if (!normalized) return null;
+        const cached = trendingQuoteCache.get(normalized);
+        if (!cached) return null;
+        if ((Date.now() - cached.timestamp) >= TRENDING_QUOTE_CACHE_TTL_MS) {
+            trendingQuoteCache.delete(normalized);
+            return null;
+        }
+        return cached.data;
+    }
+
+    function setTrendingPriceLoadingState(itemEl) {
+        if (!itemEl) return;
+        const priceEl = itemEl.querySelector('.ticker-price');
+        if (!priceEl) return;
+        priceEl.textContent = '';
+        priceEl.classList.remove('up', 'down');
+        priceEl.classList.add('loading-shimmer');
+    }
+
+    function applyTrendingQuoteToItem(itemEl, quote) {
+        if (!itemEl || !quote) return;
+        const priceEl = itemEl.querySelector('.ticker-price');
+        if (priceEl) {
+            const formattedPrice = formatOptionalCurrency(quote.price);
+            priceEl.classList.remove('loading-shimmer', 'up', 'down');
+            if (formattedPrice) {
+                priceEl.textContent = formattedPrice;
+                const quoteChange = Number(quote.change_percent);
+                if (Number.isFinite(quoteChange)) {
+                    priceEl.classList.add(quoteChange < 0 ? 'down' : 'up');
+                }
+            } else {
+                priceEl.textContent = '--';
+            }
+        }
+
+        const quoteChange = Number(quote.change_percent);
+        if (Number.isFinite(quoteChange)) {
+            updateTrendingChangeBadges(itemEl, quoteChange);
+        }
+    }
+
+    function queueTrendingTickerQuote(itemEl, ticker) {
+        const normalized = (ticker || '').toUpperCase();
+        if (!normalized || !itemEl) return;
+
+        const cachedQuote = getFreshTrendingQuote(normalized);
+        if (cachedQuote) {
+            applyTrendingQuoteToItem(itemEl, cachedQuote);
+            return;
+        }
+
+        setTrendingPriceLoadingState(itemEl);
+        const inFlight = trendingQuotePromises.get(normalized);
+        if (inFlight) {
+            inFlight
+                .then((quote) => applyTrendingQuoteToItem(itemEl, quote))
+                .catch(() => {
+                    applyTrendingQuoteToItem(itemEl, null);
+                });
+            return;
+        }
+
+        const quotePromise = fetchQuote(normalized)
+            .then((quote) => {
+                if (quote) {
+                    trendingQuoteCache.set(normalized, {
+                        data: quote,
+                        timestamp: Date.now()
+                    });
+                }
+                return quote;
+            })
+            .finally(() => {
+                trendingQuotePromises.delete(normalized);
+            });
+
+        trendingQuotePromises.set(normalized, quotePromise);
+        quotePromise
+            .then((quote) => applyTrendingQuoteToItem(itemEl, quote))
+            .catch(() => {
+                const priceEl = itemEl.querySelector('.ticker-price');
+                if (!priceEl) return;
+                priceEl.classList.remove('loading-shimmer');
+                priceEl.textContent = '--';
+            });
+    }
+
+    function hydrateTrendingSourcePrices(source, items) {
+        if (!Array.isArray(items) || !items.length) return null;
+        const list = trendingLists[source];
+        if (!list) return null;
+
+        const tickers = Array.from(new Set(
+            items.slice(0, 10)
+                .map(item => (item.ticker || '').toUpperCase())
+                .filter(Boolean)
+        ));
+        if (!tickers.length) return null;
+
+        const requestToken = (trendingBatchPriceRequests[source] || 0) + 1;
+        trendingBatchPriceRequests[source] = requestToken;
+
+        const rowByTicker = new Map();
+        tickers.forEach((ticker) => {
+            const row = findTrendingItemElement(source, ticker);
+            if (!row) return;
+            rowByTicker.set(ticker, row);
+            const cached = getFreshTrendingQuote(ticker);
+            if (cached) {
+                applyTrendingQuoteToItem(row, cached);
+            } else {
+                setTrendingPriceLoadingState(row);
+            }
+        });
+
+        const unresolved = tickers.filter((ticker) => !getFreshTrendingQuote(ticker));
+        if (!unresolved.length) return null;
+
+        return fetchTrendingPricesBatch(unresolved)
+            .then((payload) => {
+                if (trendingBatchPriceRequests[source] !== requestToken) {
+                    return;
+                }
+                const prices = (payload && payload.prices) || {};
+                unresolved.forEach((ticker) => {
+                    const row = rowByTicker.get(ticker);
+                    if (!row) return;
+                    const quote = prices[ticker] || null;
+                    if (quote) {
+                        trendingQuoteCache.set(ticker, {
+                            data: quote,
+                            timestamp: Date.now()
+                        });
+                        applyTrendingQuoteToItem(row, quote);
+                        return;
+                    }
+                    const priceEl = row.querySelector('.ticker-price');
+                    if (!priceEl) return;
+                    priceEl.classList.remove('loading-shimmer');
+                    if (!priceEl.textContent) {
+                        priceEl.textContent = '--';
+                    }
+                });
+            })
+            .catch((error) => {
+                console.error(`Trending ${source} batch price hydrate error:`, error);
+                if (trendingBatchPriceRequests[source] !== requestToken) {
+                    return;
+                }
+                unresolved.forEach((ticker) => {
+                    const row = rowByTicker.get(ticker);
+                    if (!row) return;
+                    const priceEl = row.querySelector('.ticker-price');
+                    if (!priceEl) return;
+                    priceEl.classList.remove('loading-shimmer');
+                    if (!priceEl.textContent) {
+                        priceEl.textContent = '--';
+                    }
+                });
+            });
     }
 
     function hydrateTrendingPrices(source, items) {
@@ -1536,8 +1719,9 @@ function initializeSearchSuggestions() {
 
             const changeValue = item.price_change_percent ?? item.change_percent;
             const priceValue = formatOptionalCurrency(item.price);
-            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
-            const safePriceText = escapeHtml(priceValue || '--');
+            const hasPrice = Boolean(priceValue);
+            const priceClass = hasPrice ? (Number(changeValue) < 0 ? 'down' : 'up') : 'loading-shimmer';
+            const safePriceText = escapeHtml(priceValue || '');
             const trendingScore = Number(item.trending_score);
             const scoreLabel = Number.isFinite(trendingScore) ? trendingScore.toFixed(2) : '--';
             const safeTicker = escapeHtml(item.ticker || 'N/A');
@@ -1573,6 +1757,7 @@ function initializeSearchSuggestions() {
             updateTrendingChangeBadges(div, changeValue);
             list.appendChild(div);
         });
+        hydrateTrendingSourcePrices('stocktwits', items);
     }
 
     function renderRedditList(items) {
@@ -1599,18 +1784,17 @@ function initializeSearchSuggestions() {
             const safeName = escapeHtml(item.name || '');
             const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
             const safePctLabel = escapeHtml(pctLabel);
-            const mentionsLabel = Number.isFinite(Number(item.mentions)) ? `${formatNumber(Number(item.mentions))} mentions` : safePctLabel;
             const changeValue = item.price_change_percent ?? item.change_percent;
             const priceValue = formatOptionalCurrency(item.price);
-            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
-            const safePriceText = escapeHtml(priceValue || '--');
+            const hasPrice = Boolean(priceValue);
+            const priceClass = hasPrice ? (Number(changeValue) < 0 ? 'down' : 'up') : 'loading-shimmer';
+            const safePriceText = escapeHtml(priceValue || '');
 
             div.innerHTML = `
                 <span class="ticker-rank">${safeRank}</span>
                 <div class="ticker-info">
                     <div class="ticker-symbol">${safeTicker}</div>
                     <div class="ticker-name">${safeName}</div>
-                    <div class="ticker-mentions">${mentionsLabel}</div>
                     <div class="ticker-mentions-delta ${pctClass}">${safePctLabel}</div>
                     <span class="trending-change-inline" data-change-inline></span>
                 </div>
@@ -1622,6 +1806,7 @@ function initializeSearchSuggestions() {
             updateTrendingChangeBadges(div, changeValue);
             list.appendChild(div);
         });
+        hydrateTrendingSourcePrices('reddit', items);
     }
 
     function renderVolumeList(items) {
@@ -1650,8 +1835,9 @@ function initializeSearchSuggestions() {
             const safeName = escapeHtml(item.name || '');
             const safeRank = Number.isFinite(Number(item.rank)) ? Number(item.rank) : (idx + 1);
             const priceValue = formatOptionalCurrency(item.price);
-            const priceClass = Number(changeValue) < 0 ? 'down' : 'up';
-            const safePriceText = escapeHtml(priceValue || '--');
+            const hasPrice = Boolean(priceValue);
+            const priceClass = hasPrice ? (Number(changeValue) < 0 ? 'down' : 'up') : 'loading-shimmer';
+            const safePriceText = escapeHtml(priceValue || '');
 
             div.innerHTML = `
                 <span class="ticker-rank">${safeRank}</span>
@@ -1669,6 +1855,7 @@ function initializeSearchSuggestions() {
             updateTrendingChangeBadges(div, changeValue);
             list.appendChild(div);
         });
+        hydrateTrendingSourcePrices('volume', items);
     }
 
     function renderMarketSummaryIndices(indices) {
@@ -2728,9 +2915,6 @@ function initializeSearchSuggestions() {
         const cached = getFreshTrendingCache(source, includePrices);
         if (!forceRefresh && cached) {
             renderTrendingData(source, cached.data);
-            if (!cached.includePrices) {
-                hydrateTrendingPrices(source, cached.data);
-            }
             return cached.data;
         }
 
@@ -2755,18 +2939,12 @@ function initializeSearchSuggestions() {
                 setTrendingCache(source, items, includePrices);
                 renderTrendingData(source, items);
                 loadedTrendingSources.add(source);
-                if (!includePrices) {
-                    hydrateTrendingPrices(source, items);
-                }
                 return items;
             } catch (e) {
                 console.error(`Trending ${source} error:`, e);
                 const fallback = trendingCache[source];
                 if (fallback && Array.isArray(fallback.data) && fallback.data.length) {
                     renderTrendingData(source, fallback.data);
-                    if (!fallback.includePrices) {
-                        hydrateTrendingPrices(source, fallback.data);
-                    }
                 } else {
                     showTrendingMessage(source, 'Failed to load data.', true);
                 }

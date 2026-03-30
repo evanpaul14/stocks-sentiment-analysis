@@ -1,5 +1,6 @@
 import atexit
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from functools import lru_cache
@@ -865,6 +866,8 @@ def wait_for_ai_rate_slot():
 
 PRICE_CACHE_TTL_SECONDS = max(5, _get_int_env("TRENDING_PRICE_TTL_SECONDS", 120))
 _price_snapshot_cache = {}
+TRENDING_PRICES_BATCH_LIMIT = max(1, min(25, _get_int_env("TRENDING_PRICES_BATCH_LIMIT", 10)))
+TRENDING_PRICES_MAX_WORKERS = max(1, min(12, _get_int_env("TRENDING_PRICES_MAX_WORKERS", 6)))
 
 STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS = max(
     60,
@@ -1031,11 +1034,11 @@ def fetch_top_stocks():
         # Defensive: filter out entries with None rank or ticker
         filtered = [s for s in stocks_list if s.get("rank") is not None and s.get("ticker")]
         try:
-            top20 = sorted(filtered, key=lambda x: x.get("rank", 999))[:20]
+            top10 = sorted(filtered, key=lambda x: x.get("rank", 999))[:10]
         except Exception as sort_exc:
             app_logger.warning("Error sorting trending stocks: %s", sort_exc)
-            top20 = []
-        return top20
+            top10 = []
+        return top10
     except Exception as e:
         app_logger.warning("Error fetching trending stocks: %s", e)
         return []
@@ -1219,7 +1222,7 @@ def _refresh_stocktwits_summary(symbol, *, limit=60):
     return None
 
 
-def fetch_stocktwits_trending(limit=20, include_prices=True):
+def fetch_stocktwits_trending(limit=10, include_prices=True):
     """Fetch trending symbols from StockTwits"""
     try:
         trimmed = _fetch_stocktwits_symbols(limit=limit)
@@ -1279,7 +1282,7 @@ def fetch_stocktwits_trending(limit=20, include_prices=True):
         return []
 
 
-def fetch_alpaca_most_actives(limit=20, include_prices=True):
+def fetch_alpaca_most_actives(limit=10, include_prices=True):
     """Fetch most active stocks by volume from Alpaca"""
     headers = {}
     alpaca_key = os.getenv("ALPACA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
@@ -2493,7 +2496,7 @@ def get_trending_source_data(source, include_prices=True):
     normalized = (source or "").lower()
 
     if normalized == "stocktwits":
-        return fetch_stocktwits_trending(include_prices=include_prices)
+        return fetch_stocktwits_trending(limit=10, include_prices=include_prices)
     if normalized == "reddit":
         try:
             return analyze_trending(fetch_top_stocks(), include_prices=include_prices)
@@ -2501,7 +2504,7 @@ def get_trending_source_data(source, include_prices=True):
             app_logger.warning("Error in reddit trending source: %s", e)
             return []
     if normalized == "volume":
-        return fetch_alpaca_most_actives(include_prices=include_prices)
+        return fetch_alpaca_most_actives(limit=10, include_prices=include_prices)
 
     return None
 
@@ -2512,6 +2515,65 @@ def _should_include_prices(arg_value):
         return True
     normalized = str(arg_value).strip().lower()
     return normalized not in {"0", "false", "no"}
+
+
+def _normalize_symbol_list(symbols, limit=10):
+    """Normalize/de-duplicate a symbol collection while preserving order."""
+    if not isinstance(symbols, (list, tuple, set)):
+        return []
+
+    max_items = max(1, min(int(limit or 10), TRENDING_PRICES_BATCH_LIMIT))
+    normalized_symbols = []
+    seen = set()
+    for raw_symbol in symbols:
+        symbol = normalize_ticker_symbol(raw_symbol)
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        normalized_symbols.append(symbol)
+        if len(normalized_symbols) >= max_items:
+            break
+    return normalized_symbols
+
+
+def build_trending_prices_payload(symbols):
+    """Return batched quote snapshots for a set of ticker symbols."""
+    normalized_symbols = _normalize_symbol_list(symbols, limit=TRENDING_PRICES_BATCH_LIMIT)
+    price_map = {}
+
+    if not normalized_symbols:
+        return {
+            "prices": price_map,
+            "count": 0,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    max_workers = min(TRENDING_PRICES_MAX_WORKERS, len(normalized_symbols))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_symbol = {
+            executor.submit(get_price_change_snapshot, symbol): symbol
+            for symbol in normalized_symbols
+        }
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            try:
+                snapshot = future.result()
+            except Exception as exc:
+                app_logger.warning("Error fetching trending batch price for %s: %s", symbol, exc)
+                continue
+
+            if not isinstance(snapshot, dict):
+                continue
+            price_map[symbol] = {
+                "price": snapshot.get("price"),
+                "change_percent": snapshot.get("change_percent")
+            }
+
+    return {
+        "prices": price_map,
+        "count": len(price_map),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 
 def get_stock_info(symbol):
@@ -3925,6 +3987,17 @@ def quote(symbol):
         "change_percent": snapshot.get("change_percent"),
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
+
+
+@app.route('/trending/prices', methods=['POST'])
+@limiter.limit("120 per minute")
+def trending_prices_batch():
+    payload = request.get_json(silent=True) or {}
+    symbols = payload.get("symbols")
+    if not isinstance(symbols, (list, tuple, set)):
+        return jsonify({"error": "Request body must include a symbols array."}), 400
+
+    return jsonify(build_trending_prices_payload(symbols))
 
 
 @app.route('/trending/<source>', methods=['GET'])
