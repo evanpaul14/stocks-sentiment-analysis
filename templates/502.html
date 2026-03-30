@@ -259,8 +259,12 @@
             <nav class="site-footer-links" aria-label="Footer navigation">
                 <a href="/privacy">Privacy Policy</a>
             </nav>
-            <p>&copy; {{ now().year if now is defined else '2026' }} Stock Sentiment Analysis. All rights reserved.</p>
+            <p>&copy; <span id="currentYear">2026</span> Stock Sentiment Analysis. All rights reserved.</p>
         </div>
     </footer>
+
+    <script>
+        document.getElementById('currentYear').textContent = String(new Date().getFullYear());
+    </script>
 </body>
 </html>
