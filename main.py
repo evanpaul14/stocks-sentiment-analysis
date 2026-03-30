@@ -70,6 +70,27 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+SECURITY_HEADERS_REFERRER_POLICY = os.getenv("SECURITY_HEADERS_REFERRER_POLICY", "strict-origin-when-cross-origin")
+SECURITY_HEADERS_PERMISSIONS_POLICY = os.getenv(
+    "SECURITY_HEADERS_PERMISSIONS_POLICY",
+    "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
+)
+SECURITY_HEADERS_CSP = os.getenv(
+    "SECURITY_HEADERS_CSP",
+    "; ".join([
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://cloud.umami.is https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: https:",
+        "connect-src 'self' https://cloud.umami.is",
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+    ])
+)
 # Secondary SQLite bind keeps blog content isolated from the primary app DB.
 app.config['SQLALCHEMY_BINDS'] = {
     'blog': 'sqlite:///blog.db'
@@ -2490,6 +2511,24 @@ def ensure_market_runtime_bootstrap():
 def _ensure_market_runtime_bootstrap():
     """Ensure one-time runtime bootstrap has executed before handling requests."""
     ensure_market_runtime_bootstrap()
+
+
+@app.after_request
+def _set_security_headers(response):
+    """Apply baseline security headers to every response."""
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", SECURITY_HEADERS_REFERRER_POLICY)
+    response.headers.setdefault("Permissions-Policy", SECURITY_HEADERS_PERMISSIONS_POLICY)
+    response.headers.setdefault("Content-Security-Policy", SECURITY_HEADERS_CSP)
+
+    # Only advertise HSTS over HTTPS, including when TLS is terminated upstream.
+    if request.is_secure:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 def get_trending_source_data(source, include_prices=True):
     """Return trending data for a specific source identifier."""
