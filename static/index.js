@@ -41,6 +41,53 @@ function queueIdleWork(callback, timeoutMs = 500) {
     setTimeout(callback, 120);
 }
 
+function buildStocktwitsLogoUrl(symbol, pixelSize = 96) {
+    const normalized = (symbol || '').toString().trim().toUpperCase();
+    if (!normalized) return '';
+    const url = new URL(`https://logos.stocktwits-cdn.com/${encodeURIComponent(normalized)}.png`);
+    // Hint a smaller target size; unsupported params are ignored by the CDN.
+    url.searchParams.set('w', String(pixelSize));
+    url.searchParams.set('h', String(pixelSize));
+    url.searchParams.set('q', '70');
+    return url.toString();
+}
+
+function renderStockLogoWithFallback(logoEl, symbol) {
+    if (!logoEl) return;
+    const normalized = (symbol || '').toString().trim().toUpperCase();
+    const fallbackLetter = normalized.charAt(0) || '?';
+
+    logoEl.dataset.logoSymbol = normalized;
+    logoEl.classList.remove('has-image');
+    logoEl.textContent = fallbackLetter;
+
+    if (!normalized) return;
+
+    const logoImg = new Image();
+    logoImg.className = 'stock-logo-image';
+    logoImg.alt = `${normalized} logo`;
+    logoImg.width = 50;
+    logoImg.height = 50;
+    logoImg.decoding = 'async';
+    logoImg.loading = 'eager';
+    logoImg.referrerPolicy = 'no-referrer';
+
+    logoImg.addEventListener('load', () => {
+        if (logoEl.dataset.logoSymbol !== normalized) return;
+        logoEl.textContent = '';
+        logoEl.appendChild(logoImg);
+        logoEl.classList.add('has-image');
+    });
+
+    logoImg.addEventListener('error', () => {
+        if (logoEl.dataset.logoSymbol !== normalized) return;
+        logoEl.classList.remove('has-image');
+        logoEl.textContent = fallbackLetter;
+    });
+
+    logoImg.src = buildStocktwitsLogoUrl(normalized, 96);
+}
+
 const TRENDING_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRENDING_INCLUDE_PRICES = false;
 const TRENDING_QUOTE_CACHE_TTL_MS = 60 * 1000;
@@ -2274,7 +2321,7 @@ function initializeSearchSuggestions() {
         }
         const logoEl = document.getElementById('stockLogo');
         if (logoEl) {
-            logoEl.textContent = (stockInfo.symbol || '?').charAt(0);
+            renderStockLogoWithFallback(logoEl, stockInfo.symbol);
         }
         document.getElementById('stockPrice').textContent = formatCurrency(stockInfo.price);
 
