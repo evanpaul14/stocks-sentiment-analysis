@@ -1395,12 +1395,39 @@ def _fetch_index_snapshot(symbol, label, quote_data=None):
         market_summary_logger.warning("Index quote payload contained error for %s", symbol)
         info = {}
 
+    close_value = _normalize_json_number(info.get("regularMarketPrice"))
+    change_value = _normalize_json_number(info.get("regularMarketChange"))
+    raw_change_percent = _normalize_json_number(info.get("regularMarketChangePercent"))
+
+    def _normalize_market_percent_points(raw_value, change=None, close=None):
+        normalized_raw = _normalize_json_number(raw_value)
+        if normalized_raw is None:
+            return None
+
+        normalized_change = _normalize_json_number(change)
+        normalized_close = _normalize_json_number(close)
+
+        # Prefer a consistency check against absolute change when available.
+        if normalized_change is not None and normalized_close is not None:
+            previous_close = normalized_close - normalized_change
+            if previous_close not in (None, 0):
+                inferred_percent = _normalize_json_number((normalized_change / previous_close) * 100.0)
+                if inferred_percent is not None:
+                    direct_delta = abs(normalized_raw - inferred_percent)
+                    scaled_delta = abs((normalized_raw * 100.0) - inferred_percent)
+                    return _normalize_json_number(normalized_raw * 100.0 if scaled_delta < direct_delta else normalized_raw)
+
+        # Yahoo index payloads are often returned as fractional values (e.g. 0.004 for 0.4%).
+        if abs(normalized_raw) < 1:
+            return _normalize_json_number(normalized_raw * 100.0)
+        return normalized_raw
+
     return {
         "symbol": symbol,
         "label": label,
-        "close": _normalize_json_number(info.get("regularMarketPrice")),
-        "change": _normalize_json_number(info.get("regularMarketChange")),
-        "change_percent": _normalize_json_number(info.get("regularMarketChangePercent"))
+        "close": close_value,
+        "change": change_value,
+        "change_percent": _normalize_market_percent_points(raw_change_percent, change_value, close_value)
     }
 
 
@@ -1725,16 +1752,39 @@ def serialize_market_summary(record):
     except json.JSONDecodeError:
         headlines = []
 
+    def _normalize_market_percent_points(raw_value, change=None, close=None):
+        normalized_raw = _normalize_json_number(raw_value)
+        if normalized_raw is None:
+            return None
+
+        normalized_change = _normalize_json_number(change)
+        normalized_close = _normalize_json_number(close)
+
+        if normalized_change is not None and normalized_close is not None:
+            previous_close = normalized_close - normalized_change
+            if previous_close not in (None, 0):
+                inferred_percent = _normalize_json_number((normalized_change / previous_close) * 100.0)
+                if inferred_percent is not None:
+                    direct_delta = abs(normalized_raw - inferred_percent)
+                    scaled_delta = abs((normalized_raw * 100.0) - inferred_percent)
+                    return _normalize_json_number(normalized_raw * 100.0 if scaled_delta < direct_delta else normalized_raw)
+
+        if abs(normalized_raw) < 1:
+            return _normalize_json_number(normalized_raw * 100.0)
+        return normalized_raw
+
     # Ensure float fields are JSON-safe for strict parsers (no NaN/Inf values)
     sanitized_indices = []
     for item in indices:
         if not isinstance(item, dict):
             continue
+        normalized_close = _normalize_json_number(item.get('close'))
+        normalized_change = _normalize_json_number(item.get('change'))
         sanitized_indices.append({
             **item,
-            'close': _normalize_json_number(item.get('close')),
-            'change': _normalize_json_number(item.get('change')),
-            'change_percent': _normalize_json_number(item.get('change_percent')),
+            'close': normalized_close,
+            'change': normalized_change,
+            'change_percent': _normalize_market_percent_points(item.get('change_percent'), normalized_change, normalized_close),
         })
     indices = sanitized_indices
 
