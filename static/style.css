@@ -2443,26 +2443,34 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
+    padding: 7px 12px;
     border-radius: 8px;
-    border: none;
-    background: var(--accent);
-    color: #fff;
-    font-size: 12px;
+    border: 1px solid rgba(124, 106, 255, 0.36);
+    background: rgba(124, 106, 255, 0.16);
+    color: #e9e5ff;
+    font-size: 11px;
+    font-family: var(--mono);
     font-weight: 500;
-    transition: all 0.2s;
+    letter-spacing: 0.02em;
+    transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
 }
 
 #results .watchlist-toggle-btn:hover {
-    background: #9180ff;
+    background: rgba(124, 106, 255, 0.24);
+    border-color: rgba(124, 106, 255, 0.62);
     transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(124, 106, 255, 0.3);
+    box-shadow: 0 6px 18px rgba(124, 106, 255, 0.24);
+}
+
+#results .watchlist-toggle-btn:focus-visible {
+    outline: 2px solid rgba(124, 106, 255, 0.45);
+    outline-offset: 2px;
 }
 
 #results .watchlist-toggle-btn.saved {
-    background: rgba(239, 68, 68, 0.2);
-    border: 1px solid rgba(239, 68, 68, 0.6);
-    color: #fecaca;
+    background: rgba(45, 255, 184, 0.12);
+    border: 1px solid rgba(45, 255, 184, 0.3);
+    color: #baffea;
 }
 
 #results .content-grid {
@@ -2774,6 +2782,78 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
     font-size: 11px;
     color: var(--accent);
     margin-bottom: 0;
+}
+
+#results .movement-box {
+    background:
+        linear-gradient(180deg, rgba(124, 106, 255, 0.08), rgba(124, 106, 255, 0.02) 22%, transparent 48%),
+        var(--surface);
+}
+
+#results .movement-title {
+    margin: 0;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+#results .movement-meta {
+    margin: 0;
+    padding: 12px 20px 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+#results .movement-summary {
+    margin: 0;
+    padding: 8px 20px 14px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+#results .movement-sources {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 20px 18px;
+    margin: 0;
+}
+
+#results .movement-sources li {
+    margin: 0;
+    padding: 9px 10px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: rgba(22, 22, 31, 0.7);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+#results .movement-sources a {
+    color: #ced4ff;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#results .movement-sources a:hover {
+    color: #eef1ff;
+    text-decoration: underline;
+}
+
+#results .movement-source-meta {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-left: 6px;
 }
 
 #results .news-description,

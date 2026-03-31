@@ -52,7 +52,7 @@
     <meta name="twitter:image" content="{{ url_for('static', filename='og-image.png', _external=True) }}">
     
     <!-- JSON-LD Structured Data -->
-    <script type="application/ld+json">
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "WebSite",
@@ -69,7 +69,7 @@
         }
     }
     </script>
-    <script type="application/ld+json">
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "Organization",
@@ -99,7 +99,7 @@
                 <input type="text" id="companyInput" placeholder="Search ticker, company name..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-controls="searchSuggestions" aria-expanded="false">
                 <div id="searchSuggestions" class="search-suggestions is-hidden" role="listbox" aria-label="Recent searches"></div>
             </div>
-            <button onclick="searchStock()" id="searchBtn" class="search-btn" aria-label="Search" title="Search" data-umami-event="search button">
+            <button id="searchBtn" class="search-btn" aria-label="Search" title="Search" data-umami-event="search button">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             </button>
         </div>
@@ -512,7 +512,7 @@
     </footer>
 
     {% if initial_market_summary_article is defined and initial_market_summary_article %}
-    <script id="initialMarketSummaryArticle" type="application/json">{{ initial_market_summary_article | tojson }}</script>
+    <script nonce="{{ csp_nonce }}" id="initialMarketSummaryArticle" type="application/json">{{ initial_market_summary_article | tojson }}</script>
     {% endif %}
 
     <script defer src="{{ url_for('static', filename='index.js') }}"></script>

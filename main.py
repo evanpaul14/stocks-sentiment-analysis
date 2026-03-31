@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 import re
+import secrets
 import threading
 import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -24,7 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import cloudscraper
 from dotenv import load_dotenv
 import finnhub
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, g, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
@@ -80,7 +81,7 @@ SECURITY_HEADERS_CSP = os.getenv(
     "SECURITY_HEADERS_CSP",
     "; ".join([
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://cloud.umami.is https://cdn.jsdelivr.net",
+        "script-src 'self' 'nonce-{nonce}' https://cloud.umami.is https://cdn.jsdelivr.net",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
         "img-src 'self' data: https:",
@@ -169,7 +170,10 @@ BLOG_SITEMAP_BASE_URL = (
 
 @app.context_processor
 def inject_unsplash_globals():
-    return {"unsplash_referral_url": _build_unsplash_referral_url()}
+    return {
+        "unsplash_referral_url": _build_unsplash_referral_url(),
+        "csp_nonce": getattr(g, "csp_nonce", "")
+    }
 
 
 def _utcnow_naive():
@@ -2510,6 +2514,7 @@ def ensure_market_runtime_bootstrap():
 @app.before_request
 def _ensure_market_runtime_bootstrap():
     """Ensure one-time runtime bootstrap has executed before handling requests."""
+    g.csp_nonce = secrets.token_urlsafe(16)
     ensure_market_runtime_bootstrap()
 
 
@@ -2520,7 +2525,8 @@ def _set_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", SECURITY_HEADERS_REFERRER_POLICY)
     response.headers.setdefault("Permissions-Policy", SECURITY_HEADERS_PERMISSIONS_POLICY)
-    response.headers.setdefault("Content-Security-Policy", SECURITY_HEADERS_CSP)
+    csp_nonce = getattr(g, "csp_nonce", "")
+    response.headers.setdefault("Content-Security-Policy", SECURITY_HEADERS_CSP.replace("{nonce}", csp_nonce))
 
     # Only advertise HSTS over HTTPS, including when TLS is terminated upstream.
     if request.is_secure:

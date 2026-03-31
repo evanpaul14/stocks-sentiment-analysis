@@ -67,6 +67,7 @@ const WATCHLIST_STORAGE_KEY = 'ssa_watchlist_v1';
 const RECENT_SEARCH_STORAGE_KEY = 'ssa_recent_searches_v1';
 const MAX_RECENT_SEARCH_ITEMS = 8;
 const companyInputEl = document.getElementById('companyInput');
+const searchBtnEl = document.getElementById('searchBtn');
 const searchSuggestionsEl = document.getElementById('searchSuggestions');
 const watchlistToggleBtn = document.getElementById('watchlistToggleBtn');
 const watchlistListEl = document.getElementById('watchlistList');
@@ -2755,9 +2756,7 @@ function initializeSearchSuggestions() {
 
             if (metaBits.length) {
                 const metaSpan = document.createElement('span');
-                metaSpan.style.color = '#a1a1aa';
-                metaSpan.style.fontSize = '12px';
-                metaSpan.style.marginLeft = '6px';
+                metaSpan.className = 'movement-source-meta';
                 metaSpan.textContent = `• ${metaBits.join(' • ')}`;
                 li.appendChild(metaSpan);
             }
@@ -2948,6 +2947,12 @@ function initializeSearchSuggestions() {
             if (e.key === 'Enter') {
                 searchStock();
             }
+        });
+    }
+
+    if (searchBtnEl) {
+        searchBtnEl.addEventListener('click', function() {
+            searchStock();
         });
     }
 

@@ -42,7 +42,7 @@
     
     {% if view_mode == 'detail' and article is defined and article %}
     <!-- JSON-LD Article Structured Data -->
-    <script type="application/ld+json">
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "Article",

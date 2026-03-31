@@ -263,8 +263,6 @@
         </div>
     </footer>
 
-    <script>
-        document.getElementById('currentYear').textContent = String(new Date().getFullYear());
-    </script>
+    <script defer src="{{ url_for('static', filename='error-pages.js') }}"></script>
 </body>
 </html>

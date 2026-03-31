@@ -1,0 +1,1084 @@
+        const DEFAULT_EDITOR_HTML = '<p>Start with a hook tying back to the day\'s flow...</p>';
+        const state = {
+            isAuthenticated: document.body.dataset.auth === 'true',
+            defaultAuthor: document.body.dataset.defaultAuthor || 'The stocksentimentapp.com Team',
+            saving: false,
+            editingArticleId: null
+        };
+
+        const loginForm = document.getElementById('loginForm');
+        const loginStatus = document.getElementById('loginStatus');
+        const loginSubmit = document.getElementById('loginSubmit');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const globalStatus = document.getElementById('globalStatus');
+        const editorCanvas = document.getElementById('editorCanvas');
+        const publishBtn = document.getElementById('publishBtn');
+        const editorStatus = document.getElementById('editorStatus');
+        const articlesList = document.getElementById('articlesList');
+        const articleTitle = document.getElementById('articleTitle');
+        const articleAuthor = document.getElementById('articleAuthor');
+        const heroInput = document.getElementById('heroImageUrl');
+        const heroPreviewMessage = document.getElementById('heroPreviewMessage');
+        const heroPreviewImg = document.getElementById('heroPreviewImg');
+        const draftReset = document.getElementById('draftReset');
+        const toolbarButtons = document.querySelectorAll('.toolbar-btn[data-command]');
+        const clearEditorBtn = document.getElementById('clearEditor');
+        const fontSizeControl = document.getElementById('fontSizeControl');
+        const marketSummaryBtn = document.getElementById('marketSummaryGenerateBtn');
+        const marketSummaryStatus = document.getElementById('marketSummaryStatus');
+        const marketSummaryEnabled = document.body.dataset.marketEnabled === 'true';
+        let lastEditorSelectionRange = null;
+        let pendingFontSize = null; // Track pending font size for new text input
+        const STATEFUL_TOOLBAR_COMMANDS = new Set([
+            'bold',
+            'italic',
+            'underline',
+            'insertunorderedlist',
+            'insertorderedlist',
+            'formatblock',
+            'justifyleft',
+            'justifycenter',
+            'justifyright',
+            'justifyfull'
+        ]);
+        const FONT_SIZE_DEFAULT = 16;
+        const FONT_SIZE_MIN = 5;
+        const FONT_SIZE_MAX = 24;
+        const FONT_SIZE_COMMAND_TO_PX = {
+            '1': 10,
+            '2': 12,
+            '3': 16,
+            '4': 18,
+            '5': 24,
+            '6': 32,
+            '7': 40
+        };
+        const FONT_SIZE_KEYWORD_TO_PX = {
+            'xx-small': 10,
+            'x-small': 12,
+            'small': 14,
+            'medium': 16,
+            'large': 18,
+            'x-large': 20,
+            'xx-large': 24,
+            'xxx-large': 28
+        };
+
+        function clampFontSizePx(value) {
+            const numeric = Number.isFinite(value) ? value : FONT_SIZE_DEFAULT;
+            return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, numeric || FONT_SIZE_DEFAULT));
+        }
+
+        function convertCssFontSizeToPx(rawValue, fallbackPx) {
+            if (!rawValue) {
+                return fallbackPx;
+            }
+            const trimmed = rawValue.trim().toLowerCase();
+            const pxMatch = trimmed.match(/([0-9.]+)\s*px$/i);
+            if (pxMatch) {
+                return clampFontSizePx(parseFloat(pxMatch[1]));
+            }
+            const remMatch = trimmed.match(/([0-9.]+)\s*rem$/i);
+            if (remMatch) {
+                return clampFontSizePx(parseFloat(remMatch[1]) * 16);
+            }
+            const emMatch = trimmed.match(/([0-9.]+)\s*em$/i);
+            if (emMatch) {
+                return clampFontSizePx(parseFloat(emMatch[1]) * 16);
+            }
+            const percentMatch = trimmed.match(/([0-9.]+)\s*%$/i);
+            if (percentMatch) {
+                return clampFontSizePx((parseFloat(percentMatch[1]) / 100) * FONT_SIZE_DEFAULT);
+            }
+            if (FONT_SIZE_KEYWORD_TO_PX[trimmed]) {
+                return clampFontSizePx(FONT_SIZE_KEYWORD_TO_PX[trimmed]);
+            }
+            return fallbackPx;
+        }
+
+        function cloneCurrentSelectionRanges() {
+            if (!isSelectionInsideEditor()) {
+                return [];
+            }
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                return [];
+            }
+            const ranges = [];
+            for (let i = 0; i < selection.rangeCount; i += 1) {
+                ranges.push(selection.getRangeAt(i).cloneRange());
+            }
+            return ranges;
+        }
+
+        function doesRangeIntersectNode(range, node) {
+            if (!range || !node) {
+                return false;
+            }
+            if (typeof range.intersectsNode === 'function') {
+                try {
+                    return range.intersectsNode(node);
+                } catch (error) {
+                    // Fallback to manual boundary comparison when intersectsNode fails.
+                }
+            }
+            const tempRange = document.createRange();
+            try {
+                tempRange.selectNode(node);
+            } catch (innerError) {
+                tempRange.selectNodeContents(node);
+            }
+            const endsBeforeNode = range.compareBoundaryPoints(Range.END_TO_START, tempRange) <= 0;
+            const startsAfterNode = range.compareBoundaryPoints(Range.START_TO_END, tempRange) >= 0;
+            return !(endsBeforeNode || startsAfterNode);
+        }
+
+        function nodeMatchesAnyRange(node, ranges) {
+            if (!ranges || ranges.length === 0) {
+                return true;
+            }
+            return ranges.some(range => {
+                if (range.collapsed) {
+                    try {
+                        return node.contains(range.startContainer);
+                    } catch (error) {
+                        return false;
+                    }
+                }
+                return doesRangeIntersectNode(range, node);
+            });
+        }
+
+        function setBodyAuthFlag(isAuthed) {
+            state.isAuthenticated = isAuthed;
+            document.body.dataset.auth = isAuthed ? 'true' : 'false';
+        }
+
+        function isSelectionInsideEditor() {
+            if (!editorCanvas) {
+                return false;
+            }
+            const selection = window.getSelection();
+            if (!selection || !selection.anchorNode) {
+                return false;
+            }
+            return editorCanvas.contains(selection.anchorNode);
+        }
+
+        function updateToolbarState() {
+            if (!toolbarButtons || toolbarButtons.length === 0) {
+                return;
+            }
+            if (!isSelectionInsideEditor()) {
+                toolbarButtons.forEach(btn => btn.classList.remove('active'));
+                return;
+            }
+            toolbarButtons.forEach(btn => {
+                const rawCommand = (btn.dataset.command || '').toLowerCase();
+                if (!STATEFUL_TOOLBAR_COMMANDS.has(rawCommand)) {
+                    btn.classList.remove('active');
+                    return;
+                }
+                let isActive = false;
+                try {
+                    if (rawCommand === 'formatblock') {
+                        const value = document.queryCommandValue('formatBlock');
+                        isActive = typeof value === 'string' && value.toLowerCase().includes('blockquote');
+                    } else {
+                        isActive = document.queryCommandState(btn.dataset.command);
+                    }
+                } catch (error) {
+                    isActive = false;
+                }
+                btn.classList.toggle('active', Boolean(isActive));
+            });
+        }
+
+        function scheduleToolbarStateUpdate() {
+            requestAnimationFrame(updateToolbarState);
+        }
+
+        function captureEditorSelection() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                return;
+            }
+            if (!isSelectionInsideEditor()) {
+                return;
+            }
+            lastEditorSelectionRange = selection.getRangeAt(0).cloneRange();
+        }
+
+        function restoreEditorSelection() {
+            if (!lastEditorSelectionRange) {
+                return false;
+            }
+            const selection = window.getSelection();
+            if (!selection) {
+                return false;
+            }
+            selection.removeAllRanges();
+            selection.addRange(lastEditorSelectionRange.cloneRange());
+            try {
+                editorCanvas.focus();
+            } catch (error) {
+                // Ignore focus issues when restoring selection from toolbar controls.
+            }
+            return true;
+        }
+
+        function applyFontSize(optionValue) {
+            if (!editorCanvas) {
+                return;
+            }
+            const preferredPx = clampFontSizePx(parseInt(optionValue, 10));
+            const selection = window.getSelection();
+            
+            // Check if there's a non-collapsed selection (actual text selected)
+            const hasTextSelected = selection && selection.rangeCount > 0 && 
+                                   !selection.getRangeAt(0).collapsed && 
+                                   isSelectionInsideEditor();
+            
+            if (hasTextSelected) {
+                // Apply font size to selected text using a span wrapper
+                const range = selection.getRangeAt(0);
+                const selectedContent = range.extractContents();
+                
+                // Remove any existing font-size styles from the selected content
+                const existingSpans = selectedContent.querySelectorAll('[style*="font-size"]');
+                existingSpans.forEach(span => {
+                    span.style.fontSize = '';
+                    // If the span has no other styles, unwrap it
+                    if (!span.getAttribute('style') || span.getAttribute('style').trim() === '') {
+                        while (span.firstChild) {
+                            span.parentNode.insertBefore(span.firstChild, span);
+                        }
+                        span.remove();
+                    }
+                });
+                
+                // Also handle <font> tags
+                const fontTags = selectedContent.querySelectorAll('font[size]');
+                fontTags.forEach(fontNode => {
+                    const span = document.createElement('span');
+                    while (fontNode.firstChild) {
+                        span.appendChild(fontNode.firstChild);
+                    }
+                    fontNode.replaceWith(span);
+                });
+                
+                // Wrap in a new span with the desired font size
+                const wrapper = document.createElement('span');
+                wrapper.style.fontSize = `${preferredPx}px`;
+                wrapper.appendChild(selectedContent);
+                range.insertNode(wrapper);
+                
+                // Re-select the newly wrapped content
+                selection.removeAllRanges();
+                const newRange = document.createRange();
+                newRange.selectNodeContents(wrapper);
+                selection.addRange(newRange);
+                
+                pendingFontSize = null; // Clear pending since we applied to selection
+            } else {
+                // No text selected - set pending font size for next typed characters
+                pendingFontSize = preferredPx;
+                
+                // Focus the editor if not already focused
+                if (!isSelectionInsideEditor()) {
+                    try {
+                        editorCanvas.focus();
+                    } catch (error) {
+                        // Ignore focus errors
+                    }
+                }
+            }
+            
+            scheduleToolbarStateUpdate();
+            captureEditorSelection();
+        }
+
+        // Handle applying pending font size when user starts typing
+        function handleEditorBeforeInput(e) {
+            if (!pendingFontSize || !editorCanvas) {
+                return;
+            }
+            
+            // Only handle insertText type inputs (regular typing)
+            if (e.inputType !== 'insertText' || !e.data) {
+                return;
+            }
+            
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || !isSelectionInsideEditor()) {
+                return;
+            }
+            
+            const range = selection.getRangeAt(0);
+            if (!range.collapsed) {
+                // There's a selection, let the default behavior handle it
+                return;
+            }
+            
+            // Prevent default and insert our own styled span
+            e.preventDefault();
+            
+            const span = document.createElement('span');
+            span.style.fontSize = `${pendingFontSize}px`;
+            span.textContent = e.data;
+            
+            range.insertNode(span);
+            
+            // Move cursor to end of the inserted span
+            range.setStartAfter(span);
+            range.setEndAfter(span);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            // Keep the pending font size for continuous typing
+            // User can change it or select different text to clear it
+        }
+
+        // Clear pending font size when selection changes to selected text
+        function handleEditorSelectionChange() {
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed && isSelectionInsideEditor()) {
+                // User selected some text, clear pending font size
+                pendingFontSize = null;
+            }
+        }
+
+        function normalizeFontElements(preferredPx, selectionRanges = null) {
+            if (!editorCanvas) {
+                return;
+            }
+            const hasExplicitSize = Number.isFinite(preferredPx);
+            const fallbackPx = clampFontSizePx(hasExplicitSize ? preferredPx : FONT_SIZE_DEFAULT);
+            const limitToRanges = Array.isArray(selectionRanges) && selectionRanges.length > 0;
+            const shouldProcessNode = node => {
+                if (!limitToRanges) {
+                    return true;
+                }
+                return nodeMatchesAnyRange(node, selectionRanges);
+            };
+
+            const fontNodes = editorCanvas.querySelectorAll('font[size]');
+            fontNodes.forEach(fontNode => {
+                if (!shouldProcessNode(fontNode)) {
+                    return;
+                }
+                const sizeAttr = String(fontNode.getAttribute('size') || '').trim();
+                let pxValue = hasExplicitSize ? preferredPx : FONT_SIZE_COMMAND_TO_PX[sizeAttr];
+                if (!Number.isFinite(pxValue)) {
+                    pxValue = fallbackPx;
+                }
+                const span = document.createElement('span');
+                span.style.fontSize = `${clampFontSizePx(pxValue)}px`;
+                while (fontNode.firstChild) {
+                    span.appendChild(fontNode.firstChild);
+                }
+                fontNode.replaceWith(span);
+            });
+
+            const styledNodes = editorCanvas.querySelectorAll('[style]');
+            styledNodes.forEach(node => {
+                if (!node.style || !node.style.fontSize) {
+                    return;
+                }
+                if (!shouldProcessNode(node)) {
+                    return;
+                }
+                if (hasExplicitSize) {
+                    node.style.fontSize = `${fallbackPx}px`;
+                    return;
+                }
+                const inlineSize = node.style.fontSize.trim();
+                if (!inlineSize || /px$/i.test(inlineSize)) {
+                    return;
+                }
+                const pxValue = convertCssFontSizeToPx(inlineSize, fallbackPx);
+                node.style.fontSize = `${pxValue}px`;
+            });
+        }
+
+        function updateEditorModeLabels() {
+            if (publishBtn) {
+                publishBtn.textContent = state.editingArticleId ? 'Update draft' : 'Save to drafts';
+            }
+            if (draftReset) {
+                draftReset.textContent = state.editingArticleId ? 'Cancel edit' : 'Reset';
+            }
+        }
+
+        function buildLinkHtml(url, text) {
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.textContent = text;
+            anchor.target = '_blank';
+            anchor.rel = 'noopener noreferrer';
+            return anchor.outerHTML;
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            loginStatus.textContent = '';
+            loginSubmit.disabled = true;
+            const payload = {
+                username: loginForm.username.value.trim(),
+                password: loginForm.password.value.trim()
+            };
+            try {
+                const response = await fetch('/write/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Login failed');
+                }
+                setBodyAuthFlag(true);
+                loginStatus.textContent = 'Unlocked. Loading editor...';
+                loginStatus.className = 'status-line success';
+                await loadArticles();
+            } catch (error) {
+                loginStatus.textContent = error.message;
+                loginStatus.className = 'status-line error';
+            } finally {
+                loginSubmit.disabled = false;
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                const response = await fetch('/write/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                if (response.ok) {
+                    setBodyAuthFlag(false);
+                    resetDraft();
+                    globalStatus.textContent = 'Signed out.';
+                }
+            } catch (error) {
+                globalStatus.textContent = 'Unable to sign out right now.';
+            }
+        }
+
+        function execToolbarCommand(command, value = null) {
+            if (!command) {
+                return;
+            }
+            const normalized = command.toLowerCase();
+            if (normalized === 'createlink') {
+                const urlInput = prompt('Enter the destination URL (include https://)');
+                if (!urlInput) return;
+                const url = urlInput.trim();
+                if (!url) return;
+                const selection = window.getSelection();
+                const selectedText = selection && selection.toString ? selection.toString().trim() : '';
+                let linkText = selectedText;
+                if (!linkText) {
+                    linkText = prompt('Enter the text to display for this link');
+                    if (!linkText) return;
+                } else {
+                    const override = prompt('Link text (leave blank to keep current selection)', linkText);
+                    if (override !== null && override !== '') {
+                        linkText = override.trim();
+                    }
+                }
+                const finalText = (linkText || '').trim();
+                if (!finalText) return;
+                const anchorHtml = buildLinkHtml(url, finalText);
+                document.execCommand('insertHTML', false, anchorHtml);
+                scheduleToolbarStateUpdate();
+                captureEditorSelection();
+                return;
+            }
+            if (normalized === 'insertimage') {
+                const url = prompt('Image source URL');
+                if (!url) return;
+                document.execCommand('insertImage', false, url);
+                scheduleToolbarStateUpdate();
+                captureEditorSelection();
+                return;
+            }
+            if (normalized === 'formatblock' && value) {
+                document.execCommand(command, false, value);
+                scheduleToolbarStateUpdate();
+                captureEditorSelection();
+                return;
+            }
+            document.execCommand(command, false, value);
+            scheduleToolbarStateUpdate();
+            captureEditorSelection();
+        }
+
+        function bindToolbar() {
+            toolbarButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const command = btn.dataset.command;
+                    const value = btn.dataset.value || null;
+                    execToolbarCommand(command, value);
+                });
+            });
+            if (clearEditorBtn) {
+                clearEditorBtn.addEventListener('click', () => {
+                    editorCanvas.innerHTML = '';
+                    scheduleToolbarStateUpdate();
+                });
+            }
+        }
+
+        function renderHeroPreview(url) {
+            heroPreviewImg.style.display = 'none';
+            heroPreviewMessage.style.display = 'block';
+            heroPreviewMessage.textContent = 'Drop a headline image link above.';
+            if (!url) {
+                return;
+            }
+            heroPreviewMessage.textContent = 'Loading preview...';
+            heroPreviewImg.src = url;
+            heroPreviewImg.onload = () => {
+                heroPreviewImg.style.display = 'block';
+                heroPreviewMessage.style.display = 'none';
+            };
+            heroPreviewImg.onerror = () => {
+                heroPreviewImg.style.display = 'none';
+                heroPreviewMessage.style.display = 'block';
+                heroPreviewMessage.textContent = 'That link did not load. Double-check the URL.';
+            };
+        }
+
+        function enterEditMode(article) {
+            if (!article) {
+                return;
+            }
+            state.editingArticleId = article.id;
+            articleTitle.value = article.title || '';
+            articleAuthor.value = article.author || state.defaultAuthor;
+            heroInput.value = article.image_url || '';
+            renderHeroPreview(heroInput.value.trim());
+            editorCanvas.innerHTML = article.content || DEFAULT_EDITOR_HTML;
+            normalizeFontElements();
+            editorStatus.textContent = `Editing "${article.title || 'Untitled draft'}"`;
+            editorStatus.className = 'status-line';
+            updateEditorModeLabels();
+            scheduleToolbarStateUpdate();
+            try {
+                editorCanvas.focus();
+            } catch (error) {
+                // no-op, focus might fail in some browsers
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        heroInput.addEventListener('input', () => {
+            renderHeroPreview(heroInput.value.trim());
+        });
+
+        if (editorCanvas) {
+            normalizeFontElements();
+            editorCanvas.addEventListener('paste', () => {
+                requestAnimationFrame(() => normalizeFontElements());
+            });
+            editorCanvas.addEventListener('beforeinput', handleEditorBeforeInput);
+            ['keyup', 'mouseup', 'focus', 'blur', 'input'].forEach(eventName => {
+                editorCanvas.addEventListener(eventName, scheduleToolbarStateUpdate);
+            });
+            ['keyup', 'mouseup'].forEach(eventName => {
+                editorCanvas.addEventListener(eventName, captureEditorSelection);
+            });
+        }
+
+        document.addEventListener('selectionchange', () => {
+            if (isSelectionInsideEditor()) {
+                captureEditorSelection();
+                scheduleToolbarStateUpdate();
+                handleEditorSelectionChange();
+            }
+        });
+
+        function escapeHtml(value) {
+            return (value || '').replace(/[&<>"']/g, char => {
+                switch (char) {
+                    case '&': return '&amp;';
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '"': return '&quot;';
+                    case "'": return '&#39;';
+                    default: return char;
+                }
+            });
+        }
+
+        function renderInlineMarkdown(text) {
+            let html = escapeHtml(text);
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+            html = html.replace(/\[(.+?)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            return html;
+        }
+
+        function convertMarkdownToHtml(markdown) {
+            if (!markdown) {
+                return '';
+            }
+            const lines = markdown.split(/\r?\n/);
+            const htmlParts = [];
+            let inList = false;
+
+            const closeListIfNeeded = () => {
+                if (inList) {
+                    htmlParts.push('</ul>');
+                    inList = false;
+                }
+            };
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    closeListIfNeeded();
+                    return;
+                }
+
+                if (/^[-*+]\s+/.test(trimmed)) {
+                    if (!inList) {
+                        htmlParts.push('<ul>');
+                        inList = true;
+                    }
+                    const itemText = trimmed.replace(/^[-*+]\s+/, '');
+                    htmlParts.push(`<li>${renderInlineMarkdown(itemText)}</li>`);
+                    return;
+                }
+
+                closeListIfNeeded();
+
+                if (/^###\s+/.test(trimmed)) {
+                    htmlParts.push(`<h3>${renderInlineMarkdown(trimmed.replace(/^###\s+/, ''))}</h3>`);
+                    return;
+                }
+                if (/^##\s+/.test(trimmed)) {
+                    htmlParts.push(`<h2>${renderInlineMarkdown(trimmed.replace(/^##\s+/, ''))}</h2>`);
+                    return;
+                }
+                if (/^#\s+/.test(trimmed)) {
+                    htmlParts.push(`<h1>${renderInlineMarkdown(trimmed.replace(/^#\s+/, ''))}</h1>`);
+                    return;
+                }
+
+                htmlParts.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+            });
+
+            closeListIfNeeded();
+            return htmlParts.join('');
+        }
+
+        function buildPreviewHtml(content) {
+            const raw = (content || '').trim();
+            if (!raw) {
+                return '';
+            }
+            const looksLikeHtml = /<\s*\/?[a-z][^>]*>/i.test(raw);
+            if (looksLikeHtml) {
+                return raw;
+            }
+            return convertMarkdownToHtml(raw);
+        }
+
+        function togglePreviewExpansion(previewNode, triggerButton) {
+            if (!previewNode || !triggerButton) {
+                return;
+            }
+            const expanded = previewNode.classList.toggle('expanded');
+            triggerButton.textContent = expanded ? 'Collapse preview' : 'Expand preview';
+            triggerButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            if (!expanded) {
+                try {
+                    previewNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } catch (error) {
+                    // scrollIntoView might fail silently on some browsers; safe to ignore.
+                }
+            }
+        }
+
+        function reevaluatePreviewToggle(previewNode, triggerButton) {
+            if (!previewNode || !triggerButton) {
+                return;
+            }
+            previewNode.classList.remove('expanded');
+            triggerButton.textContent = 'Expand preview';
+            triggerButton.setAttribute('aria-expanded', 'false');
+            triggerButton.hidden = true;
+            requestAnimationFrame(() => {
+                const needsToggle = (previewNode.scrollHeight - previewNode.clientHeight) > 4;
+                triggerButton.hidden = !needsToggle;
+            });
+        }
+
+        function renderArticles(articles) {
+            if (!articles || articles.length === 0) {
+                articlesList.innerHTML = '<div class="empty-state">Nothing stored yet. Your first post will appear here.</div>';
+                return;
+            }
+            articlesList.innerHTML = '';
+            articles.forEach(article => {
+                const card = document.createElement('article');
+                card.className = 'article-card';
+                function parseIsoToLocal(isoString) {
+                    if (!isoString) return '';
+                    // Ensure Z if missing (treat as UTC)
+                    let safeIso = isoString;
+                    if (!/Z$|[+-]\d{2}:?\d{2}$/.test(safeIso)) {
+                        safeIso += 'Z';
+                    }
+                    const date = new Date(safeIso);
+                    return date.toLocaleString(undefined, {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    });
+                }
+                const formatted = parseIsoToLocal(article.updated_at || article.created_at || new Date().toISOString());
+                const safeTitle = escapeHtml(article.title || 'Untitled draft');
+                const safeAuthor = escapeHtml(article.author || state.defaultAuthor);
+                const permalink = article.permalink || (article.slug ? `/blog/${article.slug}` : '');
+                const isPublished = Boolean(article.is_published);
+                const statusClass = isPublished ? 'published' : 'draft';
+                const statusLabel = isPublished ? 'Published' : 'Draft';
+                card.innerHTML = `
+                    <div class="article-card-header">
+                        <div>
+                            <h3>${safeTitle}</h3>
+                            <small>${safeAuthor} • ${formatted}</small>
+                        </div>
+                        <div class="article-card-actions">
+                            <span class="article-status-pill ${statusClass}">${statusLabel}</span>
+                            ${isPublished && permalink ? `<a class="view-article-link" href="${escapeHtml(permalink)}" target="_blank" rel="noopener noreferrer">View</a>` : ''}
+                            ${isPublished ? `<button type="button" class="unpublish-article-btn" data-article-id="${article.id}">Unpublish</button>` : ''}
+                            ${!isPublished ? `<button type="button" class="edit-article-btn" data-article-id="${article.id}">Edit</button>` : ''}
+                            ${!isPublished ? `<button type="button" class="publish-article-btn" data-article-id="${article.id}">Post</button>` : ''}
+                            <button type="button" class="delete-article-btn" data-article-id="${article.id}">Delete</button>
+                        </div>
+                    </div>
+                    <div class="article-preview">${buildPreviewHtml(article.content)}</div>
+                `;
+                const previewNode = card.querySelector('.article-preview');
+                let previewToggleBtn = null;
+                if (previewNode) {
+                    previewToggleBtn = document.createElement('button');
+                    previewToggleBtn.type = 'button';
+                    previewToggleBtn.className = 'preview-toggle-btn';
+                    previewToggleBtn.textContent = 'Expand preview';
+                    previewToggleBtn.setAttribute('aria-expanded', 'false');
+                    previewToggleBtn.hidden = true;
+                    previewToggleBtn.addEventListener('click', () => {
+                        togglePreviewExpansion(previewNode, previewToggleBtn);
+                    });
+                    previewNode.after(previewToggleBtn);
+                }
+                const deleteBtn = card.querySelector('.delete-article-btn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', () => handleDeleteArticle(article.id, card));
+                }
+                const editBtn = card.querySelector('.edit-article-btn');
+                if (editBtn) {
+                    editBtn.addEventListener('click', () => enterEditMode(article));
+                }
+                const publishBtnEl = card.querySelector('.publish-article-btn');
+                if (publishBtnEl) {
+                    publishBtnEl.addEventListener('click', () => handlePublishArticle(article.id, publishBtnEl));
+                }
+                const unpublishBtn = card.querySelector('.unpublish-article-btn');
+                if (unpublishBtn) {
+                    unpublishBtn.addEventListener('click', () => handleUnpublishArticle(article.id, unpublishBtn));
+                }
+                articlesList.appendChild(card);
+                if (previewNode && previewToggleBtn) {
+                    reevaluatePreviewToggle(previewNode, previewToggleBtn);
+                }
+            });
+        }
+
+        function formatSummaryDateLabel(summary) {
+            if (!summary) {
+                return 'today';
+            }
+            let iso = summary.summary_date || summary.published_at;
+            if (!iso) {
+                return 'today';
+            }
+            if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+                iso = `${iso}T00:00:00Z`;
+            }
+            const date = new Date(iso);
+            if (Number.isNaN(date.getTime())) {
+                return summary.summary_date || 'today';
+            }
+            return date.toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        async function handleManualMarketSummaryGeneration() {
+            if (!marketSummaryBtn || !marketSummaryStatus) {
+                return;
+            }
+            marketSummaryStatus.textContent = '';
+            marketSummaryStatus.className = 'status-line';
+            const originalLabel = marketSummaryBtn.textContent;
+            marketSummaryBtn.disabled = true;
+            marketSummaryBtn.textContent = 'Generating...';
+            try {
+                const response = await fetch('/api/market-summary/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
+                });
+                if (response.status === 401) {
+                    setBodyAuthFlag(false);
+                    throw new Error('Sign in again to trigger the market summary job.');
+                }
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to generate the market summary right now.');
+                }
+                const summaryLabel = formatSummaryDateLabel(data.summary);
+                const successMessage = data.message || `Market summary refreshed for ${summaryLabel}.`;
+                marketSummaryStatus.textContent = successMessage;
+                marketSummaryStatus.className = 'status-line success';
+                globalStatus.textContent = 'Market summary regenerated.';
+            } catch (error) {
+                marketSummaryStatus.textContent = error.message || 'Unable to generate the market summary right now.';
+                marketSummaryStatus.className = 'status-line error';
+            } finally {
+                marketSummaryBtn.disabled = !marketSummaryEnabled;
+                marketSummaryBtn.textContent = originalLabel;
+            }
+        }
+
+        async function loadArticles() {
+            if (!state.isAuthenticated) return;
+            try {
+                const response = await fetch('/api/blog/articles', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                if (response.status === 401) {
+                    setBodyAuthFlag(false);
+                    return;
+                }
+                const data = await response.json();
+                if (response.ok) {
+                    renderArticles(data.articles || []);
+                }
+            } catch (error) {
+                globalStatus.textContent = 'Unable to load stored drafts.';
+            }
+        }
+
+        function validateDraft({ title, content }) {
+            if (!title || !title.trim()) {
+                return 'Add a title before saving.';
+            }
+            const plainText = (content || '').replace(/<[^>]+>/g, '').trim();
+            if (!plainText) {
+                return 'Write some content before saving.';
+            }
+            return null;
+        }
+
+        async function handleDeleteArticle(articleId, cardElement) {
+            if (!articleId) return;
+            const confirmed = window.confirm('Delete this draft? This cannot be undone.');
+            if (!confirmed) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to delete draft.');
+                }
+                if (cardElement && cardElement.parentNode) {
+                    cardElement.parentNode.removeChild(cardElement);
+                }
+                if (state.editingArticleId === articleId) {
+                    resetDraft();
+                }
+                if (!articlesList.querySelector('.article-card')) {
+                    articlesList.innerHTML = '<div class="empty-state">Nothing stored yet. Your first post will appear here.</div>';
+                }
+                globalStatus.textContent = 'Draft deleted.';
+                loadArticles().catch(() => {});
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to delete draft.';
+                await loadArticles();
+            }
+        }
+
+        async function handlePublishArticle(articleId, buttonEl) {
+            if (!articleId || !buttonEl || buttonEl.disabled) {
+                return;
+            }
+            buttonEl.disabled = true;
+            const originalLabel = buttonEl.textContent;
+            buttonEl.textContent = 'Posting...';
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}/publish`, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to publish draft.');
+                }
+                globalStatus.textContent = 'Draft posted to the public blog.';
+                await loadArticles();
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to post draft right now.';
+            } finally {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalLabel;
+            }
+        }
+
+        async function handleUnpublishArticle(articleId, buttonEl) {
+            if (!articleId || !buttonEl || buttonEl.disabled) {
+                return;
+            }
+            const originalLabel = buttonEl.textContent;
+            buttonEl.disabled = true;
+            buttonEl.textContent = 'Reverting...';
+            try {
+                const response = await fetch(`/api/blog/articles/${articleId}/unpublish`, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to unpublish this post.');
+                }
+                globalStatus.textContent = 'Article reverted to draft.';
+                if (state.editingArticleId === articleId) {
+                    resetDraft();
+                }
+                await loadArticles();
+            } catch (error) {
+                globalStatus.textContent = error.message || 'Unable to revert the post right now.';
+            } finally {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalLabel;
+            }
+        }
+
+        async function handleSave() {
+            if (state.saving) return;
+            normalizeFontElements();
+            const payload = {
+                title: articleTitle.value.trim(),
+                author: articleAuthor.value.trim() || state.defaultAuthor,
+                image_url: heroInput.value.trim(),
+                content: editorCanvas.innerHTML.trim()
+            };
+            const errorMessage = validateDraft(payload);
+            if (errorMessage) {
+                editorStatus.textContent = errorMessage;
+                editorStatus.className = 'status-line error';
+                return;
+            }
+            state.saving = true;
+            publishBtn.disabled = true;
+            const isUpdating = Boolean(state.editingArticleId);
+            editorStatus.textContent = isUpdating ? 'Updating draft...' : 'Saving...';
+            editorStatus.className = 'status-line';
+            try {
+                const endpoint = isUpdating ? `/api/blog/articles/${state.editingArticleId}` : '/api/blog/articles';
+                const method = isUpdating ? 'PUT' : 'POST';
+                const response = await fetch(endpoint, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Unable to save right now.');
+                }
+                editorStatus.textContent = isUpdating ? 'Draft updated.' : 'Saved and archived.';
+                editorStatus.className = 'status-line success';
+                await loadArticles();
+            } catch (error) {
+                editorStatus.textContent = error.message;
+                editorStatus.className = 'status-line error';
+            } finally {
+                state.saving = false;
+                publishBtn.disabled = false;
+            }
+        }
+
+        function resetDraft() {
+            state.editingArticleId = null;
+            articleTitle.value = '';
+            articleAuthor.value = state.defaultAuthor;
+            heroInput.value = '';
+            renderHeroPreview('');
+            editorCanvas.innerHTML = DEFAULT_EDITOR_HTML;
+            normalizeFontElements();
+            editorStatus.textContent = '';
+            if (fontSizeControl) {
+                fontSizeControl.value = '16';
+            }
+            lastEditorSelectionRange = null;
+            pendingFontSize = null;
+            updateEditorModeLabels();
+            scheduleToolbarStateUpdate();
+        }
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', handleLogin);
+        }
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', handleLogout);
+        }
+        if (publishBtn) {
+            publishBtn.addEventListener('click', handleSave);
+        }
+        if (draftReset) {
+            draftReset.addEventListener('click', resetDraft);
+        }
+        if (fontSizeControl) {
+            fontSizeControl.addEventListener('change', () => {
+                const restored = restoreEditorSelection();
+                if (!restored && !isSelectionInsideEditor()) {
+                    try {
+                        editorCanvas.focus();
+                    } catch (error) {
+                        // Ignore focus errors for browsers that block programmatic focus.
+                    }
+                }
+                applyFontSize(fontSizeControl.value);
+            });
+        }
+        if (marketSummaryBtn) {
+            if (!marketSummaryEnabled) {
+                marketSummaryBtn.disabled = true;
+                marketSummaryBtn.textContent = 'Market summary disabled';
+            } else {
+                marketSummaryBtn.addEventListener('click', handleManualMarketSummaryGeneration);
+            }
+        }
+
+        bindToolbar();
+        scheduleToolbarStateUpdate();
+        updateEditorModeLabels();
+        if (state.isAuthenticated) {
+            loadArticles();
+        }
