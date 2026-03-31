@@ -796,8 +796,9 @@ from requests.auth import HTTPBasicAuth
 import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
 STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json"
-ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=20"
+ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=10"
 TRENDING_PAGE_SOURCES = ("stocktwits", "reddit", "volume")
+STOCKTWITS_ALLOWED_INSTRUMENT_CLASSES = {"stock", "exchangetradedcommodity"}
 
 
 def _normalize_trending_page_source(raw_value, default="stocktwits"):
@@ -1201,7 +1202,7 @@ def _fetch_stocktwits_symbols(limit=20):
     filtered = [
         s for s in symbols
         if (s.get("exchange") or "").upper() != "CRYPTO"
-        and (s.get("instrument_class") or "").lower() == "stock"
+        and (s.get("instrument_class") or "").strip().lower() in STOCKTWITS_ALLOWED_INSTRUMENT_CLASSES
     ]
     return filtered[:limit]
 
@@ -1295,6 +1296,7 @@ def fetch_stocktwits_trending(limit=10, include_prices=True):
                 "rank": idx,
                 "ticker": symbol,
                 "name": company_name,
+                "instrument_class": sym.get("instrument_class"),
                 "trending_score": trending_score,
                 "watchlist_count": sym.get("watchlist_count"),
                 "change_percent": resolved_change_pct,
