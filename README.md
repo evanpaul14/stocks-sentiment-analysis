@@ -77,6 +77,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 ### Pages (HTML)
 - `/` (GET): Main app UI.
+- `/privacy` (GET): Privacy policy page.
 - `/watchlist` (GET): Watchlist view.
 - `/results` (GET): Dedicated search results page.
 - `/trending-list` (GET): Trending dashboards page.
@@ -90,24 +91,29 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 - `/confirm` (GET): Market summary subscription confirmation page.
 
 ### Public JSON APIs
-- `/search` (POST): Search for a stock; returns JSON with `stock_info`, `historical_data`, `articles`, `sentiment_summary`, `overall_sentiment`, and optional `movement_insight`.
+- `/search` (POST): Search for a stock; returns JSON with `stock_info`, `historical_data`, and `articles`.
+- `/movement-insight` (POST): Build movement insight from `stock_info` or `symbol`.
 - `/historical/<symbol>/<period>` (GET): Get historical price data for a symbol and period.
 - `/trending` (GET): Get trending stocks (Reddit/ApeWisdom).
 - `/trending/<source>` (GET): Trending stocks from `stocktwits`, `reddit`, or `volume`.
+- `/trending/prices` (POST): Batch quote hydration for trending symbols.
 - `/sentiment` (POST): Analyze sentiment for a stock/news article.
 - `/quote/<symbol>` (GET): Quick price/quote lookup.
 - `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
 - `/api/market-summary/latest` (GET): Latest market summary (JSON).
+- `/api/market-summary/week-glance` (GET): Weekly index snapshots used by the market summary dashboard.
 - `/api/market-summary/archive` (GET): Market summary archive (JSON).
 - `/api/market-summary/<slug>` (GET): Fetch a specific market summary by slug (ISO date or `id-<pk>`).
+- `/api/market-summary/subscribe` (POST): Subscribe to market summary email updates (Mailgun).
 
 ### Authenticated APIs (writer/admin)
+- `/write/login` (POST): Authenticate writer/admin session.
+- `/write/logout` (POST): End writer/admin session.
 - `/api/blog/articles` (GET/POST): Manage private blog articles stored in `blog.db`.
 - `/api/blog/articles/<article_identifier>` (PUT/PATCH/DELETE): Update or delete a draft.
 - `/api/blog/articles/<article_identifier>/publish` (POST): Publish a draft to the public blog.
 - `/api/blog/articles/<article_identifier>/unpublish` (POST): Revert a post back to draft.
 - `/api/market-summary/generate` (POST): Force regenerate the market summary (admin only).
-- `/api/market-summary/subscribe` (POST): Subscribe to market summary email updates (Mailgun).
 
 ### Static assets
 - `/robots.txt` (GET): Robots file.
@@ -128,7 +134,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 ## Architecture
 
-- **No database required for public features** (SQLite only stores Unsplash cache, market summaries, and the authenticated blog workspace)
+- **No external database service required** (SQLite stores Unsplash cache, market summaries, and the authenticated blog workspace)
 - All data fetched live from third-party APIs
 - Sentiment and movement summaries use Gemma, LLM7, or Cloudflare (rate-limited)
 - Trending APIs are wrapped with timeouts and error handling
@@ -144,16 +150,20 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 Required:
 - `GOOGLE_API_KEY` (Gemma)
-- `FLASK_SECRET_KEY` (session signing; must be the same across all workers)
+- `FLASK_SECRET_KEY` or `SECRET_KEY` (session signing; must be the same across all workers)
 
 Optional (degrades gracefully if missing):
 - `LLM7_API_KEY`, `LLM7_BASE_URL`, `LLM7_MODEL`
-- `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY`
+- `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` (or `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` aliases)
 - `FINNHUB_API_KEY`
 - `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`, `UNSPLASH_DEFAULT_QUERY`
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SENTIMENT_MODEL`
-- `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_MARKET_LIST_ADDRESS` (email market summary subscription)
+- `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_MARKET_LIST_ADDRESS`, `MAILGUN_FROM_EMAIL` (email market summary subscription)
 - `ENABLE_MARKET_SUMMARY` (set to `0` to disable market summary generation)
+- `FLASK_SKIP_SCHEDULER` (set to `1` to disable APScheduler startup in a process)
+- `MARKET_SUMMARY_RELEASE_HOUR`, `MARKET_SUMMARY_RELEASE_MINUTE`, `MARKET_SUMMARY_RETENTION_DAYS`, `MARKET_SUMMARY_MAX_HEADLINES`
+- `BLOG_ARTICLE_FETCH_LIMIT`
+- `GEMMA_MAX_CALLS_PER_MINUTE`, `GEMMA_RATE_WINDOW_SECONDS`, `GEMMA_SENTIMENT_TIMEOUT_SECONDS`
 - `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
 
 ## Rate Limits
