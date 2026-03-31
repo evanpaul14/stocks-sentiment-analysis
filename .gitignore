@@ -12,3 +12,4 @@ instance/blog.db
 sitemap.xml
 ./test_templates
 design.md
+CRM.json

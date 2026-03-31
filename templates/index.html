@@ -442,6 +442,41 @@
                         <ul class="movement-sources" id="movementSources"></ul>
                     </div>
 
+                    <section class="stocktwits-results-card is-hidden" id="stocktwitsResultsCard" aria-labelledby="stocktwitsResultsHeading">
+                        <div class="stocktwits-results-header">
+                            <h2 class="stocktwits-results-title" id="stocktwitsResultsHeading">StockTwits Sentiment</h2>
+                            <div class="stocktwits-header-meta">
+                                <span class="overall-sent sentiment-value neutral stocktwits-overall-header" id="stocktwitsOverall">Overall Neutral</span>
+                                <a
+                                    id="stocktwitsResultsAttribution"
+                                    class="stocktwits-results-attribution"
+                                    href="https://stocktwits.com"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >Data from StockTwits</a>
+                            </div>
+                        </div>
+                        <div class="stocktwits-results-summary">
+                            <div class="stocktwits-meter-row">
+                                <span class="stocktwits-meter-label">Bullish</span>
+                                <div class="stocktwits-meter-track">
+                                    <div class="stocktwits-meter-fill bullish" id="stocktwitsBullishBar"></div>
+                                </div>
+                                <span class="stocktwits-meter-value" id="stocktwitsBullishPct">0.00%</span>
+                            </div>
+
+                            <div class="stocktwits-meter-row">
+                                <span class="stocktwits-meter-label">Bearish</span>
+                                <div class="stocktwits-meter-track">
+                                    <div class="stocktwits-meter-fill bearish" id="stocktwitsBearishBar"></div>
+                                </div>
+                                <span class="stocktwits-meter-value" id="stocktwitsBearishPct">0.00%</span>
+                            </div>
+
+                        </div>
+                        <div class="stocktwits-feed" id="stocktwitsFeed"></div>
+                    </section>
+
                     <section class="news-card news-section" aria-labelledby="newsHeading">
                         <div class="news-header">
                             <h2 class="news-header-title" id="newsHeading">Latest News</h2>

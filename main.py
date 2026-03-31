@@ -796,6 +796,7 @@ from requests.auth import HTTPBasicAuth
 import html
 APEWISDOM_API_URL = "https://apewisdom.io/api/v1.0/filter/all-stocks"
 STOCKTWITS_TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json"
+STOCKTWITS_SYMBOL_STREAM_URL = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
 ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=10"
 TRENDING_PAGE_SOURCES = ("stocktwits", "reddit", "volume")
 STOCKTWITS_ALLOWED_INSTRUMENT_CLASSES = {"stock", "exchangetradedcommodity"}
@@ -900,6 +901,11 @@ STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS = max(
     _get_int_env("STOCKTWITS_SUMMARY_CACHE_TTL_SECONDS", 600)
 )
 _stocktwits_summary_cache = {}
+STOCKTWITS_SYMBOL_SENTIMENT_CACHE_TTL_SECONDS = max(
+    45,
+    _get_int_env("STOCKTWITS_SYMBOL_SENTIMENT_CACHE_TTL_SECONDS", 180)
+)
+_stocktwits_symbol_sentiment_cache = {}
 
 
 def _extract_stocktwits_summary_parts(symbol_payload):
@@ -952,6 +958,302 @@ def _normalize_stocktwits_summary(summary_payload):
     except Exception:
         return None
     return normalized or None
+
+
+def _stocktwits_sentiment_label_from_message(message):
+    if not isinstance(message, dict):
+        return ""
+    entities = message.get("entities") or {}
+    sentiment = entities.get("sentiment") or {}
+    label = (sentiment.get("basic") or "").strip().lower()
+    if label in {"bullish", "bearish"}:
+        return label
+    return ""
+
+
+def _fetch_stocktwits_symbol_stream_page(
+    symbol,
+    *,
+    limit=100,
+    filter_name="top",
+    max_id=None,
+    timeout=10
+):
+    normalized = normalize_ticker_symbol(symbol)
+    if not normalized:
+        return {}
+
+    scraper = cloudscraper.create_scraper(
+        browser={
+            "browser": "chrome",
+            "platform": "darwin",
+            "mobile": False
+        }
+    )
+    url = STOCKTWITS_SYMBOL_STREAM_URL.format(ticker=normalized)
+    params = {
+        "filter": (filter_name or "top").strip() or "top",
+        "limit": max(1, min(int(limit or 100), 100))
+    }
+    if max_id is not None:
+        params["max"] = max_id
+
+    response = scraper.get(
+        url,
+        params=params,
+        timeout=timeout
+    )
+    response.raise_for_status()
+    return response.json() or {}
+
+
+def _collect_stocktwits_symbol_messages(
+    symbol,
+    *,
+    target_sentiment_messages=50,
+    batch_limit=100,
+    filter_name="top",
+    timeout=10,
+    max_batches=12
+):
+    all_messages = []
+    seen_ids = set()
+    next_max_id = None
+    batches_fetched = 0
+    sentiment_messages_collected = 0
+    last_symbol_payload = {"symbol": normalize_ticker_symbol(symbol)}
+
+    for _ in range(max(1, int(max_batches or 1))):
+        payload = _fetch_stocktwits_symbol_stream_page(
+            symbol,
+            limit=batch_limit,
+            filter_name=filter_name,
+            max_id=next_max_id,
+            timeout=timeout
+        )
+        batches_fetched += 1
+        last_symbol_payload = payload.get("symbol") or last_symbol_payload
+
+        batch_messages = payload.get("messages") or []
+        if not batch_messages:
+            break
+
+        oldest_id_this_batch = None
+        for message in batch_messages:
+            if not isinstance(message, dict):
+                continue
+            message_id = message.get("id")
+            if message_id is None or message_id in seen_ids:
+                continue
+            seen_ids.add(message_id)
+            all_messages.append(message)
+
+            if _stocktwits_sentiment_label_from_message(message) in {"bullish", "bearish"}:
+                sentiment_messages_collected += 1
+            oldest_id_this_batch = message_id
+
+        if oldest_id_this_batch is None:
+            break
+
+        next_max_id = oldest_id_this_batch
+
+        if sentiment_messages_collected >= max(1, int(target_sentiment_messages or 1)):
+            break
+
+    return {
+        "symbol": last_symbol_payload,
+        "messages": all_messages,
+        "meta": {
+            "batches_fetched": batches_fetched,
+            "sentiment_messages_collected": sentiment_messages_collected,
+            "target_sentiment_messages": max(1, int(target_sentiment_messages or 1)),
+            "next_max_id": next_max_id
+        }
+    }
+
+
+def _calculate_stocktwits_symbol_sentiment(messages):
+    counts = {
+        "bullish": 0,
+        "bearish": 0
+    }
+    sentiment_tagged_messages = 0
+
+    for message in messages or []:
+        label = _stocktwits_sentiment_label_from_message(message)
+        if label in counts:
+            counts[label] += 1
+            sentiment_tagged_messages += 1
+
+    if sentiment_tagged_messages == 0:
+        overall = "neutral"
+    elif counts["bullish"] > counts["bearish"]:
+        overall = "bullish"
+    elif counts["bearish"] > counts["bullish"]:
+        overall = "bearish"
+    else:
+        overall = "neutral"
+
+    bullish_pct = (
+        round((counts["bullish"] / sentiment_tagged_messages) * 100, 2)
+        if sentiment_tagged_messages
+        else 0.0
+    )
+    bearish_pct = (
+        round((counts["bearish"] / sentiment_tagged_messages) * 100, 2)
+        if sentiment_tagged_messages
+        else 0.0
+    )
+
+    return {
+        "total_messages": len(messages or []),
+        "messages_with_sentiment": sentiment_tagged_messages,
+        "sentiment_counts": counts,
+        "sentiment_percentages": {
+            "bullish": bullish_pct,
+            "bearish": bearish_pct
+        },
+        "overall_sentiment": overall
+    }
+
+
+def _extract_stocktwits_message_images(message):
+    if not isinstance(message, dict):
+        return []
+
+    image_urls = []
+    seen = set()
+
+    def _append_candidate(url):
+        normalized = (url or "").strip()
+        if not normalized:
+            return
+        if not normalized.lower().startswith(("http://", "https://")):
+            return
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        image_urls.append(normalized)
+
+    chart_payload = message.get("chart") or {}
+    if isinstance(chart_payload, dict):
+        _append_candidate(chart_payload.get("image_url"))
+        _append_candidate(chart_payload.get("url"))
+
+    entities = message.get("entities") or {}
+    links = entities.get("links") or []
+    if isinstance(links, list):
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            _append_candidate(link.get("image"))
+            _append_candidate(link.get("image_url"))
+            images_payload = link.get("images")
+            if isinstance(images_payload, dict):
+                for value in images_payload.values():
+                    _append_candidate(value)
+            elif isinstance(images_payload, list):
+                for value in images_payload:
+                    if isinstance(value, dict):
+                        _append_candidate(value.get("url"))
+                    else:
+                        _append_candidate(value)
+
+    return image_urls
+
+
+def _build_stocktwits_message_feed(messages, symbol, feed_limit=40):
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    capped_limit = max(0, min(int(feed_limit or 0), 100))
+    feed = []
+
+    for message in (messages or [])[:capped_limit]:
+        if not isinstance(message, dict):
+            continue
+        user = message.get("user") or {}
+        username = (user.get("username") or "").strip()
+        message_id = message.get("id")
+        label = _stocktwits_sentiment_label_from_message(message)
+
+        feed.append({
+            "id": message_id,
+            "created_at": message.get("created_at"),
+            "username": username or None,
+            "avatar_url": user.get("avatar_url") or user.get("avatar_url_ssl") or None,
+            "sentiment": label or None,
+            "body": message.get("body"),
+            "image_urls": _extract_stocktwits_message_images(message),
+            "message_url": f"https://stocktwits.com/message/{message_id}" if message_id else None,
+            "profile_url": f"https://stocktwits.com/{username}" if username else None,
+            "symbol_url": f"https://stocktwits.com/symbol/{normalized_symbol}" if normalized_symbol else None
+        })
+
+    return feed
+
+
+def get_stocktwits_symbol_sentiment(
+    symbol,
+    *,
+    target_sentiment_messages=50,
+    batch_limit=100,
+    filter_name="top",
+    timeout=10,
+    max_batches=12,
+    feed_limit=40
+):
+    normalized_symbol = normalize_ticker_symbol(symbol)
+    if not normalized_symbol:
+        return None
+
+    target_sentiment_messages = max(10, min(int(target_sentiment_messages or 50), 250))
+    batch_limit = max(20, min(int(batch_limit or 100), 100))
+    max_batches = max(1, min(int(max_batches or 12), 20))
+    feed_limit = max(0, min(int(feed_limit or 40), 100))
+    timeout = max(3, min(int(timeout or 10), 25))
+
+    cache_key = (
+        normalized_symbol,
+        target_sentiment_messages,
+        batch_limit,
+        (filter_name or "top").strip().lower(),
+        max_batches,
+        feed_limit
+    )
+    now = time.time()
+    cached_entry = _stocktwits_symbol_sentiment_cache.get(cache_key)
+    if cached_entry and (now - cached_entry.get("timestamp", 0)) < STOCKTWITS_SYMBOL_SENTIMENT_CACHE_TTL_SECONDS:
+        return cached_entry.get("data")
+
+    payload = _collect_stocktwits_symbol_messages(
+        normalized_symbol,
+        target_sentiment_messages=target_sentiment_messages,
+        batch_limit=batch_limit,
+        filter_name=filter_name,
+        timeout=timeout,
+        max_batches=max_batches
+    )
+    messages = payload.get("messages") or []
+    summary = _calculate_stocktwits_symbol_sentiment(messages)
+    message_feed = _build_stocktwits_message_feed(messages, normalized_symbol, feed_limit=feed_limit)
+
+    result = {
+        "ticker": normalized_symbol,
+        "symbol": payload.get("symbol") or {"symbol": normalized_symbol},
+        "summary": summary,
+        "message_feed": message_feed,
+        "pagination": payload.get("meta") or {},
+        "attribution": {
+            "name": "StockTwits",
+            "url": f"https://stocktwits.com/symbol/{normalized_symbol}"
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    _stocktwits_symbol_sentiment_cache[cache_key] = {
+        "timestamp": now,
+        "data": result
+    }
+    return result
 
 
 def get_price_change_snapshot(symbol):
@@ -4138,6 +4440,54 @@ def stocktwits_summary(symbol):
         "summary_meta": entry.get("summary_meta"),
         "watchlist_count": entry.get("watchlist_count")
     })
+
+
+@app.route('/stocktwits/<symbol>/sentiment', methods=['GET'])
+@limiter.limit("20 per minute")
+def stocktwits_symbol_sentiment(symbol):
+    normalized = normalize_ticker_symbol(symbol)
+    if not normalized:
+        return jsonify({"error": "Symbol is required"}), 400
+
+    def _parse_int_arg(name, default, minimum, maximum):
+        raw_value = request.args.get(name)
+        if raw_value is None:
+            return default
+        try:
+            parsed = int(raw_value)
+        except (TypeError, ValueError):
+            return default
+        return max(minimum, min(parsed, maximum))
+
+    target_sentiment_messages = _parse_int_arg("target", 50, 10, 250)
+    batch_limit = _parse_int_arg("limit", 100, 20, 100)
+    max_batches = _parse_int_arg("max_batches", 12, 1, 20)
+    feed_limit = _parse_int_arg("feed_limit", 40, 0, 100)
+    timeout = _parse_int_arg("timeout", 10, 3, 25)
+    filter_name = (request.args.get("filter") or "top").strip() or "top"
+
+    try:
+        payload = get_stocktwits_symbol_sentiment(
+            normalized,
+            target_sentiment_messages=target_sentiment_messages,
+            batch_limit=batch_limit,
+            filter_name=filter_name,
+            timeout=timeout,
+            max_batches=max_batches,
+            feed_limit=feed_limit
+        )
+    except Exception as exc:
+        summary_logger.exception(
+            "[StockTwits] Symbol sentiment fetch failed for %s: %s",
+            normalized,
+            exc
+        )
+        return jsonify({"error": "StockTwits sentiment is unavailable right now."}), 502
+
+    if not payload:
+        return jsonify({"error": "StockTwits sentiment unavailable."}), 404
+
+    return jsonify(payload)
 
 @app.route('/robots.txt', methods=['GET'])
 @limiter.limit("100 per minute")

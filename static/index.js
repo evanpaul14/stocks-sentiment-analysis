@@ -6,6 +6,14 @@ const movementBox = document.getElementById('movementBox');
 const movementSummaryEl = document.getElementById('movementSummary');
 const movementMetaEl = document.getElementById('movementMeta');
 const movementSourcesEl = document.getElementById('movementSources');
+const stocktwitsResultsCardEl = document.getElementById('stocktwitsResultsCard');
+const stocktwitsOverallEl = document.getElementById('stocktwitsOverall');
+const stocktwitsBullishBarEl = document.getElementById('stocktwitsBullishBar');
+const stocktwitsBearishBarEl = document.getElementById('stocktwitsBearishBar');
+const stocktwitsBullishPctEl = document.getElementById('stocktwitsBullishPct');
+const stocktwitsBearishPctEl = document.getElementById('stocktwitsBearishPct');
+const stocktwitsFeedEl = document.getElementById('stocktwitsFeed');
+const stocktwitsResultsAttributionEl = document.getElementById('stocktwitsResultsAttribution');
 const trendingLists = {
     stocktwits: document.getElementById('stocktwitsList'),
     reddit: document.getElementById('redditList'),
@@ -170,6 +178,10 @@ const sentimentProgressBarEl = sentimentProgressEl ? sentimentProgressEl.querySe
 let sentimentBatchSize = 0;
 const SENTIMENT_REQUEST_TIMEOUT_MS = 25000;
 const SENTIMENT_RETRY_TIMEOUT_MS = 45000;
+const STOCKTWITS_RESULTS_TIMEOUT_MS = 20000;
+const STOCKTWITS_FEED_PREVIEW_COUNT = 4;
+const STOCKTWITS_MESSAGE_TRUNCATE_LENGTH = 280;
+let activeStocktwitsSentimentRequestId = 0;
 let recentSearches = [];
 let visibleSearchSuggestions = [];
 let activeSearchSuggestionIndex = -1;
@@ -2229,6 +2241,8 @@ function initializeSearchSuggestions() {
 
         showTrendingSection(false);
         activeMovementInsightRequestId += 1;
+        activeStocktwitsSentimentRequestId += 1;
+        resetStocktwitsSentimentCard();
         renderMovementInsight(null);
         document.getElementById('loading').style.display = 'block';
         document.getElementById('results').style.display = 'none';
@@ -2302,10 +2316,351 @@ function initializeSearchSuggestions() {
         }
     }
 
+    function resetStocktwitsSentimentCard() {
+        if (!stocktwitsResultsCardEl) return;
+        stocktwitsResultsCardEl.classList.add('is-hidden');
+        if (stocktwitsOverallEl) {
+            stocktwitsOverallEl.textContent = 'Overall Neutral';
+            stocktwitsOverallEl.className = 'stocktwits-overall-value sentiment-badge neutral';
+        }
+        if (stocktwitsBullishBarEl) stocktwitsBullishBarEl.style.width = '0%';
+        if (stocktwitsBearishBarEl) stocktwitsBearishBarEl.style.width = '0%';
+        if (stocktwitsBullishPctEl) stocktwitsBullishPctEl.textContent = '0.00%';
+        if (stocktwitsBearishPctEl) stocktwitsBearishPctEl.textContent = '0.00%';
+        if (stocktwitsFeedEl) stocktwitsFeedEl.innerHTML = '';
+    }
+
+    function setStocktwitsOverallSentiment(overallSentiment) {
+        if (!stocktwitsOverallEl) return;
+        const normalized = (overallSentiment || '').toString().trim().toLowerCase();
+        const className = normalized === 'bullish'
+            ? 'positive'
+            : normalized === 'bearish'
+                ? 'negative'
+                : 'neutral';
+        const textValue = normalized === 'bullish'
+            ? 'Overall Bullish'
+            : normalized === 'bearish'
+                ? 'Overall Bearish'
+                : 'Overall Neutral';
+
+        stocktwitsOverallEl.textContent = textValue;
+        stocktwitsOverallEl.className = `stocktwits-overall-value sentiment-badge ${className}`;
+    }
+
+    function renderStocktwitsSentimentLoading(symbol) {
+        if (!stocktwitsResultsCardEl) return;
+        stocktwitsResultsCardEl.classList.remove('is-hidden');
+        setStocktwitsOverallSentiment('neutral');
+        if (stocktwitsBullishBarEl) stocktwitsBullishBarEl.style.width = '0%';
+        if (stocktwitsBearishBarEl) stocktwitsBearishBarEl.style.width = '0%';
+        if (stocktwitsBullishPctEl) stocktwitsBullishPctEl.textContent = '0.00%';
+        if (stocktwitsBearishPctEl) stocktwitsBearishPctEl.textContent = '0.00%';
+        if (stocktwitsFeedEl) {
+            stocktwitsFeedEl.innerHTML = '<div class="stocktwits-feed-empty">Loading StockTwits message feed...</div>';
+        }
+    }
+
+    function renderStocktwitsSentimentError(symbol, message) {
+        if (!stocktwitsResultsCardEl) return;
+        stocktwitsResultsCardEl.classList.remove('is-hidden');
+        setStocktwitsOverallSentiment('neutral');
+        if (stocktwitsBullishBarEl) stocktwitsBullishBarEl.style.width = '0%';
+        if (stocktwitsBearishBarEl) stocktwitsBearishBarEl.style.width = '0%';
+        if (stocktwitsBullishPctEl) stocktwitsBullishPctEl.textContent = '0.00%';
+        if (stocktwitsBearishPctEl) stocktwitsBearishPctEl.textContent = '0.00%';
+        if (stocktwitsFeedEl) {
+            stocktwitsFeedEl.innerHTML = `<div class="stocktwits-feed-empty">${escapeHtml(message || `Unable to load StockTwits sentiment for ${(symbol || '').toUpperCase()}.`)}</div>`;
+        }
+    }
+
+    function buildStocktwitsCashtagFragment(text) {
+        const fragment = document.createDocumentFragment();
+        const sourceText = decodeHtmlEntities((text || '').toString());
+        const tokenRegex = /(https?:\/\/[^\s<>"]+)|\$([A-Za-z][A-Za-z0-9.\-]{0,9})/g;
+        let lastIndex = 0;
+        let match = tokenRegex.exec(sourceText);
+
+        while (match) {
+            const start = match.index;
+            const end = tokenRegex.lastIndex;
+            if (start > lastIndex) {
+                fragment.appendChild(document.createTextNode(sourceText.slice(lastIndex, start)));
+            }
+
+            if (match[1]) {
+                let rawUrl = match[1];
+                const trailing = rawUrl.match(/[),.;!?]+$/);
+                const trailingText = trailing ? trailing[0] : '';
+                if (trailingText) {
+                    rawUrl = rawUrl.slice(0, rawUrl.length - trailingText.length);
+                }
+
+                const urlLink = document.createElement('a');
+                urlLink.href = rawUrl;
+                urlLink.target = '_blank';
+                urlLink.rel = 'noopener noreferrer';
+                urlLink.className = 'stocktwits-body-link';
+                urlLink.textContent = rawUrl;
+                fragment.appendChild(urlLink);
+
+                if (trailingText) {
+                    fragment.appendChild(document.createTextNode(trailingText));
+                }
+            } else {
+                const rawTicker = match[2] || '';
+                const ticker = rawTicker.toUpperCase();
+                const cashtagLink = document.createElement('a');
+                cashtagLink.href = `https://stocktwits.com/symbol/${encodeURIComponent(ticker)}`;
+                cashtagLink.target = '_blank';
+                cashtagLink.rel = 'noopener noreferrer';
+                cashtagLink.className = 'stocktwits-cashtag-link';
+                cashtagLink.textContent = `$${ticker}`;
+                fragment.appendChild(cashtagLink);
+            }
+
+            lastIndex = end;
+            match = tokenRegex.exec(sourceText);
+        }
+
+        if (lastIndex < sourceText.length) {
+            fragment.appendChild(document.createTextNode(sourceText.slice(lastIndex)));
+        }
+        return fragment;
+    }
+
+    function mountStocktwitsMessageBody(bodyElement, textValue) {
+        bodyElement.innerHTML = '';
+        bodyElement.appendChild(buildStocktwitsCashtagFragment(textValue));
+    }
+
+    function buildStocktwitsFeedItemElement(item) {
+        const row = document.createElement('article');
+        row.className = 'stocktwits-feed-item';
+
+        const header = document.createElement('div');
+        header.className = 'stocktwits-feed-item-head';
+
+        const userBlock = document.createElement('div');
+        userBlock.className = 'stocktwits-feed-user-block';
+
+        const avatar = document.createElement('img');
+        avatar.className = 'stocktwits-feed-avatar';
+        avatar.alt = 'StockTwits avatar';
+        avatar.loading = 'lazy';
+        avatar.decoding = 'async';
+        avatar.referrerPolicy = 'no-referrer';
+        const avatarUrl = ((item && item.avatar_url) || '').toString().trim();
+        avatar.src = avatarUrl || 'https://stocktwits.com/favicon.ico';
+        avatar.addEventListener('error', () => {
+            avatar.src = 'https://stocktwits.com/favicon.ico';
+        });
+        userBlock.appendChild(avatar);
+
+        const userWrap = document.createElement('div');
+        userWrap.className = 'stocktwits-feed-user';
+        const username = ((item && item.username) || '').toString().trim();
+        if (username && item.profile_url) {
+            const profileLink = document.createElement('a');
+            profileLink.href = item.profile_url;
+            profileLink.target = '_blank';
+            profileLink.rel = 'noopener noreferrer';
+            profileLink.textContent = `@${username}`;
+            userWrap.appendChild(profileLink);
+        } else {
+            userWrap.textContent = username ? `@${username}` : 'StockTwits User';
+        }
+        userBlock.appendChild(userWrap);
+        header.appendChild(userBlock);
+
+        const rightMeta = document.createElement('div');
+        rightMeta.className = 'stocktwits-feed-meta';
+        const createdAt = item && item.created_at;
+        if (createdAt) {
+            const dateObj = new Date(createdAt);
+            if (!Number.isNaN(dateObj.getTime())) {
+                const timeChip = document.createElement('span');
+                timeChip.textContent = formatDate(createdAt);
+                rightMeta.appendChild(timeChip);
+            }
+        }
+
+        const sentimentLabel = ((item && item.sentiment) || '').toString().trim().toLowerCase();
+        if (sentimentLabel === 'bullish' || sentimentLabel === 'bearish') {
+            const sentimentChip = document.createElement('span');
+            sentimentChip.className = `stocktwits-feed-sentiment ${sentimentLabel}`;
+            sentimentChip.textContent = sentimentLabel;
+            rightMeta.appendChild(sentimentChip);
+        }
+
+        if (rightMeta.childNodes.length) {
+            header.appendChild(rightMeta);
+        }
+
+        const body = document.createElement('p');
+        body.className = 'stocktwits-feed-body';
+        const fullBody = ((item && item.body) || 'No message text provided.').toString();
+        const needsTruncation = fullBody.length > STOCKTWITS_MESSAGE_TRUNCATE_LENGTH;
+        const truncatedBody = needsTruncation
+            ? `${fullBody.slice(0, STOCKTWITS_MESSAGE_TRUNCATE_LENGTH).trimEnd()}...`
+            : fullBody;
+        mountStocktwitsMessageBody(body, truncatedBody);
+
+        const imageUrls = item && Array.isArray(item.image_urls)
+            ? item.image_urls.filter(url => typeof url === 'string' && url.trim())
+            : [];
+        let embedEl = null;
+        if (imageUrls.length) {
+            embedEl = document.createElement('div');
+            embedEl.className = 'stocktwits-feed-embed';
+            const img = document.createElement('img');
+            img.className = 'stocktwits-feed-embed-image';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.referrerPolicy = 'no-referrer';
+            img.src = imageUrls[0];
+            img.alt = 'StockTwits embed';
+            embedEl.appendChild(img);
+        }
+
+        let expanded = false;
+        let truncateToggle = null;
+        if (needsTruncation) {
+            truncateToggle = document.createElement('button');
+            truncateToggle.type = 'button';
+            truncateToggle.className = 'stocktwits-inline-toggle';
+            truncateToggle.textContent = 'View more';
+            truncateToggle.addEventListener('click', () => {
+                expanded = !expanded;
+                mountStocktwitsMessageBody(body, expanded ? fullBody : truncatedBody);
+                truncateToggle.textContent = expanded ? 'View less' : 'View more';
+            });
+        }
+
+        row.appendChild(header);
+        row.appendChild(body);
+        if (embedEl) {
+            row.appendChild(embedEl);
+        }
+        if (truncateToggle) {
+            const toggleRow = document.createElement('div');
+            toggleRow.className = 'stocktwits-inline-toggle-row';
+            toggleRow.appendChild(truncateToggle);
+            row.appendChild(toggleRow);
+        }
+        return row;
+    }
+
+    function renderStocktwitsSentiment(payload) {
+        if (!stocktwitsResultsCardEl) return;
+        stocktwitsResultsCardEl.classList.remove('is-hidden');
+
+        const summary = payload && payload.summary ? payload.summary : {};
+        const percentages = summary.sentiment_percentages || {};
+        const bullishPct = Number(percentages.bullish);
+        const bearishPct = Number(percentages.bearish);
+        const safeBullishPct = Number.isFinite(bullishPct) ? Math.max(0, Math.min(100, bullishPct)) : 0;
+        const safeBearishPct = Number.isFinite(bearishPct) ? Math.max(0, Math.min(100, bearishPct)) : 0;
+        const overallSentiment = (summary.overall_sentiment || '').toString().toLowerCase();
+
+        setStocktwitsOverallSentiment(overallSentiment);
+
+        if (stocktwitsBullishBarEl) stocktwitsBullishBarEl.style.width = `${safeBullishPct.toFixed(2)}%`;
+        if (stocktwitsBearishBarEl) stocktwitsBearishBarEl.style.width = `${safeBearishPct.toFixed(2)}%`;
+        if (stocktwitsBullishPctEl) stocktwitsBullishPctEl.textContent = `${safeBullishPct.toFixed(2)}%`;
+        if (stocktwitsBearishPctEl) stocktwitsBearishPctEl.textContent = `${safeBearishPct.toFixed(2)}%`;
+
+        const attributionUrl = payload && payload.attribution && payload.attribution.url
+            ? payload.attribution.url
+            : null;
+        if (stocktwitsResultsAttributionEl && attributionUrl) {
+            stocktwitsResultsAttributionEl.href = attributionUrl;
+        }
+
+        const feed = payload && Array.isArray(payload.message_feed)
+            ? payload.message_feed
+            : [];
+        if (stocktwitsFeedEl) {
+            stocktwitsFeedEl.innerHTML = '';
+            if (!feed.length) {
+                stocktwitsFeedEl.innerHTML = '<div class="stocktwits-feed-empty">No recent StockTwits comments are available yet.</div>';
+            } else {
+                let listExpanded = false;
+                const listToggle = document.createElement('button');
+                listToggle.type = 'button';
+                listToggle.className = 'stocktwits-feed-toggle';
+
+                const renderVisibleFeed = () => {
+                    const existingItems = stocktwitsFeedEl.querySelectorAll('.stocktwits-feed-item');
+                    existingItems.forEach(node => node.remove());
+                    const visibleCount = listExpanded ? feed.length : Math.min(STOCKTWITS_FEED_PREVIEW_COUNT, feed.length);
+                    for (let i = 0; i < visibleCount; i += 1) {
+                        stocktwitsFeedEl.appendChild(buildStocktwitsFeedItemElement(feed[i]));
+                    }
+
+                    if (feed.length > STOCKTWITS_FEED_PREVIEW_COUNT) {
+                        listToggle.textContent = listExpanded
+                            ? 'Show fewer comments'
+                            : 'View more comments';
+                        if (!stocktwitsFeedEl.contains(listToggle)) {
+                            stocktwitsFeedEl.appendChild(listToggle);
+                        }
+                    } else if (stocktwitsFeedEl.contains(listToggle)) {
+                        listToggle.remove();
+                    }
+                };
+
+                listToggle.addEventListener('click', () => {
+                    listExpanded = !listExpanded;
+                    renderVisibleFeed();
+                });
+
+                renderVisibleFeed();
+            }
+        }
+    }
+
+    async function loadStocktwitsSentiment(symbol) {
+        const normalizedSymbol = (symbol || '').toString().trim().toUpperCase();
+        if (!normalizedSymbol) {
+            resetStocktwitsSentimentCard();
+            return;
+        }
+
+        const requestId = ++activeStocktwitsSentimentRequestId;
+        renderStocktwitsSentimentLoading(normalizedSymbol);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), STOCKTWITS_RESULTS_TIMEOUT_MS);
+        try {
+            const response = await fetch(`/stocktwits/${encodeURIComponent(normalizedSymbol)}/sentiment`, {
+                signal: controller.signal
+            });
+            const payload = await response.json();
+            if (requestId !== activeStocktwitsSentimentRequestId) return;
+            if (!response.ok) {
+                throw new Error((payload && payload.error) || 'Failed to load StockTwits sentiment.');
+            }
+            renderStocktwitsSentiment(payload);
+        } catch (error) {
+            if (requestId !== activeStocktwitsSentimentRequestId) return;
+            const isTimeout = error && error.name === 'AbortError';
+            const errorMessage = isTimeout
+                ? 'StockTwits sentiment request timed out. Try another symbol.'
+                : (error && error.message) || 'Failed to load StockTwits sentiment.';
+            console.warn('StockTwits sentiment load error:', error);
+            renderStocktwitsSentimentError(normalizedSymbol, errorMessage);
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
     function displayResults(data) {
         const stockInfo = data.stock_info;
         const sentimentRunId = ++activeSentimentRunId;
+        activeStocktwitsSentimentRequestId += 1;
         resetSentimentSummaryUI();
+        resetStocktwitsSentimentCard();
         latestSentimentCounts = { positive: 0, negative: 0, neutral: 0 };
         setSentimentStatus('Analyzing article sentiment...');
         updateWatchlistToggle(stockInfo.symbol, stockInfo.companyName, stockInfo.price);
@@ -2406,6 +2761,7 @@ function initializeSearchSuggestions() {
         document.getElementById('volume').textContent = stockInfo.volume ? formatNumber(stockInfo.volume) : 'N/A';
         document.getElementById('fiftyTwoWeekHigh').textContent = stockInfo.fiftyTwoWeekHigh ? formatCurrency(stockInfo.fiftyTwoWeekHigh) : 'N/A';
         document.getElementById('fiftyTwoWeekLow').textContent = stockInfo.fiftyTwoWeekLow ? formatCurrency(stockInfo.fiftyTwoWeekLow) : 'N/A';
+        loadStocktwitsSentiment(stockInfo.symbol);
         renderSentimentSummaryUI(latestSentimentCounts, 0, true);
 
         const newsContainer = document.getElementById('newsArticles');
@@ -2979,14 +3335,22 @@ function initializeSearchSuggestions() {
     function formatDate(dateString) {
         const date = new Date(dateString);
         const now = new Date();
-        const diff = Math.floor((now - date) / 1000 / 60 / 60);
+        const diffMinutes = Math.floor((now - date) / 1000 / 60);
 
-        if (diff < 24) {
-            return diff + 'h';
-        } else {
-            const days = Math.floor(diff / 24);
-            return days + 'd';
+        if (!Number.isFinite(diffMinutes) || diffMinutes < 0) {
+            return 'now';
         }
+        if (diffMinutes < 60) {
+            return `${Math.max(1, diffMinutes)}m`;
+        }
+
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) {
+            return `${diffHours}h`;
+        }
+
+        const days = Math.floor(diffHours / 24);
+        return `${days}d`;
     }
 
     if (companyInputEl) {
