@@ -20,7 +20,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 
 1. **Clone & setup:**
   ```bash
-  git clone https://github.com/evanpaul/stocks-sentiment-analysis.git
+  git clone https://github.com/evanpaul14/stocks-sentiment-analysis.git
   cd stocks-sentiment-analysis
   python -m venv .venv && source .venv/bin/activate
   pip install -r requirements.txt
@@ -76,48 +76,56 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 ## API Endpoints
 
 ### Pages (HTML)
-- `/` (GET): Main app UI.
-- `/privacy` (GET): Privacy policy page.
-- `/watchlist` (GET): Watchlist view.
-- `/results` (GET): Dedicated search results page.
-- `/trending-list` (GET): Trending dashboards page.
-- `/trending-list/<source>` (GET): Trending dashboard for a specific source.
-- `/market-summary` (GET): Market summary landing page.
-- `/market-summary/stock-market-today` (GET): Always show latest market summary.
-- `/market-summary/<slug>` (GET): Dedicated market summary article page.
-- `/blog` (GET): Blog listing.
-- `/blog/<slug>` (GET): Blog article detail page.
-- `/write` (GET): Auth-only writer workspace with the mini word processor UI.
-- `/confirm` (GET): Market summary subscription confirmation page.
+| Method | Path | Auth Required | Description |
+| --- | --- | --- | --- |
+| GET | `/` | No | Main app UI. |
+| GET | `/privacy` | No | Privacy policy page. |
+| GET | `/watchlist` | No | Watchlist view. |
+| GET | `/results` | No | Dedicated search results page. |
+| GET | `/trending-list` | No | Trending dashboards page. |
+| GET | `/trending-list/<source>` | No | Trending dashboard for a specific source. |
+| GET | `/market-summary` | No | Market summary landing page. |
+| GET | `/market-summary/stock-market-today` | No | Always show latest market summary. |
+| GET | `/market-summary/<slug>` | No | Dedicated market summary article page. |
+| GET | `/blog` | No | Blog listing. |
+| GET | `/blog/<slug>` | No | Blog article detail page. |
+| GET | `/write` | No | Writer workspace page (prompts for auth in UI). |
+| GET | `/confirm` | No | Market summary subscription confirmation page. |
 
 ### Public JSON APIs
-- `/search` (POST): Search for a stock; returns JSON with `stock_info`, `historical_data`, and `articles`.
-- `/movement-insight` (POST): Build movement insight from `stock_info` or `symbol`.
-- `/historical/<symbol>/<period>` (GET): Get historical price data for a symbol and period.
-- `/trending` (GET): Get trending stocks (Reddit/ApeWisdom).
-- `/trending/<source>` (GET): Trending stocks from `stocktwits`, `reddit`, or `volume`.
-- `/trending/prices` (POST): Batch quote hydration for trending symbols.
-- `/sentiment` (POST): Analyze sentiment for a stock/news article.
-- `/quote/<symbol>` (GET): Quick price/quote lookup.
-- `/stocktwits/<symbol>/summary` (GET): StockTwits summary for a symbol.
-- `/api/market-summary/latest` (GET): Latest market summary (JSON).
-- `/api/market-summary/week-glance` (GET): Weekly index snapshots used by the market summary dashboard.
-- `/api/market-summary/archive` (GET): Market summary archive (JSON).
-- `/api/market-summary/<slug>` (GET): Fetch a specific market summary by slug (ISO date or `id-<pk>`).
-- `/api/market-summary/subscribe` (POST): Subscribe to market summary email updates (Mailgun).
+| Method | Path | Auth Required | Description |
+| --- | --- | --- | --- |
+| POST | `/search` | No | Search for a stock; returns `stock_info`, `historical_data`, and `articles`. |
+| POST | `/movement-insight` | No | Build movement insight from `stock_info` or `symbol`. |
+| GET | `/historical/<symbol>/<period>` | No | Get historical price data for a symbol and period. |
+| GET | `/trending` | No | Get trending stocks (Reddit/ApeWisdom). |
+| GET | `/trending/<source>` | No | Get trending stocks from `stocktwits`, `reddit`, or `volume`. |
+| POST | `/trending/prices` | No | Batch quote hydration for trending symbols. |
+| POST | `/sentiment` | No | Analyze sentiment for a stock/news article. |
+| GET | `/quote/<symbol>` | No | Quick price/quote lookup. |
+| GET | `/stocktwits/<symbol>/summary` | No | StockTwits summary for a symbol. |
+| GET | `/api/market-summary/latest` | No | Latest market summary payload. |
+| GET | `/api/market-summary/week-glance` | No | Weekly index snapshots for the market summary dashboard. |
+| GET | `/api/market-summary/archive` | No | Market summary archive payload. |
+| GET | `/api/market-summary/<slug>` | No | Specific market summary by slug (`YYYY-MM-DD` or `id-<pk>`). |
+| POST | `/api/market-summary/subscribe` | No | Subscribe to market summary email updates (Mailgun). |
 
 ### Authenticated APIs (writer/admin)
-- `/write/login` (POST): Authenticate writer/admin session.
-- `/write/logout` (POST): End writer/admin session.
-- `/api/blog/articles` (GET/POST): Manage private blog articles stored in `blog.db`.
-- `/api/blog/articles/<article_identifier>` (PUT/PATCH/DELETE): Update or delete a draft.
-- `/api/blog/articles/<article_identifier>/publish` (POST): Publish a draft to the public blog.
-- `/api/blog/articles/<article_identifier>/unpublish` (POST): Revert a post back to draft.
-- `/api/market-summary/generate` (POST): Force regenerate the market summary (admin only).
+| Method | Path | Auth Required | Description |
+| --- | --- | --- | --- |
+| POST | `/write/login` | No | Authenticate writer/admin session. |
+| POST | `/write/logout` | No | End writer/admin session. |
+| GET, POST | `/api/blog/articles` | Yes | List or create private blog articles in `blog.db`. |
+| PUT, PATCH, DELETE | `/api/blog/articles/<article_identifier>` | Yes | Update or delete a draft. |
+| POST | `/api/blog/articles/<article_identifier>/publish` | Yes | Publish a draft to the public blog. |
+| POST | `/api/blog/articles/<article_identifier>/unpublish` | Yes | Revert a post back to draft. |
+| POST | `/api/market-summary/generate` | Yes | Force regenerate the market summary. |
 
 ### Static assets
-- `/robots.txt` (GET): Robots file.
-- `/sitemap.xml` (GET): Sitemap file.
+| Method | Path | Auth Required | Description |
+| --- | --- | --- | --- |
+| GET | `/robots.txt` | No | Robots file. |
+| GET | `/sitemap.xml` | No | Sitemap file. |
 
 ## Frontend
 
