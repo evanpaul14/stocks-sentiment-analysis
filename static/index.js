@@ -2411,7 +2411,7 @@ function initializeSearchSuggestions() {
                 const rawTicker = match[2] || '';
                 const ticker = rawTicker.toUpperCase();
                 const cashtagLink = document.createElement('a');
-                cashtagLink.href = `https://stocktwits.com/symbol/${encodeURIComponent(ticker)}`;
+                cashtagLink.href = `https://www.stocksentimentapp.com/results?q=${encodeURIComponent(ticker)}`;
                 cashtagLink.target = '_blank';
                 cashtagLink.rel = 'noopener noreferrer';
                 cashtagLink.className = 'stocktwits-cashtag-link';

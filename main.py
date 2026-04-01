@@ -1185,7 +1185,7 @@ def _build_stocktwits_message_feed(messages, symbol, feed_limit=40):
             "image_urls": _extract_stocktwits_message_images(message),
             "message_url": f"https://stocktwits.com/message/{message_id}" if message_id else None,
             "profile_url": f"https://stocktwits.com/{username}" if username else None,
-            "symbol_url": f"https://stocktwits.com/symbol/{normalized_symbol}" if normalized_symbol else None
+            "symbol_url": f"https://www.stocksentimentapp.com/results?q={normalized_symbol}" if normalized_symbol else None
         })
 
     return feed
@@ -1244,7 +1244,7 @@ def get_stocktwits_symbol_sentiment(
         "pagination": payload.get("meta") or {},
         "attribution": {
             "name": "StockTwits",
-            "url": f"https://stocktwits.com/symbol/{normalized_symbol}"
+            "url": f"https://www.stocksentimentapp.com/results?q={normalized_symbol}"
         },
         "generated_at": datetime.now(timezone.utc).isoformat()
     }
