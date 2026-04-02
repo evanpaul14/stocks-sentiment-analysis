@@ -140,6 +140,7 @@ def build_sitemap(
     latest_summary_date = stock_market_today_lastmod or (
         max(summary_dates) if summary_dates else datetime.now(timezone.utc).date().isoformat()
     )
+    current_day = datetime.now(timezone.utc).date().isoformat()
 
     # Required core URLs.
     _add_url(root, f"{base_url}/", "daily", "1.0")
@@ -152,9 +153,18 @@ def build_sitemap(
         "1.0",
         lastmod=latest_summary_date,
     )
+    _add_url(
+        root,
+        f"{base_url}/market-summary/{current_day}",
+        "daily",
+        "0.8",
+        lastmod=latest_summary_date,
+    )
 
     # Date-based market summary URLs sourced from the DB.
     for summary_date in summary_dates:
+        if summary_date == current_day:
+            continue
         _add_url(
             root,
             f"{base_url}/market-summary/{summary_date}",

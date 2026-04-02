@@ -50,7 +50,13 @@ MARKET_SUMMARY_SITEMAP_BASE_URL = (
     or "https://stocksentimentapp.com/market-summary"
 )
 SITEMAP_XML_NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
+SITEMAP_XSI_NAMESPACE = "http://www.w3.org/2001/XMLSchema-instance"
+SITEMAP_SCHEMA_LOCATION = (
+    "http://www.sitemaps.org/schemas/sitemap/0.9 "
+    "http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd"
+)
 ET.register_namespace("", SITEMAP_XML_NAMESPACE)
+ET.register_namespace("xsi", SITEMAP_XSI_NAMESPACE)
 
 
 log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -2413,7 +2419,13 @@ def resolve_market_summary_by_slug(summary_slug):
     except ValueError:
         summary_date = None
     if summary_date:
-        return MarketSummary.query.filter_by(summary_date=summary_date).first()
+        date_record = MarketSummary.query.filter_by(summary_date=summary_date).first()
+        if date_record:
+            return date_record
+        # Keep today's date route live even before the latest daily summary is generated.
+        if summary_date == datetime.now(EASTERN_TZ).date():
+            return get_latest_market_summary_record()
+        return None
 
     return None
 
@@ -2513,7 +2525,7 @@ def _load_sitemap_tree():
     """Load sitemap.xml and return (tree, root, path) or Nones when unavailable."""
     sitemap_path = SITEMAP_FILE_PATH
     if not sitemap_path.exists():
-        return None, None, None
+        return None, None, sitemap_path
     try:
         tree = ET.parse(sitemap_path)
     except ET.ParseError as exc:
@@ -2521,10 +2533,39 @@ def _load_sitemap_tree():
     return tree, tree.getroot(), sitemap_path
 
 
+def _create_empty_sitemap_tree():
+    """Create a valid, namespaced sitemap tree scaffold."""
+    root = ET.Element(
+        f"{{{SITEMAP_XML_NAMESPACE}}}urlset",
+        {
+            f"{{{SITEMAP_XSI_NAMESPACE}}}schemaLocation": SITEMAP_SCHEMA_LOCATION,
+        },
+    )
+    return ET.ElementTree(root), root
+
+
+def _load_sitemap_tree_for_upsert():
+    """Load sitemap for updates, recreating a valid scaffold when needed."""
+    try:
+        tree, root, sitemap_path = _load_sitemap_tree()
+    except RuntimeError as exc:
+        market_summary_logger.warning("Sitemap parse failed; rebuilding empty sitemap: %s", exc)
+        tree, root = _create_empty_sitemap_tree()
+        return tree, root, SITEMAP_FILE_PATH
+
+    if tree is not None and root is not None:
+        return tree, root, sitemap_path
+
+    market_summary_logger.warning("Sitemap file missing at %s; creating it", SITEMAP_FILE_PATH)
+    tree, root = _create_empty_sitemap_tree()
+    return tree, root, SITEMAP_FILE_PATH
+
+
 def _write_sitemap_tree(tree, sitemap_path):
     """Atomically write a sitemap tree to disk using a temporary file."""
     if tree is None or sitemap_path is None:
         return False
+    sitemap_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = sitemap_path.with_name(sitemap_path.name + ".tmp")
     if hasattr(ET, "indent"):
         ET.indent(tree, space="  ")
@@ -2586,16 +2627,18 @@ def upsert_market_summary_sitemap_entry(summary_date):
     if not summary_date:
         return False
 
-    tree, root, sitemap_path = _load_sitemap_tree()
-    if tree is None or root is None:
-        return False
+    tree, root, sitemap_path = _load_sitemap_tree_for_upsert()
 
     lastmod_text = summary_date.strftime('%Y-%m-%d')
+    current_market_day = datetime.now(EASTERN_TZ).date().strftime('%Y-%m-%d')
     target_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{lastmod_text}"
+    current_day_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/{current_market_day}"
     stock_market_today_loc = f"{MARKET_SUMMARY_SITEMAP_BASE_URL}/stock-market-today"
 
     # Individual market summary article URL (date-based).
     _ensure_sitemap_url(root, target_loc, lastmod_text)
+    # Also keep a separate URL for the current market day article view.
+    _ensure_sitemap_url(root, current_day_loc, lastmod_text)
     # SEO landing page that always shows the latest summary.
     _ensure_sitemap_url(root, stock_market_today_loc, lastmod_text)
 
@@ -2624,13 +2667,7 @@ def upsert_blog_article_sitemap_entry(article):
     if not article or not getattr(article, 'slug', None):
         return False
 
-    tree, root, sitemap_path = _load_sitemap_tree()
-    if tree is None or root is None:
-        app_logger.warning(
-            "Sitemap file missing; unable to register blog article %s",
-            getattr(article, 'slug', 'unknown')
-        )
-        return False
+    tree, root, sitemap_path = _load_sitemap_tree_for_upsert()
 
     published_marker = article.published_at or article.updated_at or _utcnow_naive()
     if not isinstance(published_marker, datetime):
