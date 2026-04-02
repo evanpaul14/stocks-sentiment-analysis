@@ -92,6 +92,13 @@ SECURITY_HEADERS_CSP = os.getenv(
         "object-src 'none'",
     ])
 )
+try:
+    STATIC_ASSET_CACHE_MAX_AGE_SECONDS = max(
+        0,
+        int(os.getenv("STATIC_ASSET_CACHE_MAX_AGE_SECONDS", "86400"))
+    )
+except (TypeError, ValueError):
+    STATIC_ASSET_CACHE_MAX_AGE_SECONDS = 86400
 # Secondary SQLite bind keeps blog content isolated from the primary app DB.
 app.config['SQLALCHEMY_BINDS'] = {
     'blog': 'sqlite:///blog.db'
@@ -2887,6 +2894,18 @@ def _set_security_headers(response):
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains"
+        )
+
+    request_path = (request.path or "").lower()
+    is_static_js_or_css = (
+        request.method in {"GET", "HEAD"}
+        and response.status_code == 200
+        and request_path.startswith("/static/")
+        and (request_path.endswith(".js") or request_path.endswith(".css"))
+    )
+    if is_static_js_or_css:
+        response.headers["Cache-Control"] = (
+            f"public, max-age={STATIC_ASSET_CACHE_MAX_AGE_SECONDS}"
         )
     return response
 
