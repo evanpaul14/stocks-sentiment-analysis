@@ -157,7 +157,7 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
 ## Environment Variables
 
 Required:
-- `GOOGLE_API_KEY` (Gemma)
+- `GOOGLE_API_KEY` (Google AI Studio)
 - `FLASK_SECRET_KEY` or `SECRET_KEY` (session signing; must be the same across all workers)
 
 Optional (degrades gracefully if missing):
