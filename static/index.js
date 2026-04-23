@@ -49,14 +49,12 @@ function queueIdleWork(callback, timeoutMs = 500) {
     setTimeout(callback, 120);
 }
 
-function buildStocktwitsLogoUrl(symbol, pixelSize = 96) {
+function buildStocktwitsLogoUrl(symbol, pixelSize = 80) {
     const normalized = (symbol || '').toString().trim().toUpperCase();
     if (!normalized) return '';
-    const url = new URL(`https://logos.stocktwits-cdn.com/${encodeURIComponent(normalized)}.png`);
+    const url = new URL(`https://logos.stocktwits-cdn.com/${encodeURIComponent(normalized)}.webp`);
     // Hint a smaller target size; unsupported params are ignored by the CDN.
     url.searchParams.set('w', String(pixelSize));
-    url.searchParams.set('h', String(pixelSize));
-    url.searchParams.set('q', '70');
     return url.toString();
 }
 
