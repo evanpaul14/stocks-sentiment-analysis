@@ -125,6 +125,20 @@ def _validate_iso_date(value: str | None) -> str | None:
     return parsed.isoformat()
 
 
+SEO_SENTIMENT_SLUGS = [
+    "apple",
+    "microsoft",
+    "alphabet",
+    "amazon",
+    "meta",
+    "tesla",
+    "nvidia",
+    "sp-500",
+    "nasdaq",
+    "dow-jones",
+]
+
+
 def build_sitemap(
     base_url: str,
     summary_dates: list[str],
@@ -160,6 +174,15 @@ def build_sitemap(
         "0.8",
         lastmod=latest_summary_date,
     )
+
+    # Programmatic SEO sentiment pages — updated weekly.
+    for slug in SEO_SENTIMENT_SLUGS:
+        _add_url(
+            root,
+            f"{base_url}/blog/sentiment-of-{slug}-stock",
+            "weekly",
+            "0.8",
+        )
 
     # Date-based market summary URLs sourced from the DB.
     for summary_date in summary_dates:

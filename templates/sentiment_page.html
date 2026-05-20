@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ meta_description }}">
+    <title>{{ page_title }}</title>
+
+    <!-- Canonical -->
+    <link rel="canonical" href="{{ canonical_url }}">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Stock Sentiment Analysis">
+    <meta property="og:title" content="{{ page_title }}">
+    <meta property="og:description" content="{{ meta_description }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:image" content="{{ url_for('static', filename='og-image.png', _external=True) }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ page_title }}">
+    <meta name="twitter:description" content="{{ meta_description }}">
+    <meta name="twitter:image" content="{{ url_for('static', filename='og-image.png', _external=True) }}">
+
+    <!-- JSON-LD -->
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": {{ page_title | tojson }},
+        "description": {{ meta_description | tojson }},
+        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis"},
+        "publisher": {
+            "@type": "Organization",
+            "name": "Stock Sentiment Analysis",
+            "url": "https://stocksentimentapp.com"
+        },
+        "mainEntityOfPage": {"@type": "WebPage", "@id": {{ canonical_url | tojson }}}
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
+    <script nonce="{{ csp_nonce }}" src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #000;
+            color: #fff;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        a { color: #c4b5fd; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 860px; margin: 0 auto; }
+
+        /* Nav */
+        .page-header {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+        .site-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            text-decoration: none;
+        }
+        .site-title:hover { color: #c4b5fd; text-decoration: none; }
+        .nav-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+        .nav-pill {
+            background: #18181b;
+            color: #b48be4;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 6px 16px;
+            border-radius: 999px;
+            border: 1px solid rgba(180,139,228,.25);
+            transition: background .15s, color .15s;
+        }
+        .nav-pill:hover { background: #232136; color: #c4b5fd; text-decoration: none; }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            font-size: 13px;
+            color: #71717a;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .breadcrumb a { color: #71717a; }
+        .breadcrumb a:hover { color: #c4b5fd; }
+        .breadcrumb-sep { color: #3f3f46; }
+
+        /* Hero */
+        .hero {
+            margin-bottom: 36px;
+        }
+        .ticker-badge {
+            display: inline-block;
+            background: rgba(147,51,234,.18);
+            color: #c4b5fd;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 4px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(147,51,234,.35);
+            margin-bottom: 14px;
+        }
+        .hero h1 {
+            font-size: clamp(24px, 4vw, 36px);
+            font-weight: 700;
+            line-height: 1.25;
+            margin-bottom: 18px;
+            color: #fff;
+        }
+        .hero-intro {
+            font-size: 16px;
+            color: #a1a1aa;
+            line-height: 1.75;
+            margin-bottom: 20px;
+        }
+        .profile-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 20px;
+            border-radius: 8px;
+            background: rgba(147,51,234,.15);
+            border: 1px solid rgba(147,51,234,.35);
+            color: #c4b5fd;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background .15s;
+        }
+        .profile-link:hover { background: rgba(147,51,234,.28); text-decoration: none; }
+
+        /* Section card */
+        .section-card {
+            background: #0a0a0a;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 28px;
+        }
+        .section-eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: #b48be4;
+            margin-bottom: 8px;
+        }
+        .section-heading {
+            font-size: clamp(18px, 3vw, 24px);
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .section-body {
+            font-size: 15px;
+            color: #a1a1aa;
+            line-height: 1.75;
+            margin-bottom: 22px;
+        }
+
+        /* Chart wrapper */
+        .chart-wrapper {
+            position: relative;
+            width: 100%;
+            height: 260px;
+            margin-bottom: 22px;
+            background: rgba(255,255,255,.02);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,.06);
+            padding: 12px;
+        }
+
+        /* Related links */
+        .related-section { margin-bottom: 28px; }
+        .related-group { margin-bottom: 20px; }
+        .related-label {
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: #71717a;
+            margin-bottom: 10px;
+        }
+        .related-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+        .related-pill {
+            background: #111;
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #d4d4d8;
+            transition: border-color .15s, color .15s;
+        }
+        .related-pill:hover { border-color: rgba(147,51,234,.5); color: #c4b5fd; text-decoration: none; }
+        .related-pill span.pill-ticker { color: #71717a; font-size: 12px; margin-left: 4px; }
+
+        /* All pages index */
+        .all-pages-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+        }
+        .all-page-card {
+            background: #111;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 14px;
+        }
+        .all-page-card a { color: #d4d4d8; }
+        .all-page-card a:hover { color: #c4b5fd; text-decoration: none; }
+        .all-page-card .card-ticker { color: #71717a; font-size: 12px; display: block; margin-top: 2px; }
+
+        /* Meta footer */
+        .page-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,.06);
+            font-size: 12px;
+            color: #52525b;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 14px; }
+            .section-card { padding: 18px; }
+            .chart-wrapper { height: 210px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Nav -->
+    <header class="page-header">
+        <a class="site-title" href="/">Stock Sentiment Analysis</a>
+        <nav class="nav-pills">
+            <a class="nav-pill" href="/trending-list">Trending</a>
+            <a class="nav-pill" href="/watchlist">Watchlist</a>
+            <a class="nav-pill" href="/market-summary">Market Summary</a>
+            <a class="nav-pill" href="/blog">Blog</a>
+        </nav>
+    </header>
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb" aria-label="breadcrumb">
+        <a href="/">Home</a>
+        <span class="breadcrumb-sep">›</span>
+        <a href="/blog">Blog</a>
+        <span class="breadcrumb-sep">›</span>
+        <span>{{ company_name }} ({{ ticker }}) Sentiment</span>
+    </nav>
+
+    <!-- Hero -->
+    <div class="hero">
+        <div class="ticker-badge">{{ ticker }}</div>
+        <h1>{{ page_title }}</h1>
+        {% if intro_text %}
+        <p class="hero-intro">{{ intro_text }}</p>
+        {% endif %}
+        <a class="profile-link" href="/results?q={{ ticker }}">
+            View live {{ ticker }} profile →
+        </a>
+    </div>
+
+    <!-- Section 1: Last month's sentiment -->
+    <section class="section-card">
+        <p class="section-eyebrow">Monthly Analysis</p>
+        <h2 class="section-heading">Last month's sentiment for {{ company_name }} ({{ ticker }}) Stock</h2>
+
+        {% if sentiment_data %}
+        <div class="chart-wrapper">
+            <canvas id="sentimentChart"></canvas>
+        </div>
+        {% endif %}
+
+        <p class="section-body">{{ sentiment_text }}</p>
+    </section>
+
+    <!-- Section 2: Price + Prediction -->
+    <section class="section-card">
+        <p class="section-eyebrow">Outlook</p>
+        <h2 class="section-heading">Stock prediction for {{ company_name }} ({{ ticker }}) Stock based on Sentiment</h2>
+
+        {% if price_data %}
+        <div class="chart-wrapper">
+            <canvas id="priceChart"></canvas>
+        </div>
+        {% endif %}
+
+        <p class="section-body">{{ prediction_text }}</p>
+    </section>
+
+    <!-- Related: by group -->
+    {% if groups_info %}
+    <section class="section-card related-section">
+        <p class="section-eyebrow">See Also</p>
+        <h2 class="section-heading" style="border-bottom:none; padding-bottom:0; margin-bottom:16px;">Related Stocks &amp; Indices</h2>
+        {% for group in groups_info %}
+        <div class="related-group">
+            <p class="related-label">{{ group.label }}</p>
+            <div class="related-pills">
+                {% for page in group.pages %}
+                <a class="related-pill" href="/blog/sentiment-of-{{ page.slug }}-stock">
+                    {{ page.name }}<span class="pill-ticker">{{ page.ticker }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- All tracked pages -->
+    <section class="section-card">
+        <p class="section-eyebrow">All Tracked</p>
+        <h2 class="section-heading" style="border-bottom:none; padding-bottom:0; margin-bottom:16px;">All Sentiment Pages</h2>
+        <div class="all-pages-grid">
+            {% for s, info in all_seo_pages.items() %}
+            <div class="all-page-card {% if s == slug %}active{% endif %}">
+                <a href="/blog/sentiment-of-{{ s }}-stock">{{ info.name }}</a>
+                <span class="card-ticker">{{ info.ticker }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <footer class="page-footer">
+        Sentiment data sourced from news headlines via AI analysis. Updated weekly. Not financial advice.
+        {% if generated_at %}
+        · Last updated {{ generated_at.strftime('%b %d, %Y') }}.
+        {% endif %}
+    </footer>
+
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+    // Shared Chart.js defaults
+    Chart.defaults.color = '#71717a';
+    Chart.defaults.font.family = "'Roboto', sans-serif";
+    Chart.defaults.font.size = 12;
+
+    // Sentiment chart
+    {% if sentiment_data %}
+    (function () {
+        var rawData = {{ sentiment_data | tojson }};
+        var labels = rawData.map(function(d) { return d.week_label; });
+        var scores = rawData.map(function(d) { return d.score; });
+        var colors = scores.map(function(s) {
+            if (s === null) return 'rgba(113,113,122,0.4)';
+            if (s > 0.1) return 'rgba(134,239,172,0.75)';
+            if (s < -0.1) return 'rgba(252,165,165,0.75)';
+            return 'rgba(161,161,170,0.6)';
+        });
+        var borderColors = colors.map(function(c) { return c.replace('0.75', '1').replace('0.6', '1').replace('0.4', '0.7'); });
+
+        new Chart(document.getElementById('sentimentChart'), {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Sentiment Score',
+                    data: scores,
+                    backgroundColor: colors,
+                    borderColor: borderColors,
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var val = ctx.parsed.y;
+                                if (val === null) return 'No data';
+                                var label = val > 0.1 ? 'Positive' : val < -0.1 ? 'Negative' : 'Neutral';
+                                return label + ' (' + (val > 0 ? '+' : '') + val.toFixed(2) + ')';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        ticks: { color: '#71717a' }
+                    },
+                    y: {
+                        min: -1,
+                        max: 1,
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: {
+                            color: '#71717a',
+                            callback: function(v) {
+                                if (v === 1) return 'Positive';
+                                if (v === 0) return 'Neutral';
+                                if (v === -1) return 'Negative';
+                                return '';
+                            },
+                            stepSize: 0.5
+                        }
+                    }
+                }
+            }
+        });
+    })();
+    {% endif %}
+
+    // Price chart
+    {% if price_data %}
+    (function () {
+        var rawPrice = {{ price_data | tojson }};
+        var labels = rawPrice.map(function(d) {
+            var dt = new Date(d.date);
+            return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+        var prices = rawPrice.map(function(d) { return d.price; });
+        var startPrice = prices[0] || 0;
+        var endPrice = prices[prices.length - 1] || 0;
+        var isUp = endPrice >= startPrice;
+        var lineColor = isUp ? 'rgba(134,239,172,1)' : 'rgba(252,165,165,1)';
+        var fillColor = isUp ? 'rgba(134,239,172,0.08)' : 'rgba(252,165,165,0.08)';
+
+        new Chart(document.getElementById('priceChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '{{ ticker }} Price',
+                    data: prices,
+                    borderColor: lineColor,
+                    backgroundColor: fillColor,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return '$' + ctx.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        ticks: {
+                            color: '#71717a',
+                            maxTicksLimit: 8,
+                            maxRotation: 0
+                        }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: {
+                            color: '#71717a',
+                            callback: function(v) { return '$' + v.toFixed(0); }
+                        }
+                    }
+                }
+            }
+        });
+    })();
+    {% endif %}
+})();
+</script>
+</body>
+</html>

@@ -14,7 +14,11 @@ python main.py  # binds to 0.0.0.0:5000
 - `GOOGLE_API_KEY` — Gemma LLM client
 - `FLASK_SECRET_KEY` — session/auth signing
 
-All other env vars (LLM7, Alpaca, Finnhub, Cloudflare, Mailgun, Unsplash, blog admin) are optional and degrade gracefully. See README.md for the full `.env` template.
+All other env vars are optional and degrade gracefully. See README.md for the full `.env` template. Notable optional vars:
+- `BLOG_ADMIN_USERNAME` / `BLOG_ADMIN_PASSWORD` — required to enable the `/write` workspace (returns 503 without them)
+- `LOG_LEVEL` — logging verbosity, defaults to `INFO`
+- `GEMMA_MAX_CALLS_PER_MINUTE`, `GEMMA_RATE_WINDOW_SECONDS`, `GEMMA_SENTIMENT_TIMEOUT_SECONDS` — tune Gemma rate limiting (defaults: 45/min, 60s window, 3s timeout)
+- `STATIC_ASSET_CACHE_MAX_AGE_SECONDS` — Cache-Control for static files (default: 86400)
 
 **Sitemap generation:**
 ```bash
@@ -25,13 +29,13 @@ python scripts/generate_sitemap.py [--db <path>] [--output <path>] [--base-url <
 
 No automated tests. Exercise flows manually via browser and curl:
 - `/`, `/results`, `/search`, `/sentiment`, `/historical/<symbol>/<period>`
-- `/trending`, `/trending/<source>`, `/market-summary`
+- `/trending`, `/trending/<source>`, `/movement-insight`, `/market-summary`
 
 Check server logs for `"Error ..."` prints — those are the primary debugging breadcrumbs.
 
 ## Architecture
 
-**Monolithic Flask SPA** (`main.py` ~161KB) serving `templates/index.html` as a single-page shell. `static/index.js` contains all SPA logic; no frontend build step.
+**Monolithic Flask SPA** (`main.py` ~4,500 lines) serving `templates/index.html` as a single-page shell. `static/index.js` contains all SPA logic; no frontend build step. The blog writer workspace is a separate surface: `templates/write.html` + `static/write.js` (~1,100 lines).
 
 ### Key data flows
 
@@ -65,4 +69,5 @@ Flask-Limiter on all endpoints (100/hr default). Adjust via `Limiter` config or 
 - **Frontend contract**: `search_stock()` JSON expects `stock_info`, `historical_data`, `articles`, and optional `movement_insight`. Format numbers client-side (`formatNumber`, `formatCurrency`); keep backend responses as plain dicts/lists.
 - **Historical data intervals**: `get_historical_data()` uses mixed intervals (5m intraday, 1h weekly, etc.). Follow the branching there when extending — Chart.js expects uniform `{date, price}` tuples.
 - **Trending integrations**: wrap with short `timeout` and `except` blocks returning `[]` to match current graceful-fail UX.
-- **UI changes**: edit `static/index.js` and `templates/index.html` only; no build step. Reuse existing DOM IDs.
+- **UI changes**: edit `static/index.js` and `templates/index.html` for the main SPA; edit `static/write.js` and `templates/write.html` for the blog writer. No build step. Reuse existing DOM IDs.
+- **CSP nonces**: every request generates `g.csp_nonce` (injected as `{{ nonce }}` in templates). Any inline `<script>` tag added to a template must carry `nonce="{{ nonce }}"` or it will be blocked by the Content-Security-Policy header.

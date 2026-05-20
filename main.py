@@ -420,6 +420,21 @@ class BlogArticle(db.Model):
         }
 
 
+class SentimentPageCache(db.Model):
+    __tablename__ = "sentiment_page_cache"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    ticker = db.Column(db.String(16), nullable=False)
+    intro_text = db.Column(db.Text, nullable=True)
+    sentiment_text = db.Column(db.Text, nullable=True)
+    prediction_text = db.Column(db.Text, nullable=True)
+    price_data_json = db.Column(db.Text, nullable=True)
+    sentiment_data_json = db.Column(db.Text, nullable=True)
+    generated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+    expires_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+
+
 def _blog_credentials_configured():
     return bool(BLOG_ADMIN_USERNAME and BLOG_ADMIN_PASSWORD)
 
@@ -813,6 +828,78 @@ STOCKTWITS_SYMBOL_STREAM_URL = "https://api.stocktwits.com/api/2/streams/symbol/
 ALPACA_MOST_ACTIVE_URL = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=10"
 TRENDING_PAGE_SOURCES = ("stocktwits", "reddit", "volume")
 STOCKTWITS_ALLOWED_INSTRUMENT_CLASSES = {"stock", "exchangetradedcommodity"}
+
+SEO_SENTIMENT_PAGES = {
+    "apple": {
+        "name": "Apple", "ticker": "AAPL",
+        "description": "Consumer electronics, software, and services giant behind iPhone, Mac, and the App Store.",
+        "groups": ["mag7", "faang"],
+    },
+    "microsoft": {
+        "name": "Microsoft", "ticker": "MSFT",
+        "description": "Enterprise software, cloud computing (Azure), and AI company behind Windows and Office.",
+        "groups": ["mag7"],
+    },
+    "alphabet": {
+        "name": "Alphabet", "ticker": "GOOGL",
+        "description": "Parent company of Google, leader in search, digital advertising, and cloud services.",
+        "groups": ["mag7", "faang"],
+    },
+    "amazon": {
+        "name": "Amazon", "ticker": "AMZN",
+        "description": "E-commerce and cloud computing giant operating AWS, the world's leading cloud platform.",
+        "groups": ["mag7", "faang"],
+    },
+    "meta": {
+        "name": "Meta Platforms", "ticker": "META",
+        "description": "Social media company behind Facebook, Instagram, and WhatsApp with a focus on AI and the metaverse.",
+        "groups": ["mag7", "faang"],
+    },
+    "tesla": {
+        "name": "Tesla", "ticker": "TSLA",
+        "description": "Electric vehicle and clean energy technology company disrupting the auto and energy industries.",
+        "groups": ["mag7"],
+    },
+    "nvidia": {
+        "name": "Nvidia", "ticker": "NVDA",
+        "description": "GPU and AI chip manufacturer whose hardware powers modern AI workloads and data centers.",
+        "groups": ["mag7"],
+    },
+    "sp-500": {
+        "name": "S&P 500", "ticker": "SPY",
+        "description": "Index tracking the 500 largest U.S. publicly traded companies by market capitalization.",
+        "groups": ["indices"],
+    },
+    "nasdaq": {
+        "name": "Nasdaq 100", "ticker": "QQQ",
+        "description": "Index of the 100 largest non-financial Nasdaq-listed companies, heavily weighted toward tech.",
+        "groups": ["indices"],
+    },
+    "dow-jones": {
+        "name": "Dow Jones Industrial Average", "ticker": "DIA",
+        "description": "Price-weighted index of 30 major U.S. blue-chip companies spanning diverse industries.",
+        "groups": ["indices"],
+    },
+}
+
+SEO_PAGE_GROUPS = {
+    "mag7": {
+        "label": "Magnificent 7",
+        "slugs": ["apple", "microsoft", "alphabet", "amazon", "meta", "tesla", "nvidia"],
+    },
+    "faang": {
+        "label": "FAANG",
+        "slugs": ["meta", "apple", "amazon", "alphabet"],
+    },
+    "indices": {
+        "label": "Market Indices",
+        "slugs": ["sp-500", "nasdaq", "dow-jones"],
+    },
+}
+
+_SEO_PAGE_CACHE_TTL_DAYS = 7
+_SEO_PAGE_CACHE_LOCK = threading.Lock()
+_SENTIMENT_SCORE_MAP = {"positive": 1, "neutral": 0, "negative": -1}
 
 
 def _normalize_trending_page_source(raw_value, default="stocktwits"):
@@ -3756,6 +3843,205 @@ def build_sentiment_payload(symbol, company_name=None, *, sentiment_run_id=None)
     return articles, sentiment_summary, overall_sentiment
 
 
+# ---------------------------------------------------------------------------
+# Programmatic SEO: /blog/sentiment-of-<company>-stock helpers
+# ---------------------------------------------------------------------------
+
+def _parse_article_published_date(published_str):
+    """Parse an article publication date from RFC 2822 or ISO string."""
+    if not published_str:
+        return None
+    try:
+        return parsedate_to_datetime(published_str).date()
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(str(published_str)[:10]).date()
+    except Exception:
+        return None
+
+
+def _get_monthly_sentiment_data(ticker, company_name):
+    """Fetch last 30 days of news for ticker, analyze sentiment, aggregate by week (oldest→newest)."""
+    articles = get_news_articles(ticker, num_articles=30)
+    now_date = datetime.now(timezone.utc).date()
+    cutoff = now_date - timedelta(days=30)
+
+    week_buckets = {0: [], 1: [], 2: [], 3: []}
+    for article in articles:
+        article_date = _parse_article_published_date(article.get('publishedAt'))
+        if not article_date or article_date < cutoff:
+            continue
+        week_idx = min((now_date - article_date).days // 7, 3)
+        week_buckets[week_idx].append(article)
+
+    def _analyze_one(article):
+        label = analyze_sentiment_cloudflare(
+            article.get('title', ''),
+            article.get('description', ''),
+            company_name,
+        )
+        return _SENTIMENT_SCORE_MAP.get(label or 'neutral', 0)
+
+    week_data = []
+    for week_idx in range(3, -1, -1):
+        bucket = week_buckets[week_idx]
+        week_start = now_date - timedelta(days=(week_idx + 1) * 7)
+        label = week_start.strftime("%b %d")
+        if not bucket:
+            week_data.append({"week_label": label, "score": None, "count": 0})
+            continue
+        scores = []
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_analyze_one, a) for a in bucket]
+            for fut in as_completed(futures):
+                try:
+                    scores.append(fut.result())
+                except Exception:
+                    pass
+        avg = round(sum(scores) / len(scores), 2) if scores else 0.0
+        week_data.append({"week_label": label, "score": avg, "count": len(scores)})
+    return week_data
+
+
+def _seo_fallback_text(name, ticker, section):
+    if section == "intro":
+        return (
+            f"{name} ({ticker}) is one of the most closely tracked securities in the market. "
+            f"Investors and analysts monitor news sentiment around {ticker} to gauge market mood "
+            "and identify potential turning points before they show up in the price."
+        )
+    if section == "sentiment":
+        return (
+            f"The chart above shows the weekly average news sentiment for {name} ({ticker}) over the past month. "
+            "A score above zero reflects predominantly positive coverage; below zero reflects negative coverage. "
+            "Sharp week-over-week swings can signal shifting institutional or retail opinion."
+        )
+    return (
+        f"While sentiment data provides useful context, it is not a reliable standalone predictor for {name} ({ticker}). "
+        "Investors should combine sentiment trends with fundamental analysis, earnings data, and broader market conditions "
+        "before making any investment decisions."
+    )
+
+
+def _generate_seo_section_text(name, ticker, sentiment_data, price_data, section):
+    """Generate AI-written paragraph for a sentiment page section via LLM7."""
+    if not llm7_client:
+        return _seo_fallback_text(name, ticker, section)
+
+    sentiment_lines = []
+    for w in (sentiment_data or []):
+        if w.get("score") is not None:
+            direction = "positive" if w["score"] > 0.1 else ("negative" if w["score"] < -0.1 else "neutral")
+            sentiment_lines.append(
+                f"  Week of {w['week_label']}: {direction} (score {w['score']:+.2f}, {w['count']} articles)"
+            )
+    sentiment_summary = "\n".join(sentiment_lines) or "  Insufficient data for this period."
+
+    price_ctx = ""
+    if price_data and len(price_data) >= 2:
+        p0 = price_data[0]["price"]
+        p1 = price_data[-1]["price"]
+        pct = ((p1 - p0) / p0 * 100) if p0 else 0
+        price_ctx = (
+            f"{name} ({ticker}) moved {'up' if pct >= 0 else 'down'} {abs(pct):.1f}% "
+            f"over the past month (${p0:.2f} → ${p1:.2f})."
+        )
+
+    prompts = {
+        "intro": (
+            "You are a financial analyst writing concise, SEO-optimized stock sentiment overviews.\n\n"
+            f"Company/Index: {name} ({ticker})\n"
+            f"Past-month sentiment by week:\n{sentiment_summary}\n"
+            f"{price_ctx}\n\n"
+            "Write a 2-3 sentence introduction describing the company and its recent market sentiment. "
+            "Mention whether sentiment has been mostly positive, negative, or mixed. "
+            "Be factual and professional. Output only the paragraph — no headers or labels."
+        ),
+        "sentiment": (
+            "You are a financial analyst explaining a stock-sentiment chart.\n\n"
+            f"Company/Index: {name} ({ticker})\n"
+            f"Weekly sentiment scores (past month):\n{sentiment_summary}\n\n"
+            "Write 2-3 sentences describing the sentiment trend — whether it improved, worsened, or stayed flat — "
+            "and what this might mean for investor confidence. Output only the paragraph."
+        ),
+        "prediction": (
+            "You are a cautious financial analyst writing a balanced sentiment-based outlook.\n\n"
+            f"Company/Index: {name} ({ticker})\n"
+            f"Weekly sentiment scores (past month):\n{sentiment_summary}\n"
+            f"{price_ctx}\n\n"
+            "Write 2-3 sentences on what the current sentiment trend might suggest about near-term price direction. "
+            "Include a clear disclaimer that sentiment is not a guarantee of future performance. "
+            "Output only the paragraph."
+        ),
+    }
+
+    try:
+        response = llm7_client.chat.completions.create(
+            model=LLM7_MODEL,
+            messages=[{"role": "user", "content": prompts[section]}],
+            temperature=0.4,
+            max_tokens=220,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        return text or _seo_fallback_text(name, ticker, section)
+    except Exception as exc:
+        app_logger.warning("[SEO] LLM7 text failed for %s/%s: %s", ticker, section, exc)
+        return _seo_fallback_text(name, ticker, section)
+
+
+def _build_or_refresh_sentiment_page_cache(slug):
+    """Generate and persist the sentiment page content for slug. Returns the ORM row or None."""
+    info = SEO_SENTIMENT_PAGES.get(slug)
+    if not info:
+        return None
+
+    ticker = info["ticker"]
+    name = info["name"]
+    app_logger.info("[SEO] Generating sentiment page cache: slug=%s ticker=%s", slug, ticker)
+
+    try:
+        price_data = get_historical_data(ticker, period='1mo')
+    except Exception as exc:
+        app_logger.warning("[SEO] Price fetch failed for %s: %s", ticker, exc)
+        price_data = []
+
+    try:
+        sentiment_data = _get_monthly_sentiment_data(ticker, name)
+    except Exception as exc:
+        app_logger.warning("[SEO] Sentiment data failed for %s: %s", ticker, exc)
+        sentiment_data = []
+
+    intro_text = _generate_seo_section_text(name, ticker, sentiment_data, price_data, "intro")
+    sentiment_text = _generate_seo_section_text(name, ticker, sentiment_data, price_data, "sentiment")
+    prediction_text = _generate_seo_section_text(name, ticker, sentiment_data, price_data, "prediction")
+
+    now = _utcnow_naive()
+    expires = now + timedelta(days=_SEO_PAGE_CACHE_TTL_DAYS)
+
+    with _SEO_PAGE_CACHE_LOCK:
+        try:
+            cache = SentimentPageCache.query.filter_by(slug=slug).first()
+            if cache is None:
+                cache = SentimentPageCache(slug=slug, ticker=ticker)
+                db.session.add(cache)
+            cache.ticker = ticker
+            cache.intro_text = intro_text
+            cache.sentiment_text = sentiment_text
+            cache.prediction_text = prediction_text
+            cache.price_data_json = json.dumps(price_data)
+            cache.sentiment_data_json = json.dumps(sentiment_data)
+            cache.generated_at = now
+            cache.expires_at = expires
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app_logger.error("[SEO] Cache persist failed for %s: %s", slug, exc)
+            return None
+
+    return cache
+
+
 @app.route('/')
 @limiter.limit("50 per minute")
 def index():
@@ -3912,6 +4198,73 @@ def blog_listing_page():
         meta_description=BLOG_LIST_META_DESCRIPTION,
         page_title='Market Notes Blog',
         canonical_url=url_for('blog_listing_page', _external=True)
+    )
+
+
+@app.route('/blog/sentiment-of-<string:company>-stock', methods=['GET'])
+@limiter.limit("20 per minute")
+def sentiment_seo_page(company):
+    """Programmatic SEO page for a tracked company/index sentiment."""
+    info = SEO_SENTIMENT_PAGES.get(company)
+    if not info:
+        return render_template('404.html'), 404
+
+    cache = SentimentPageCache.query.filter_by(slug=company).first()
+    now = _utcnow_naive()
+    if cache is None or cache.expires_at < now:
+        cache = _build_or_refresh_sentiment_page_cache(company)
+    if cache is None:
+        return render_template('404.html'), 404
+
+    try:
+        price_data = json.loads(cache.price_data_json or '[]')
+    except Exception:
+        price_data = []
+    try:
+        sentiment_data = json.loads(cache.sentiment_data_json or '[]')
+    except Exception:
+        sentiment_data = []
+
+    groups_info = []
+    for group_key in info.get("groups", []):
+        group = SEO_PAGE_GROUPS.get(group_key)
+        if group:
+            pages = [
+                {
+                    "slug": s,
+                    "name": SEO_SENTIMENT_PAGES[s]["name"],
+                    "ticker": SEO_SENTIMENT_PAGES[s]["ticker"],
+                }
+                for s in group["slugs"]
+                if s != company and s in SEO_SENTIMENT_PAGES
+            ]
+            groups_info.append({"label": group["label"], "pages": pages})
+
+    ticker = info["ticker"]
+    name = info["name"]
+    page_title = f"What is the sentiment of {name} ({ticker}) Stock?"
+    meta_description = (
+        f"Explore AI-driven sentiment analysis for {name} ({ticker}) stock. "
+        f"See last month's sentiment trends, news analysis, and what sentiment data suggests about future price direction."
+    )
+
+    return render_template(
+        'sentiment_page.html',
+        slug=company,
+        ticker=ticker,
+        company_name=name,
+        company_description=info.get("description", ""),
+        page_title=page_title,
+        meta_description=meta_description,
+        intro_text=cache.intro_text or '',
+        sentiment_text=cache.sentiment_text or '',
+        prediction_text=cache.prediction_text or '',
+        price_data=price_data,
+        sentiment_data=sentiment_data,
+        groups_info=groups_info,
+        all_seo_pages=SEO_SENTIMENT_PAGES,
+        generated_at=cache.generated_at,
+        canonical_url=url_for('sentiment_seo_page', company=company, _external=True),
     )
 
 
