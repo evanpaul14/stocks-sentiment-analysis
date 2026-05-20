@@ -4195,6 +4195,7 @@ def blog_listing_page():
         'blog.html',
         view_mode='list',
         articles=articles,
+        seo_pages=SEO_SENTIMENT_PAGES,
         meta_description=BLOG_LIST_META_DESCRIPTION,
         page_title='Market Notes Blog',
         canonical_url=url_for('blog_listing_page', _external=True)

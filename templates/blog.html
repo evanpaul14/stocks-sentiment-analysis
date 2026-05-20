@@ -7,41 +7,36 @@
     <meta name="description" content="{{ resolved_meta_description }}">
     {% set resolved_page_title = page_title|default('Market Notes Blog', true) %}
     <title>{{ resolved_page_title }}</title>
-    
-    <!-- Canonical URL -->
+
     {% if canonical_url is defined and canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}">
     {% else %}
     <link rel="canonical" href="{{ request.url }}">
     {% endif %}
-    
-    <!-- Open Graph Meta Tags -->
+
     <meta property="og:type" content="{% if view_mode == 'detail' %}article{% else %}website{% endif %}">
     <meta property="og:site_name" content="Stock Sentiment Analysis">
     <meta property="og:title" content="{{ resolved_page_title }}">
     <meta property="og:description" content="{{ resolved_meta_description }}">
     <meta property="og:url" content="{{ canonical_url|default(request.url, true) }}">
-    {% if article is defined and article and article.hero_image_url %}
-    <meta property="og:image" content="{{ article.hero_image_url }}">
+    {% if article is defined and article and article.image_url %}
+    <meta property="og:image" content="{{ article.image_url }}">
     {% else %}
     <meta property="og:image" content="{{ url_for('static', filename='og-image.png', _external=True) }}">
     {% endif %}
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:locale" content="en_US">
-    
-    <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ resolved_page_title }}">
     <meta name="twitter:description" content="{{ resolved_meta_description }}">
-    {% if article is defined and article and article.hero_image_url %}
-    <meta name="twitter:image" content="{{ article.hero_image_url }}">
+    {% if article is defined and article and article.image_url %}
+    <meta name="twitter:image" content="{{ article.image_url }}">
     {% else %}
     <meta name="twitter:image" content="{{ url_for('static', filename='og-image.png', _external=True) }}">
     {% endif %}
-    
+
     {% if view_mode == 'detail' and article is defined and article %}
-    <!-- JSON-LD Article Structured Data -->
     <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
@@ -50,444 +45,499 @@
         "description": "{{ resolved_meta_description|e }}",
         "datePublished": "{{ article.published_at.isoformat() if article.published_at else '' }}",
         "dateModified": "{{ article.updated_at.isoformat() if article.updated_at else article.published_at.isoformat() if article.published_at else '' }}",
-        {% if article.hero_image_url %}
-        "image": "{{ article.hero_image_url }}",
-        {% endif %}
-        "author": {
-            "@type": "Organization",
-            "name": "Stock Sentiment Analysis"
-        },
-        "publisher": {
-            "@type": "Organization",
-            "name": "Stock Sentiment Analysis",
-            "url": "https://stocksentimentapp.com"
-        },
-        "mainEntityOfPage": {
-            "@type": "WebPage",
-            "@id": "{{ request.url }}"
-        }
+        {% if article.image_url %}"image": "{{ article.image_url }}",{% endif %}
+        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis"},
+        "publisher": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
+        "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ request.url }}"}
     }
     </script>
     {% endif %}
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #0a0a0f;
+            --surface: #111118;
+            --surface2: #16161f;
+            --border: #1e1e2e;
+            --border2: #252535;
+            --text: #e8e8f0;
+            --text-muted: #6b6b85;
+            --accent: #7c6aff;
+            --mono: 'DM Mono', monospace;
+            --display: 'Syne', sans-serif;
+            --body: 'DM Sans', sans-serif;
         }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background-color: #000000;
-            color: #ffffff;
-            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--body);
+            min-height: 100vh;
+            padding-bottom: 60px;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
 
-        .page-title-row {
+        /* Nav */
+        .top-nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
             display: flex;
             align-items: center;
-            gap: 18px;
-            margin-bottom: 30px;
+            gap: 16px;
+            padding: 12px 28px;
+            background: rgba(10,10,15,0.92);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
             flex-wrap: wrap;
         }
-
-        .home-title-link {
-            color: inherit;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .home-title-link:hover,
-        .home-title-link:focus {
-            color: #c4b5fd;
-        }
-
-        .nav-button-row {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .nav-pill-btn {
-            background: #18181b;
-            color: #b48be4;
-            font-weight: 500;
+        .nav-logo {
+            font-family: var(--display);
             font-size: 15px;
-            padding: 7px 18px;
-            border: none;
-            border-radius: 7px;
-            cursor: pointer;
-            transition: background 0.2s, color 0.2s;
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            color: var(--text);
             text-decoration: none;
-            display: inline-flex;
+            white-space: nowrap;
+            margin-right: 8px;
+        }
+        .nav-logo span { color: var(--accent); }
+        .nav-logo:hover { text-decoration: none; color: var(--text); }
+        .nav-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+        .nav-pill {
+            font-family: var(--body);
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 7px;
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            color: var(--text-muted);
+            transition: background .15s, color .15s, border-color .15s;
+        }
+        .nav-pill:hover { background: var(--surface2); color: var(--text); border-color: var(--accent); text-decoration: none; }
+
+        /* Layout */
+        .page-wrap {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 24px 0;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            display: flex;
             align-items: center;
-            justify-content: center;
+            gap: 6px;
+            font-size: 12px;
+            font-family: var(--mono);
+            color: var(--text-muted);
+            margin-bottom: 32px;
+            flex-wrap: wrap;
         }
+        .breadcrumb a { color: var(--text-muted); }
+        .breadcrumb a:hover { color: var(--accent); text-decoration: none; }
+        .breadcrumb-sep { color: var(--border2); }
 
-        .nav-pill-btn:hover {
-            background: #232136;
-            color: #c4b5fd;
+        /* Page hero */
+        .page-hero {
+            margin-bottom: 48px;
         }
-
-        .section-title {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 18px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #333;
+        .page-eyebrow {
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 10px;
         }
-
-        .blog-hero {
-            background-color: #0a0a0a;
-            border-radius: 16px;
-            border: 1px solid rgba(147, 51, 234, 0.2);
-            padding: 28px;
-            margin-bottom: 30px;
-        }
-
-        .blog-hero p {
-            color: #a1a1aa;
-            font-size: 16px;
-            line-height: 1.6;
+        .page-hero h1 {
+            font-family: var(--display);
+            font-size: clamp(26px, 4vw, 40px);
+            font-weight: 700;
+            color: var(--text);
             margin-bottom: 14px;
+            line-height: 1.2;
         }
-
-        .blog-hero a {
+        .page-hero p {
+            font-size: 15px;
+            color: var(--text-muted);
+            line-height: 1.7;
+            max-width: 560px;
+            margin-bottom: 20px;
+        }
+        .hero-cta {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 18px;
-            border-radius: 999px;
-            background: rgba(147, 51, 234, 0.2);
-            color: #c4b5fd;
-            text-decoration: none;
+            padding: 9px 20px;
+            border-radius: 8px;
+            background: rgba(124,106,255,.12);
+            border: 1px solid rgba(124,106,255,.3);
+            color: var(--accent);
+            font-size: 14px;
             font-weight: 600;
+            transition: background .15s;
+        }
+        .hero-cta:hover { background: rgba(124,106,255,.22); text-decoration: none; }
+
+        /* Section heading */
+        .section-heading {
+            font-family: var(--display);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
         }
 
+        /* SEO pages grid */
+        .seo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 48px;
+        }
+        .seo-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 18px;
+            transition: border-color .15s, background .15s;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .seo-card:hover { border-color: rgba(124,106,255,.45); background: var(--surface2); text-decoration: none; }
+        .seo-card-ticker {
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: .8px;
+            color: var(--accent);
+            text-transform: uppercase;
+        }
+        .seo-card-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            line-height: 1.3;
+        }
+        .seo-card-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Blog grid */
         .blog-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 40px;
         }
-
-        .blog-card,
-        .blog-article-card,
-        .related-card {
-            background-color: #0a0a0a;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 24px;
-        }
-
         .blog-card {
-            display: flex;
-            gap: 18px;
-            align-items: stretch;
-            min-height: 180px;
-        }
-
-        .blog-thumb {
-            width: 140px;
-            border-radius: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
             overflow: hidden;
-            background: #050505;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            flex-direction: column;
+            transition: border-color .15s;
+        }
+        .blog-card:hover { border-color: rgba(124,106,255,.4); }
+        .blog-card-thumb {
+            width: 100%;
+            height: 160px;
+            background: linear-gradient(135deg, rgba(124,106,255,.2), rgba(124,106,255,.05));
+            overflow: hidden;
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-
-        .blog-thumb img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
+        .blog-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .blog-card-thumb-placeholder {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: rgba(124,106,255,.5);
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
-
-        .blog-thumb.is-placeholder {
-            background: linear-gradient(120deg, rgba(147, 51, 234, 0.35), rgba(79, 70, 229, 0.25));
-            border-style: dashed;
-        }
-
-        .blog-thumb.is-placeholder span {
-            color: #e0e7ff;
-            font-weight: 700;
-            letter-spacing: 0.2px;
-        }
-
         .blog-card-body {
+            padding: 18px;
             display: flex;
             flex-direction: column;
+            flex: 1;
             gap: 8px;
+        }
+        .blog-card-eyebrow {
+            font-family: var(--mono);
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .blog-card-body h2 {
+            font-family: var(--display);
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.35;
+        }
+        .blog-card-body p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.65;
             flex: 1;
         }
-
-        .blog-card-body h2 {
-            font-size: 22px;
-            margin-bottom: 4px;
-        }
-
-        .blog-card p {
-            color: #a1a1aa;
-            line-height: 1.6;
-            margin-bottom: 18px;
-        }
-
         .blog-card-footer {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
-            font-size: 13px;
-            color: #a1a1aa;
-            margin-top: auto;
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: var(--mono);
+            margin-top: 4px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
         }
-
         .blog-card-footer a {
-            color: #c4b5fd;
-            text-decoration: none;
+            color: var(--accent);
+            font-size: 12px;
             font-weight: 600;
         }
 
-        .blog-card-footer a:hover {
-            text-decoration: underline;
-        }
-
-        .empty-state {
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px dashed rgba(147, 51, 234, 0.35);
-            color: #a1a1aa;
-            text-align: center;
-        }
-
+        /* Article detail */
         .back-link {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            color: #a1a1aa;
-            text-decoration: none;
-            margin-bottom: 18px;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
         }
-
-        .back-link:hover {
-            color: #c4b5fd;
+        .back-link:hover { color: var(--accent); text-decoration: none; }
+        .article-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 32px;
         }
-
-        .blog-article-card h2 {
-            font-size: 34px;
+        .article-hero-img {
+            width: 100%;
+            max-height: 400px;
+            object-fit: cover;
+            display: block;
+        }
+        .article-card-body { padding: 32px; }
+        .article-eyebrow {
+            font-family: var(--mono);
+            font-size: 10px;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--accent);
             margin-bottom: 12px;
         }
-
-        .blog-meta-line {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
+        .article-card-body h2 {
+            font-family: var(--display);
+            font-size: clamp(22px, 3.5vw, 34px);
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.2;
+            margin-bottom: 14px;
+        }
+        .article-byline {
             font-size: 13px;
-            text-transform: uppercase;
-            color: #a1a1aa;
-            letter-spacing: 0.35px;
-            margin-bottom: 18px;
+            color: var(--text-muted);
+            font-family: var(--mono);
+            margin-bottom: 28px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
         }
-
-        .blog-meta-pill {
-            padding: 6px 12px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .blog-byline {
-            color: #a1a1aa;
+        .article-body {
             font-size: 15px;
-            margin-bottom: 18px;
+            line-height: 1.8;
+            color: #c8c8d8;
+        }
+        .article-body p { margin-bottom: 18px; }
+        .article-body h2, .article-body h3 {
+            font-family: var(--display);
+            color: var(--text);
+            margin: 28px 0 12px;
+        }
+        .article-body a { color: var(--accent); }
+        .article-body blockquote {
+            border-left: 3px solid var(--accent);
+            padding-left: 16px;
+            color: var(--text-muted);
+            margin: 20px 0;
         }
 
-        .blog-byline strong {
-            color: #fff;
-        }
-
-        .article-hero {
-            width: 100%;
-            border-radius: 14px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            margin-bottom: 0;
-            background: #050505;
-            box-shadow: 0 22px 45px rgba(0, 0, 0, 0.65);
-        }
-
-        .article-hero img {
-            width: 100%;
-            height: auto;
-            display: block;
-            max-height: 420px;
-            object-fit: cover;
-        }
-
-        .article-hero + .blog-body {
-            border-top: 1px solid rgba(255, 255, 255, 0.12);
-            padding-top: 28px;
-            margin-top: 22px;
-        }
-
-        .blog-body {
-            color: #d1d5db;
-            line-height: 1.7;
-        }
-
-        .blog-body p {
-            margin-bottom: 18px;
-        }
-
+        /* Related */
+        .related-section { margin-top: 32px; }
         .related-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .related-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            transition: border-color .15s;
+        }
+        .related-card:hover { border-color: rgba(124,106,255,.4); }
+        .related-card a { color: var(--text); font-size: 14px; font-weight: 600; }
+        .related-card a:hover { color: var(--accent); text-decoration: none; }
+        .related-card-date { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 6px; }
+
+        /* Empty */
+        .empty-state {
+            padding: 32px;
+            border: 1px dashed var(--border2);
+            border-radius: 12px;
+            color: var(--text-muted);
+            font-size: 14px;
+            text-align: center;
         }
 
-        .related-card a {
-            color: #c4b5fd;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .related-card a:hover {
-            text-decoration: underline;
-        }
-
-        .eyebrow {
-            color: #b48be4;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.35px;
-            margin-bottom: 10px;
-        }
-
-        @media (max-width: 720px) {
-            body {
-                padding: 16px;
-            }
-
-            .blog-article-card,
-            .blog-card,
-            .related-card {
-                padding: 18px;
-            }
-
-            .blog-card {
-                flex-direction: column;
-            }
-
-            .blog-thumb {
-                width: 100%;
-                height: 180px;
-            }
-
-            .blog-article-card h2 {
-                font-size: 26px;
-            }
+        @media (max-width: 640px) {
+            .page-wrap { padding: 24px 16px 0; }
+            .top-nav { padding: 10px 16px; }
+            .article-card-body { padding: 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="page-title-row">
-            <h1 style="font-size:32px;">
-                <a class="home-title-link" href="/">Stock Sentiment Analysis</a>
-            </h1>
-            <div class="nav-button-row">
-                <a class="nav-pill-btn" href="/trending-list">Trending</a>
-                <a class="nav-pill-btn" href="/watchlist">Watchlist</a>
-                <a class="nav-pill-btn" href="/market-summary">Market Summary</a>
-            </div>
-        </div>
 
-        {% if view_mode == 'detail' and article %}
-        <a class="back-link" href="/blog">&larr; Back to Market Notes</a>
-        <article class="blog-article-card">
-            <p class="eyebrow">Market Notes</p>
+<nav class="top-nav">
+    <a class="nav-logo" href="/">Stock Sentiment Analysis<span>.</span></a>
+    <div class="nav-pills">
+        <a class="nav-pill" href="/trending-list">Trending</a>
+        <a class="nav-pill" href="/watchlist">Watchlist</a>
+        <a class="nav-pill" href="/market-summary">Market Summary</a>
+        <a class="nav-pill" href="/blog">Blog</a>
+    </div>
+</nav>
+
+<div class="page-wrap">
+
+{% if view_mode == 'detail' and article is defined and article %}
+
+    <nav class="breadcrumb">
+        <a href="/">Home</a><span class="breadcrumb-sep">›</span>
+        <a href="/blog">Blog</a><span class="breadcrumb-sep">›</span>
+        <span>{{ article.title|truncate(60, True, '…') }}</span>
+    </nav>
+
+    <a class="back-link" href="/blog">← Back to Blog</a>
+
+    <article class="article-card">
+        {% if article.image_url %}
+        <img class="article-hero-img" src="{{ article.image_url }}" alt="Hero image for {{ article.title }}">
+        {% endif %}
+        <div class="article-card-body">
+            <p class="article-eyebrow">Market Notes</p>
             <h2>{{ article.title }}</h2>
             {% set published_dt = article.published_at or article.updated_at or article.created_at %}
             {% set author_name = article.author or 'stocksentimentapp.com Team' %}
-            {% if published_dt %}
-            <p class="blog-byline">By {{ author_name }} • {{ published_dt|blog_timestamp(True) }}</p>
-            {% else %}
-            <p class="blog-byline">By {{ author_name }}</p>
-            {% endif %}
-            {% if article.image_url %}
-            <div class="article-hero">
-                <img src="{{ article.image_url }}" alt="Hero image for {{ article.title }}">
+            <p class="article-byline">
+                By {{ author_name }}{% if published_dt %} · {{ published_dt|blog_timestamp(True) }}{% endif %}
+            </p>
+            <div class="article-body">{{ article.content|safe }}</div>
+        </div>
+    </article>
+
+    <section class="related-section">
+        <h3 class="section-heading">More from the blog</h3>
+        {% set sidebar_articles = related_articles if related_articles is defined else articles %}
+        {% if sidebar_articles %}
+        <div class="related-grid">
+            {% for item in sidebar_articles %}
+            <div class="related-card">
+                <a href="{{ url_for('blog_article_page', slug=item.slug) }}">{{ item.title }}</a>
+                {% set sidebar_dt = item.published_at or item.created_at %}
+                <p class="related-card-date">{{ sidebar_dt|blog_timestamp(False) if sidebar_dt else '' }}</p>
             </div>
-            {% endif %}
-            <div class="blog-body">{{ article.content|safe }}</div>
-        </article>
-        <section style="margin-top:30px;">
-            <div class="section-title" style="font-size:20px; border-bottom:none; padding-bottom:0;">More market notes</div>
-            {% set sidebar_articles = related_articles if related_articles is defined else articles %}
-            {% if sidebar_articles %}
-            <div class="related-grid">
-                {% for item in sidebar_articles %}
-                <div class="related-card">
-                    <a href="{{ url_for('blog_article_page', slug=item.slug) }}">{{ item.title }}</a>
-                    {% set sidebar_dt = item.published_at or item.created_at %}
-                    <p style="margin:6px 0 0; color:#a1a1aa; font-size:13px;">{{ sidebar_dt|blog_timestamp(False) if sidebar_dt else '' }}</p>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state" style="text-align:left;">No other posts yet.</div>
-            {% endif %}
-        </section>
-        {% else %}
-        <section class="blog-hero">
-            <p class="eyebrow">Market Notes</p>
-            <h2 class="section-title" style="border-bottom:none;padding-bottom:0;margin-bottom:12px;">Latest commentary from the desk</h2>
-            <p>Check the daily stock market summary with index moves, sector highlights, and curated headlines in one view.</p>
-            <a href="/market-summary">See today’s market summary →</a>
-        </section>
-        {% if articles %}
-        <div class="section-title">Recent posts</div>
-        <section class="blog-grid">
-            {% for article in articles %}
-            <article class="blog-card">
-                <div class="blog-thumb {% if not article.image_url %}is-placeholder{% endif %}">
-                    {% if article.image_url %}
-                    <img src="{{ article.image_url }}" alt="Preview image for {{ article.title }}">
-                    {% else %}
-                    <span>Preview</span>
-                    {% endif %}
-                </div>
-                <div class="blog-card-body">
-                    <p class="eyebrow" style="margin-bottom:6px;">{{ article.author or 'stocksentimentapp.com Team' }}</p>
-                    <h2>{{ article.title }}</h2>
-                    <p>{{ article.content|striptags|truncate(200, True, '…') }}</p>
-                    {% set list_dt = article.published_at or article.created_at %}
-                    <div class="blog-card-footer">
-                        <span>{{ list_dt|blog_timestamp(False) if list_dt else 'Draft' }}</span>
-                        <a href="{{ url_for('blog_article_page', slug=article.slug) }}">Read article</a>
-                    </div>
-                </div>
-            </article>
             {% endfor %}
-        </section>
+        </div>
         {% else %}
-        <div class="empty-state">No published articles yet.</div>
+        <div class="empty-state" style="text-align:left;">No other posts yet.</div>
         {% endif %}
-        {% endif %}
+    </section>
+
+{% else %}
+
+    <nav class="breadcrumb">
+        <a href="/">Home</a><span class="breadcrumb-sep">›</span>
+        <span>Blog</span>
+    </nav>
+
+    <div class="page-hero">
+        <p class="page-eyebrow">Blog</p>
+        <h1>Market Notes &amp; Sentiment Analysis</h1>
+        <p>Stock commentary, AI sentiment breakdowns, and market analysis from the stocksentimentapp.com team.</p>
+        <a class="hero-cta" href="/market-summary">Today's market summary →</a>
     </div>
+
+    {% if seo_pages is defined and seo_pages %}
+    <h2 class="section-heading">Sentiment Analysis Pages</h2>
+    <div class="seo-grid">
+        {% for slug, info in seo_pages.items() %}
+        <a class="seo-card" href="/blog/sentiment-of-{{ slug }}-stock">
+            <span class="seo-card-ticker">{{ info.ticker }}</span>
+            <span class="seo-card-name">{{ info.name }}</span>
+            <span class="seo-card-label">Sentiment · Monthly Analysis</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if articles %}
+    <h2 class="section-heading">Recent Posts</h2>
+    <div class="blog-grid">
+        {% for article in articles %}
+        <article class="blog-card">
+            <div class="blog-card-thumb">
+                {% if article.image_url %}
+                <img src="{{ article.image_url }}" alt="Preview for {{ article.title }}">
+                {% else %}
+                <span class="blog-card-thumb-placeholder">Market Notes</span>
+                {% endif %}
+            </div>
+            <div class="blog-card-body">
+                <p class="blog-card-eyebrow">{{ article.author or 'stocksentimentapp.com Team' }}</p>
+                <h2>{{ article.title }}</h2>
+                <p>{{ article.content|striptags|truncate(160, True, '…') }}</p>
+                {% set list_dt = article.published_at or article.created_at %}
+                <div class="blog-card-footer">
+                    <span>{{ list_dt|blog_timestamp(False) if list_dt else 'Draft' }}</span>
+                    <a href="{{ url_for('blog_article_page', slug=article.slug) }}">Read →</a>
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">No published articles yet.</div>
+    {% endif %}
+
+{% endif %}
+
+</div>
 </body>
 </html>
