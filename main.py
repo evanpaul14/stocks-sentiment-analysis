@@ -33,7 +33,7 @@ from google import genai
 import nh3
 from openai import OpenAI
 import pandas_market_calendars as mcal
-from pygooglenews import GoogleNews
+from pygooglenews import GoogleNews as _GoogleNews
 from sqlalchemy import func, inspect, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -940,6 +940,7 @@ _cloudflare_headers = {"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"} if CLO
 AI_RATE_LIMIT_PER_MINUTE = max(0, _get_int_env("GEMMA_MAX_CALLS_PER_MINUTE", 45))
 AI_RATE_WINDOW_SECONDS = max(1, _get_int_env("GEMMA_RATE_WINDOW_SECONDS", 60))
 _ai_call_timestamps = deque()
+_ai_rate_lock = threading.Lock()
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 UNSPLASH_APP_NAME = os.getenv("UNSPLASH_APP_NAME", "stocks-sentiment-analysis")
@@ -961,6 +962,18 @@ MAILGUN_LISTS_BASE_URL = f"{MAILGUN_API_BASE}/lists"
 MAILGUN_TIMEOUT_SECONDS = max(5, _get_int_env("MAILGUN_TIMEOUT_SECONDS", 10))
 MAILGUN_ENABLED = bool(MAILGUN_API_KEY and MAILGUN_DOMAIN and MAILGUN_MARKET_LIST_ADDRESS and MAILGUN_MESSAGES_URL)
 
+_google_news_singleton: "_GoogleNews | None" = None
+_google_news_lock = threading.Lock()
+
+
+def _get_google_news() -> "_GoogleNews":
+    global _google_news_singleton
+    if _google_news_singleton is None:
+        with _google_news_lock:
+            if _google_news_singleton is None:
+                _google_news_singleton = _GoogleNews(lang='en', country='US')
+    return _google_news_singleton
+
 
 def _build_unsplash_referral_url():
     """Construct Unsplash attribution URL with app UTM parameters."""
@@ -974,21 +987,17 @@ def wait_for_ai_rate_slot():
         return
 
     while True:
-        # Sliding-window limiter: drop stale timestamps before admitting a new request.
-        now = time.time()
-        window_floor = now - AI_RATE_WINDOW_SECONDS
-        while _ai_call_timestamps and _ai_call_timestamps[0] < window_floor:
-            _ai_call_timestamps.popleft()
-
-        if len(_ai_call_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
-            _ai_call_timestamps.append(now)
-            return
-
-        wait_for = AI_RATE_WINDOW_SECONDS - (now - _ai_call_timestamps[0])
-        if wait_for <= 0:
-            _ai_call_timestamps.popleft()
-            continue
-        time.sleep(wait_for)
+        with _ai_rate_lock:
+            now = time.time()
+            window_floor = now - AI_RATE_WINDOW_SECONDS
+            while _ai_call_timestamps and _ai_call_timestamps[0] < window_floor:
+                _ai_call_timestamps.popleft()
+            if len(_ai_call_timestamps) < AI_RATE_LIMIT_PER_MINUTE:
+                _ai_call_timestamps.append(now)
+                return
+            wait_for = AI_RATE_WINDOW_SECONDS - (now - _ai_call_timestamps[0])
+        # Sleep outside the lock so other threads can make progress.
+        time.sleep(max(wait_for, 0.1))
 
 
 PRICE_CACHE_TTL_SECONDS = max(5, _get_int_env("TRENDING_PRICE_TTL_SECONDS", 120))
@@ -1964,7 +1973,7 @@ def get_market_news_digest(max_articles=None):
     articles = []
     seen_titles = set()
     try:
-        gn = GoogleNews(lang='en', country='US')
+        gn = _get_google_news()
     except Exception as exc:
         market_summary_logger.error("Unable to initialize Google News: %s", exc)
         return articles
@@ -3240,7 +3249,7 @@ def get_news_articles(stock_symbol, num_articles=10):
     if not normalized_symbol:
         return []
     try:
-        gn = GoogleNews(lang='en', country='US')
+        gn = _get_google_news()
         search_result = gn.search(normalized_symbol + " stock")
         entries = search_result.get('entries', [])
 
@@ -3293,6 +3302,14 @@ def _sanitize_unsplash_query_text(value):
 
 
 def _resolve_unsplash_query(article, fallback_query=None):
+    if article:
+        candidate = _sanitize_unsplash_query_text(article.get('title') or article.get('description'))
+        if candidate:
+            return candidate
+    if fallback_query:
+        candidate = _sanitize_unsplash_query_text(fallback_query)
+        if candidate:
+            return candidate
     return _sanitize_unsplash_query_text(UNSPLASH_DEFAULT_QUERY) or UNSPLASH_DEFAULT_QUERY
 
 
