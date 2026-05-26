@@ -43,17 +43,11 @@
         "@type": "Article",
         "headline": "{{ article.title|e }}",
         "description": "{{ resolved_meta_description|e }}",
-        "url": "{{ request.url }}",
         "datePublished": "{{ article.published_at.isoformat() if article.published_at else '' }}",
         "dateModified": "{{ article.updated_at.isoformat() if article.updated_at else article.published_at.isoformat() if article.published_at else '' }}",
-        {% if article.image_url %}"image": {"@type": "ImageObject", "url": "{{ article.image_url }}"},{% endif %}
-        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
-        "publisher": {
-            "@type": "Organization",
-            "name": "Stock Sentiment Analysis",
-            "url": "https://stocksentimentapp.com",
-            "logo": {"@type": "ImageObject", "url": "https://stocksentimentapp.com/static/og-image.png", "width": 1200, "height": 630}
-        },
+        {% if article.image_url %}"image": "{{ article.image_url }}",{% endif %}
+        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis"},
+        "publisher": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ request.url }}"}
     }
     </script>

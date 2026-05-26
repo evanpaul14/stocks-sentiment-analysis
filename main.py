@@ -795,7 +795,7 @@ apikey = os.getenv('GOOGLE_API_KEY')
 if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
-gemma_model = "gemma-4-26b-a4b-it"
+gemma_model = "gemma-3-12b-it"
 
 LLM7_API_KEY = os.getenv("LLM7_API_KEY")
 LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
@@ -927,8 +927,8 @@ BLOG_ARTICLE_FETCH_LIMIT = max(1, _get_int_env("BLOG_ARTICLE_FETCH_LIMIT", 50))
 GEMMA_BACKUP_SENTIMENT_TIMEOUT_SECONDS = max(1, _get_int_env("GEMMA_SENTIMENT_TIMEOUT_SECONDS", 3))
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
-CLOUDFLARE_SENTIMENT_MODEL = os.getenv("CLOUDFLARE_SENTIMENT_MODEL", "@cf/google/gemma-4-26b-a4b-it")
-CLOUDFLARE_TIMEOUT_SECONDS = max(1, _get_int_env("CLOUDFLARE_TIMEOUT_SECONDS", 10))
+CLOUDFLARE_SENTIMENT_MODEL = os.getenv("CLOUDFLARE_SENTIMENT_MODEL", "@cf/meta/llama-3-8b-instruct")
+CLOUDFLARE_TIMEOUT_SECONDS = max(1, _get_int_env("CLOUDFLARE_TIMEOUT_SECONDS", 3))
 CLOUDFLARE_BASE_URL = (
     f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/"
     if CLOUDFLARE_ACCOUNT_ID else None
