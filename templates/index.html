@@ -6,7 +6,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
-    {% set resolved_meta_description = meta_description|default('Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts.', true) %}
+    {% set resolved_meta_description = meta_description|default('Analyze any stock\'s market sentiment with AI. Track bullish/bearish news signals, Reddit & StockTwits social trends, live prices — free, no account needed.', true) %}
     <meta name="description" content="{{ resolved_meta_description }}">
     <meta name="msvalidate.01" content="3EEDAE9565183A466E75364048FC8D47" />
     <meta name="google-site-verification" content="2SD21a9x2-kiPIB6JKVUg27gcu1GmmocLo8KfoDMadI" />
@@ -18,7 +18,7 @@
     {% elif current_page_view == 'watchlist' %}
         {% set default_page_title = 'Watchlist' %}
     {% else %}
-        {% set default_page_title = 'Stock Sentiment Analysis' %}
+        {% set default_page_title = 'Stock Sentiment Analysis — Free AI Market Intelligence' %}
     {% endif %}
     {% set resolved_page_title = market_summary_page_title|default(default_page_title, true) %}
     <title>{{ resolved_page_title }}</title>
@@ -79,6 +79,78 @@
         "sameAs": []
     }
     </script>
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Stock Sentiment Analysis",
+        "url": "https://stocksentimentapp.com",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "description": "AI-powered stock sentiment analysis. Get bullish/bearish signals from news, Reddit, and StockTwits for any ticker in real time.",
+        "featureList": [
+            "AI news sentiment analysis",
+            "Live StockTwits trending",
+            "Reddit stock discussions",
+            "Real-time stock prices",
+            "Daily market summaries",
+            "Personal stock watchlist"
+        ]
+    }
+    </script>
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What is stock sentiment analysis?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Stock sentiment analysis measures whether news articles, social media posts, and market commentary about a stock are bullish (positive), bearish (negative), or neutral. AI models read headlines and posts in real time to give traders a fast read on how the crowd feels about a particular ticker."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "How does AI analyze stock sentiment?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Our AI reads each news article about a ticker and classifies it as bullish, bearish, or neutral based on language, tone, and context. It weighs dozens of linguistic signals to produce a sentiment score per article and an overall aggregate for the stock."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Which stocks can I analyze?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "You can search any US-listed ticker — from mega-cap tech (AAPL, MSFT, NVDA, TSLA) to small caps and ETFs like SPY, QQQ, and DIA. Just type a company name or ticker symbol in the search bar."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Is stock sentiment analysis free to use?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. Stock Sentiment Analysis is completely free. No account, credit card, or sign-up required. Search any ticker to get instant AI-powered sentiment results."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "What data sources does the platform use?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "The platform pulls from Google News (latest headlines), StockTwits (trader sentiment and trending tickers), Reddit (retail investor discussions via ApeWisdom), and Yahoo Finance (real-time prices and key statistics)."
+                }
+            }
+        ]
+    }
+    </script>
     
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -122,49 +194,82 @@
         </div>
 
         <section class="home-hero" aria-labelledby="homeHeroTitle">
-            <div class="home-hero-badge">Market Intelligence Platform</div>
-            <h1 id="homeHeroTitle">Track market momentum, sentiment, and volume from one dashboard.</h1>
-            <p class="home-hero-subtitle">Search any ticker, monitor social trend shifts, and keep your watchlist updated in real time.</p>
+            <div class="home-hero-badge">Free &middot; AI-Powered &middot; Real-Time Data</div>
+            <h1 id="homeHeroTitle">Stock Sentiment Analysis — Know What's Driving Every Market Move</h1>
+            <p class="home-hero-subtitle">AI reads every news article and social post about your stock and tells you whether the crowd is <span class="home-hero-bull">bullish</span>, <span class="home-hero-bear">bearish</span>, or mixed. Search any ticker in seconds. No account needed.</p>
             <div class="home-hero-actions">
-                <a class="home-hero-link primary" href="/trending-list">Explore Trending</a>
+                <a class="home-hero-link primary" href="/trending-list">See What's Trending Now &rarr;</a>
                 <a class="home-hero-link" href="/watchlist">Open Watchlist</a>
-                <a class="home-hero-link" href="/market-summary">Read Market Summary</a>
-            </div>
-            <div class="home-feature-grid" aria-label="Homepage highlights">
-                <article class="home-feature-card">
-                    <h3>Live Trend Boards</h3>
-                    <p>Compare StockTwits, Reddit, and volume leaders with real-time pricing context.</p>
-                </article>
-                <article class="home-feature-card">
-                    <h3>Sentiment Analysis</h3>
-                    <p>Get article-level bullish, bearish, and neutral breakdowns for each stock you search.</p>
-                </article>
-                <article class="home-feature-card">
-                    <h3>Daily Market Recap</h3>
-                    <p>Review index moves, headline drivers, and macro context in a clean daily summary.</p>
-                </article>
+                <a class="home-hero-link" href="/market-summary">Today's Market Recap</a>
             </div>
 
-            <div class="home-kpis" aria-label="Platform capabilities">
+            <div class="home-kpis home-proof-strip" aria-label="Platform stats">
+                <div class="home-kpi-item">
+                    <span class="home-kpi-value">10,000+</span>
+                    <span class="home-kpi-label">Tickers Supported</span>
+                </div>
                 <div class="home-kpi-item">
                     <span class="home-kpi-value">3</span>
-                    <span class="home-kpi-label">Trend Sources</span>
+                    <span class="home-kpi-label">Social Platforms</span>
                 </div>
                 <div class="home-kpi-item">
                     <span class="home-kpi-value">Live</span>
-                    <span class="home-kpi-label">Quote Refresh</span>
+                    <span class="home-kpi-label">Price Data</span>
                 </div>
                 <div class="home-kpi-item">
-                    <span class="home-kpi-value">Daily</span>
-                    <span class="home-kpi-label">Market Recap</span>
+                    <span class="home-kpi-value">Free</span>
+                    <span class="home-kpi-label">No Sign-Up</span>
                 </div>
+            </div>
+
+            <div class="home-feature-grid" aria-label="Homepage highlights">
+                <article class="home-feature-card">
+                    <div class="home-feature-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                    </div>
+                    <h3>News Sentiment AI</h3>
+                    <p>Every headline scored bullish, bearish, or neutral — so you know if coverage supports the price move or contradicts it.</p>
+                </article>
+                <article class="home-feature-card">
+                    <div class="home-feature-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <h3>Social Trend Signals</h3>
+                    <p>StockTwits buzz, Reddit momentum, and volume leaders in one live dashboard — no switching between platforms.</p>
+                </article>
+                <article class="home-feature-card">
+                    <div class="home-feature-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </div>
+                    <h3>Daily Market Recap</h3>
+                    <p>AI-written briefing on what moved markets, which sectors led, and what to watch in tomorrow's session.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="home-popular-stocks" aria-labelledby="homePopularStocksTitle">
+            <div class="home-section-header">
+                <h2 id="homePopularStocksTitle">AI Sentiment Analysis for Popular Stocks</h2>
+                <p>Instantly check bullish/bearish sentiment for the most-searched tickers. Updated in real time from news and social platforms.</p>
+            </div>
+            <div class="home-popular-stocks-grid">
+                <a class="home-stock-chip" href="/blog/sentiment-of-apple-stock">Apple <span>AAPL</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-microsoft-stock">Microsoft <span>MSFT</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-alphabet-stock">Alphabet <span>GOOGL</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-amazon-stock">Amazon <span>AMZN</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-meta-stock">Meta <span>META</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-tesla-stock">Tesla <span>TSLA</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-nvidia-stock">Nvidia <span>NVDA</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-sp-500-stock">S&amp;P 500 <span>SPY</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-nasdaq-stock">Nasdaq <span>QQQ</span></a>
+                <a class="home-stock-chip" href="/blog/sentiment-of-dow-jones-stock">Dow Jones <span>DIA</span></a>
             </div>
         </section>
 
         <section class="home-insights" aria-labelledby="homeInsightsTitle">
             <div class="home-insights-header">
-                <h2 id="homeInsightsTitle">Move Faster With Real-Time Insights</h2>
-                <p>Built for a tight loop: discover what is moving, validate with news sentiment, and keep your highest-conviction symbols one click away.</p>
+                <h2 id="homeInsightsTitle">From Trend Discovery to Trade Decision in Minutes</h2>
+                <p>A tight three-step loop built for active traders: spot what's moving, validate with sentiment data, and track your best ideas in one place.</p>
             </div>
             <div class="home-insights-grid">
                 <article class="home-insight-card">
@@ -184,8 +289,8 @@
 
         <section class="home-use-cases" aria-labelledby="homeUseCasesTitle">
             <div class="home-section-header">
-                <h2 id="homeUseCasesTitle">Built For Real Trading Workflows</h2>
-                <p>Whether you are scanning premarket movers or reviewing your watchlist after the close, the dashboard is structured around quick decisions and clear context.</p>
+                <h2 id="homeUseCasesTitle">Built for Real Trading Workflows</h2>
+                <p>Whether you're scanning premarket movers, validating an intraday breakout, or reviewing the close, every feature is built for speed and clarity.</p>
             </div>
             <div class="home-use-cases-grid">
                 <article class="home-use-case-card">
@@ -220,8 +325,8 @@
 
         <section class="home-workflow" aria-labelledby="homeWorkflowTitle">
             <div class="home-section-header">
-                <h2 id="homeWorkflowTitle">What You Can Do In Minutes</h2>
-                <p>Each module is designed to answer a practical question fast: what is moving, why it may be moving, and whether it belongs in your active list.</p>
+                <h2 id="homeWorkflowTitle">Answer the Questions That Matter — Fast</h2>
+                <p>Each module is built around one practical question: what is moving, why it may be moving, and whether it belongs in your active list today.</p>
             </div>
             <div class="home-workflow-grid">
                 <article class="home-workflow-card">
@@ -246,6 +351,52 @@
                 </article>
             </div>
         </section>
+
+        <section class="home-faq" aria-labelledby="homeFaqTitle">
+            <div class="home-section-header">
+                <h2 id="homeFaqTitle">Frequently Asked Questions</h2>
+                <p>Everything you need to know about AI-powered stock sentiment analysis.</p>
+            </div>
+            <div class="home-faq-list">
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">What is stock sentiment analysis?</summary>
+                    <div class="home-faq-a">
+                        <p>Stock sentiment analysis measures whether news articles, social media posts, and market commentary about a ticker are <strong>bullish</strong> (positive), <strong>bearish</strong> (negative), or <strong>neutral</strong>. AI models read coverage in real time to give traders an instant read on how the crowd feels — so you can see whether momentum has fundamental backing or is just noise.</p>
+                    </div>
+                </details>
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">How does the AI analyze stock sentiment?</summary>
+                    <div class="home-faq-a">
+                        <p>For each news article, the AI evaluates tone, word choice, and financial context to produce a bullish, bearish, or neutral classification. Those per-article scores are aggregated into an overall sentiment reading for the ticker. All sentiment is based on the most recent headlines — so it reflects what's happening <em>now</em>, not last week.</p>
+                    </div>
+                </details>
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">Which stocks can I analyze?</summary>
+                    <div class="home-faq-a">
+                        <p>Any US-listed equity or ETF — from mega-cap tech like <strong>AAPL, MSFT, NVDA, TSLA, META</strong> to small caps and index funds like <strong>SPY, QQQ, and DIA</strong>. Just type a company name or ticker symbol in the search bar at the top of the page.</p>
+                    </div>
+                </details>
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">Is this free? Do I need an account?</summary>
+                    <div class="home-faq-a">
+                        <p>Yes — completely free, and no sign-up required. Search any ticker and get instant AI sentiment results. Your watchlist is saved locally in your browser, so it persists between sessions without a login.</p>
+                    </div>
+                </details>
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">What data sources does the platform use?</summary>
+                    <div class="home-faq-a">
+                        <p>We aggregate from four sources: <strong>Google News</strong> for the latest headlines, <strong>StockTwits</strong> for trader sentiment and trending tickers, <strong>Reddit</strong> (via ApeWisdom) for retail investor discussions, and <strong>Yahoo Finance</strong> for real-time prices and key statistics.</p>
+                    </div>
+                </details>
+                <details class="home-faq-item">
+                    <summary class="home-faq-q">How is the Daily Market Recap generated?</summary>
+                    <div class="home-faq-a">
+                        <p>Each trading day, our system fetches top market headlines and passes them through an AI summarization pipeline to produce a concise briefing — what moved, which sectors led or lagged, and the macro narrative. You can subscribe to receive it by email on the <a href="/market-summary">Market Summary page</a>.</p>
+                    </div>
+                </details>
+            </div>
+        </section>
+
         {% endif %}
 
         {% if page_view == 'trending' %}
