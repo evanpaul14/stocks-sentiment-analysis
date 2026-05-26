@@ -795,7 +795,7 @@ apikey = os.getenv('GOOGLE_API_KEY')
 if not apikey:
     raise ValueError("Secret key not set in environment!")
 client = genai.Client(api_key=apikey)
-gemma_model = "gemma-3-12b-it"
+gemma_model = "gemma-4-26b-a4b-it"
 
 LLM7_API_KEY = os.getenv("LLM7_API_KEY")
 LLM7_BASE_URL = os.getenv("LLM7_BASE_URL", "https://api.llm7.io/v1")
