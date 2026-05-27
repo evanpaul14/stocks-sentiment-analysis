@@ -2427,6 +2427,14 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
     object-fit: cover;
 }
 
+#results .stock-logo-big.has-image {
+    border-color: transparent;
+}
+
+.stock-logo-big.has-image {
+    border-color: transparent;
+}
+
 #results .stock-sym {
     font-family: var(--display);
     font-size: 28px;
