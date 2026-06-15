@@ -3961,8 +3961,51 @@ def _parse_article_published_date(published_str):
         return None
 
 
+def _get_monthly_sentiment_data_from_history(ticker):
+    """Aggregate SentimentHistory records for ticker into 4 weekly buckets (oldest→newest)."""
+    now_date = datetime.now(timezone.utc).date()
+    cutoff = now_date - timedelta(days=30)
+    cutoff_dt = datetime.combine(cutoff, datetime.min.time())
+
+    records = (
+        SentimentHistory.query
+        .filter(
+            SentimentHistory.ticker == ticker,
+            SentimentHistory.analyzed_at >= cutoff_dt,
+        )
+        .all()
+    )
+
+    week_buckets = {0: [], 1: [], 2: [], 3: []}
+    for r in records:
+        ref_date = (r.article_published_at or r.analyzed_at)
+        if hasattr(ref_date, 'date'):
+            ref_date = ref_date.date()
+        if ref_date < cutoff:
+            continue
+        week_idx = min((now_date - ref_date).days // 7, 3)
+        week_buckets[week_idx].append(_SENTIMENT_SCORE_MAP.get(r.sentiment_label, 0))
+
+    week_data = []
+    for week_idx in range(3, -1, -1):
+        scores = week_buckets[week_idx]
+        week_start = now_date - timedelta(days=(week_idx + 1) * 7)
+        label = week_start.strftime("%b %d")
+        if not scores:
+            week_data.append({"week_label": label, "score": None, "count": 0})
+        else:
+            week_data.append({"week_label": label, "score": round(sum(scores) / len(scores), 2), "count": len(scores)})
+    return week_data
+
+
 def _get_monthly_sentiment_data(ticker, company_name):
-    """Fetch last 30 days of news for ticker, analyze sentiment, aggregate by week (oldest→newest)."""
+    """Return weekly sentiment data, preferring stored SentimentHistory over live API calls."""
+    history_data = _get_monthly_sentiment_data_from_history(ticker)
+    total_articles = sum(w["count"] for w in history_data)
+    if total_articles > 0:
+        return history_data
+
+    # No stored history — fall back to live analysis
     articles = get_news_articles(ticker, num_articles=30)
     now_date = datetime.now(timezone.utc).date()
     cutoff = now_date - timedelta(days=30)
