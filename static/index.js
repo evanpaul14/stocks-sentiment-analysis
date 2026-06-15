@@ -1742,7 +1742,11 @@ function initializeSearchSuggestions() {
                     description: article.description,
                     company_name: companyName,
                     article_id: idx,
-                    sentiment_run_id: normalizedRunId || undefined
+                    sentiment_run_id: normalizedRunId || undefined,
+                    symbol: currentSymbol || undefined,
+                    article_link: article.link || undefined,
+                    article_source: article.source || undefined,
+                    article_published_at: article.publishedAt || undefined
                 }),
                 signal: controller.signal
             });
@@ -3169,7 +3173,11 @@ function initializeSearchSuggestions() {
     }
 
     function createChart(data) {
-        const ctx = document.getElementById('stockChart').getContext('2d');
+        const canvas = document.getElementById('stockChart');
+        canvas.style.display = '';
+        const emptyEl = document.getElementById('sentimentEmptyState');
+        if (emptyEl) emptyEl.remove();
+        const ctx = canvas.getContext('2d');
 
         if (chart) {
             chart.destroy();
@@ -3254,6 +3262,119 @@ function initializeSearchSuggestions() {
         });
     }
 
+    function createSentimentOverlayChart(sentimentData, priceData) {
+        const canvas = document.getElementById('stockChart');
+        const ctx = canvas.getContext('2d');
+
+        if (chart) {
+            chart.destroy();
+        }
+
+        const emptyStateId = 'sentimentEmptyState';
+        let emptyEl = document.getElementById(emptyStateId);
+        if (emptyEl) emptyEl.remove();
+
+        if (!sentimentData || sentimentData.length === 0) {
+            canvas.style.display = 'none';
+            const msg = document.createElement('p');
+            msg.id = emptyStateId;
+            msg.style.cssText = 'color:#888;text-align:center;padding:2rem 1rem;font-size:0.9rem;';
+            msg.textContent = 'No sentiment history yet — search for this stock and analyze articles to start building history.';
+            canvas.parentNode.insertBefore(msg, canvas.nextSibling);
+            return;
+        }
+        canvas.style.display = '';
+
+        // Build aligned date labels from the union of both series
+        const allDates = [...new Set([
+            ...priceData.map(p => p.date),
+            ...sentimentData.map(s => s.date)
+        ])].sort();
+
+        const priceByDate = {};
+        priceData.forEach(p => { priceByDate[p.date] = p.price; });
+        const sentByDate = {};
+        sentimentData.forEach(s => { sentByDate[s.date] = s.score; });
+
+        const priceValues = allDates.map(d => priceByDate[d] !== undefined ? priceByDate[d] : null);
+        const sentValues = allDates.map(d => sentByDate[d] !== undefined ? sentByDate[d] : null);
+
+        const shortLabels = allDates.map(d => {
+            const dt = new Date(d + 'T00:00:00');
+            return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: shortLabels,
+                datasets: [
+                    {
+                        label: 'Price',
+                        data: priceValues,
+                        borderColor: '#9333ea',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Sentiment',
+                        data: sentValues,
+                        borderColor: '#10b981',
+                        borderWidth: 2,
+                        fill: true,
+                        backgroundColor: 'rgba(16,185,129,0.1)',
+                        tension: 0.4,
+                        pointRadius: 3,
+                        yAxisID: 'y1',
+                        spanGaps: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { left: 0, right: 0, top: 0, bottom: 10 } },
+                plugins: {
+                    legend: { display: true, labels: { color: '#aaa', boxWidth: 12 } },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                if (context.dataset.label === 'Price') {
+                                    return 'Price: $' + (context.parsed.y !== null ? context.parsed.y.toFixed(2) : 'N/A');
+                                }
+                                if (context.parsed.y === null) return 'Sentiment: N/A';
+                                const score = context.parsed.y;
+                                const label = score > 0.15 ? 'Bullish' : score < -0.15 ? 'Bearish' : 'Neutral';
+                                return `Sentiment: ${label} (${score.toFixed(2)})`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        display: false,
+                        grid: { display: false }
+                    },
+                    y1: {
+                        display: false,
+                        min: -1,
+                        max: 1,
+                        grid: { display: false }
+                    }
+                },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false }
+            }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         initializeHomeScrollEffect();
         initializeSearchSuggestions();
@@ -3267,6 +3388,18 @@ function initializeSearchSuggestions() {
                 this.classList.add('active');
 
                 const period = this.getAttribute('data-period');
+
+                if (period === 'sentiment') {
+                    try {
+                        const response = await fetch(`/sentiment-history/${currentSymbol}`);
+                        const result = await response.json();
+                        createSentimentOverlayChart(result.sentiment || [], result.prices || []);
+                    } catch (error) {
+                        console.error('Error fetching sentiment history:', error);
+                        createSentimentOverlayChart([], []);
+                    }
+                    return;
+                }
 
                 if (historicalData[period]) {
                     createChart(historicalData[period]);

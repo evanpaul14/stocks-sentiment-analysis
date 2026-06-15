@@ -194,6 +194,19 @@ def _utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _parse_dt(raw):
+    """Parse an ISO-format datetime string to a naive UTC datetime, or return None."""
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
 EASTERN_TZ = ZoneInfo("America/New_York")
 
 # Cache NYSE calendar object once; recover lazily if initialization fails.
@@ -433,6 +446,22 @@ class SentimentPageCache(db.Model):
     sentiment_data_json = db.Column(db.Text, nullable=True)
     generated_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
     expires_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive)
+
+
+class SentimentHistory(db.Model):
+    __tablename__ = "sentiment_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticker = db.Column(db.String(16), nullable=False, index=True)
+    article_title = db.Column(db.String(512), nullable=False)
+    article_link = db.Column(db.Text, nullable=True)
+    article_source = db.Column(db.String(255), nullable=True)
+    article_published_at = db.Column(db.DateTime, nullable=True)
+    sentiment_label = db.Column(db.String(16), nullable=False)
+    analyzed_at = db.Column(db.DateTime, nullable=False, default=_utcnow_naive, index=True)
+    __table_args__ = (
+        db.Index('ix_sentiment_history_ticker_date', 'ticker', 'analyzed_at'),
+    )
 
 
 def _blog_credentials_configured():
@@ -1782,6 +1811,8 @@ MARKET_SUMMARY_RELEASE_HOUR = max(0, min(23, _get_int_env("MARKET_SUMMARY_RELEAS
 MARKET_SUMMARY_RELEASE_MINUTE = max(0, min(59, _get_int_env("MARKET_SUMMARY_RELEASE_MINUTE", 15)))
 MARKET_SUMMARY_RETENTION_DAYS = max(30, _get_int_env("MARKET_SUMMARY_RETENTION_DAYS", 90))
 MARKET_SUMMARY_ENABLED = os.getenv("ENABLE_MARKET_SUMMARY", "1") not in {"0", "false", "False"}
+ENABLE_MAG7_SENTIMENT = os.getenv("ENABLE_MAG7_SENTIMENT", "1") not in {"0", "false", "False"}
+MAG7_TICKERS = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NVDA', 'TSLA']
 _market_summary_generation_lock = threading.Lock()
 MARKET_WEEK_GLANCE_TTL_SECONDS = max(60, _get_int_env("MARKET_WEEK_GLANCE_TTL_SECONDS", 300))
 _market_week_glance_lock = threading.Lock()
@@ -2943,6 +2974,45 @@ def _should_start_market_scheduler():
     return True
 
 
+def run_mag7_sentiment_job():
+    """Fetch and persist weekly sentiment for the Magnificent Seven tickers."""
+    with app.app_context():
+        for ticker in MAG7_TICKERS:
+            articles = get_news_articles(ticker, num_articles=10)
+            for article in articles:
+                link = (article.get('link') or '').strip() or None
+                title = (article.get('title') or '').strip()
+                if not title:
+                    continue
+                if link:
+                    exists = SentimentHistory.query.filter_by(
+                        ticker=ticker, article_link=link
+                    ).first()
+                    if exists:
+                        continue
+                wait_for_ai_rate_slot()
+                try:
+                    label = analyze_sentiment(
+                        title,
+                        article.get('description') or '',
+                        ticker
+                    )
+                except Exception:
+                    label = 'neutral'
+                db.session.add(SentimentHistory(
+                    ticker=ticker,
+                    article_title=title,
+                    article_link=link,
+                    article_source=article.get('source') or None,
+                    article_published_at=_parse_dt(article.get('publishedAt')),
+                    sentiment_label=label,
+                ))
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+
 def start_market_summary_scheduler():
     """Start the APScheduler cron job for weekday market-summary generation."""
     global market_summary_scheduler, _scheduler_started
@@ -2963,6 +3033,19 @@ def start_market_summary_scheduler():
         id="market_summary_job",
         replace_existing=True
     )
+    if ENABLE_MAG7_SENTIMENT:
+        mag7_trigger = CronTrigger(
+            day_of_week='sun',
+            hour=6,
+            minute=0,
+            timezone=EASTERN_TZ
+        )
+        market_summary_scheduler.add_job(
+            run_mag7_sentiment_job,
+            trigger=mag7_trigger,
+            id='mag7_sentiment_job',
+            replace_existing=True
+        )
     market_summary_scheduler.start()
     atexit.register(lambda: market_summary_scheduler.shutdown(wait=False))
     _scheduler_started = True
@@ -4711,6 +4794,9 @@ def analyze_article_sentiment():
     normalized_symbol = normalize_ticker_symbol(payload.get('symbol'))
     company_name = (payload.get('company_name') or normalized_symbol or '').strip()
     article_id = payload.get('article_id')
+    article_link = (payload.get('article_link') or '').strip() or None
+    article_source = (payload.get('article_source') or '').strip() or None
+    article_published_at = _parse_dt(payload.get('article_published_at'))
 
     if not title:
         return jsonify({'error': 'Title is required for sentiment analysis'}), 400
@@ -4724,10 +4810,59 @@ def analyze_article_sentiment():
             return jsonify({'error': 'The AI model is overloaded. Please try again later.'}), 503
         raise
 
+    if normalized_symbol:
+        existing = (
+            SentimentHistory.query.filter_by(ticker=normalized_symbol, article_link=article_link).first()
+            if article_link else None
+        )
+        if not existing:
+            db.session.add(SentimentHistory(
+                ticker=normalized_symbol,
+                article_title=title,
+                article_link=article_link,
+                article_source=article_source,
+                article_published_at=article_published_at,
+                sentiment_label=sentiment,
+            ))
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
     response = {'sentiment': sentiment}
     if article_id is not None:
         response['article_id'] = article_id
     return jsonify(response)
+
+
+@app.route('/sentiment-history/<string:symbol>', methods=['GET'])
+@limiter.limit("20 per minute")
+def get_sentiment_history(symbol):
+    """Return daily-aggregated sentiment scores and 30-day price data for a ticker."""
+    symbol = normalize_ticker_symbol(symbol) or symbol.upper()
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=90)
+    records = (
+        SentimentHistory.query
+        .filter(SentimentHistory.ticker == symbol, SentimentHistory.analyzed_at >= cutoff)
+        .order_by(SentimentHistory.analyzed_at)
+        .all()
+    )
+    score_map = {'positive': 1, 'neutral': 0, 'negative': -1}
+    daily = {}
+    for r in records:
+        day = r.analyzed_at.date().isoformat()
+        daily.setdefault(day, []).append(score_map.get(r.sentiment_label, 0))
+    sentiment_series = [
+        {'date': day, 'score': round(sum(v) / len(v), 3), 'count': len(v)}
+        for day, v in sorted(daily.items())
+    ]
+    price_data = get_historical_data(symbol, '1mo')
+    price_by_day = {}
+    for pt in price_data:
+        day = pt['date'][:10]
+        price_by_day[day] = pt['price']
+    price_series = [{'date': d, 'price': p} for d, p in sorted(price_by_day.items())]
+    return jsonify({'sentiment': sentiment_series, 'prices': price_series})
 
 
 # Trending stocks API endpoint
