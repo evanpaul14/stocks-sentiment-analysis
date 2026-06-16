@@ -1482,6 +1482,70 @@ function initializeSearchSuggestions() {
         stocktwitsSummaryPopover.removeAttribute('data-ticker');
     }
 
+    // Lightbox for StockTwits media
+    let _lightboxEl = null;
+    let _lightboxImgEl = null;
+    let _lightboxGallery = [];
+    let _lightboxIndex = 0;
+
+    function _ensureLightbox() {
+        if (_lightboxEl) return _lightboxEl;
+        _lightboxEl = document.createElement('div');
+        _lightboxEl.className = 'st-lightbox';
+        _lightboxEl.setAttribute('role', 'dialog');
+        _lightboxEl.setAttribute('aria-modal', 'true');
+        _lightboxEl.innerHTML = `
+            <div class="st-lightbox-backdrop"></div>
+            <button class="st-lightbox-close" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="2" x2="14" y2="14"/><line x1="14" y1="2" x2="2" y2="14"/></svg>
+            </button>
+            <button class="st-lightbox-nav st-lightbox-prev" aria-label="Previous">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,2 4,8 10,14"/></svg>
+            </button>
+            <button class="st-lightbox-nav st-lightbox-next" aria-label="Next">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,2 12,8 6,14"/></svg>
+            </button>
+            <div class="st-lightbox-content">
+                <img class="st-lightbox-img" alt="StockTwits media" referrerpolicy="no-referrer" />
+            </div>
+        `;
+        document.body.appendChild(_lightboxEl);
+        _lightboxImgEl = _lightboxEl.querySelector('.st-lightbox-img');
+        _lightboxEl.querySelector('.st-lightbox-backdrop').addEventListener('click', _closeLightbox);
+        _lightboxEl.querySelector('.st-lightbox-close').addEventListener('click', _closeLightbox);
+        _lightboxEl.querySelector('.st-lightbox-prev').addEventListener('click', () => _navigateLightbox(-1));
+        _lightboxEl.querySelector('.st-lightbox-next').addEventListener('click', () => _navigateLightbox(1));
+        document.addEventListener('keydown', (e) => {
+            if (!_lightboxEl.classList.contains('is-open')) return;
+            if (e.key === 'Escape') _closeLightbox();
+            if (e.key === 'ArrowLeft') _navigateLightbox(-1);
+            if (e.key === 'ArrowRight') _navigateLightbox(1);
+        });
+        return _lightboxEl;
+    }
+
+    function _openLightbox(urls, index) {
+        const lb = _ensureLightbox();
+        _lightboxGallery = urls;
+        _lightboxIndex = index;
+        _lightboxImgEl.src = urls[index];
+        lb.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+        const hasMany = urls.length > 1;
+        lb.querySelector('.st-lightbox-prev').style.display = hasMany ? '' : 'none';
+        lb.querySelector('.st-lightbox-next').style.display = hasMany ? '' : 'none';
+    }
+
+    function _closeLightbox() {
+        if (_lightboxEl) _lightboxEl.classList.remove('is-open');
+        document.body.style.overflow = '';
+    }
+
+    function _navigateLightbox(dir) {
+        _lightboxIndex = (_lightboxIndex + dir + _lightboxGallery.length) % _lightboxGallery.length;
+        _lightboxImgEl.src = _lightboxGallery[_lightboxIndex];
+    }
+
     function positionStocktwitsPopover(anchorEl) {
         const popover = ensureStocktwitsSummaryPopover();
         if (!anchorEl) return;
@@ -2513,16 +2577,21 @@ function initializeSearchSuggestions() {
             : [];
         let embedEl = null;
         if (imageUrls.length) {
+            const isGallery = imageUrls.length > 1;
             embedEl = document.createElement('div');
-            embedEl.className = 'stocktwits-feed-embed';
-            const img = document.createElement('img');
-            img.className = 'stocktwits-feed-embed-image';
-            img.loading = 'lazy';
-            img.decoding = 'async';
-            img.referrerPolicy = 'no-referrer';
-            img.src = imageUrls[0];
-            img.alt = 'StockTwits embed';
-            embedEl.appendChild(img);
+            embedEl.className = isGallery ? 'stocktwits-feed-gallery' : 'stocktwits-feed-embed';
+            imageUrls.forEach((url, i) => {
+                const img = document.createElement('img');
+                img.className = isGallery ? 'stocktwits-feed-gallery-thumb' : 'stocktwits-feed-embed-image';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.referrerPolicy = 'no-referrer';
+                img.src = url;
+                img.alt = 'StockTwits media';
+                img.style.cursor = 'pointer';
+                img.addEventListener('click', () => _openLightbox(imageUrls, i));
+                embedEl.appendChild(img);
+            });
         }
 
         let expanded = false;

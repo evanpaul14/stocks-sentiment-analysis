@@ -1273,29 +1273,39 @@ def _extract_stocktwits_message_images(message):
         seen.add(normalized)
         image_urls.append(normalized)
 
-    chart_payload = message.get("chart") or {}
-    if isinstance(chart_payload, dict):
-        _append_candidate(chart_payload.get("image_url"))
-        _append_candidate(chart_payload.get("url"))
-
     entities = message.get("entities") or {}
-    links = entities.get("links") or []
-    if isinstance(links, list):
-        for link in links:
-            if not isinstance(link, dict):
-                continue
-            _append_candidate(link.get("image"))
-            _append_candidate(link.get("image_url"))
-            images_payload = link.get("images")
-            if isinstance(images_payload, dict):
-                for value in images_payload.values():
+
+    # Primary: entities.media handles both native images and Giphy GIFs
+    for media in (entities.get("media") or []):
+        if not isinstance(media, dict):
+            continue
+        if media.get("type") == "gif" and media.get("provider") == "giphy":
+            pid = (media.get("provider_id") or "").strip()
+            if pid:
+                _append_candidate(f"https://media.giphy.com/media/{pid}/giphy.gif")
+        else:
+            for key in ("original", "large", "url", "medium", "thumb"):
+                val = media.get(key)
+                if val:
+                    _append_candidate(val)
+                    break
+
+    # Fallback: link thumbnails from entities.links
+    for link in (entities.get("links") or []):
+        if not isinstance(link, dict):
+            continue
+        _append_candidate(link.get("image"))
+        _append_candidate(link.get("image_url"))
+        images_payload = link.get("images")
+        if isinstance(images_payload, dict):
+            for value in images_payload.values():
+                _append_candidate(value)
+        elif isinstance(images_payload, list):
+            for value in images_payload:
+                if isinstance(value, dict):
+                    _append_candidate(value.get("url"))
+                else:
                     _append_candidate(value)
-            elif isinstance(images_payload, list):
-                for value in images_payload:
-                    if isinstance(value, dict):
-                        _append_candidate(value.get("url"))
-                    else:
-                        _append_candidate(value)
 
     return image_urls
 
