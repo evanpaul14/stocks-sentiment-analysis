@@ -1382,7 +1382,7 @@ def get_stocktwits_symbol_sentiment(
         "pagination": payload.get("meta") or {},
         "attribution": {
             "name": "StockTwits",
-            "url": f"https://www.stocksentimentapp.com/results?q={normalized_symbol}"
+            "url": f"https://stocktwits.com/symbol/{normalized_symbol}"
         },
         "generated_at": datetime.now(timezone.utc).isoformat()
     }
