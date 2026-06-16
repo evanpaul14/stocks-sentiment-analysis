@@ -40,22 +40,24 @@
     <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "Article",
-        "headline": "{{ article.title|e }}",
-        "description": "{{ resolved_meta_description|e }}",
+        "@type": "BlogPosting",
+        "headline": {{ article.title | tojson }},
+        "description": {{ resolved_meta_description | tojson }},
+        "url": {{ canonical_url | default(request.url) | tojson }},
         "datePublished": "{{ article.published_at.isoformat() if article.published_at else '' }}",
         "dateModified": "{{ article.updated_at.isoformat() if article.updated_at else article.published_at.isoformat() if article.published_at else '' }}",
-        {% if article.image_url %}"image": "{{ article.image_url }}",{% endif %}
-        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis"},
+        {% if article.image_url %}"image": {{ article.image_url | tojson }},{% endif %}
+        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "publisher": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
-        "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ request.url }}"}
+        "mainEntityOfPage": {"@type": "WebPage", "@id": {{ canonical_url | default(request.url) | tojson }}}
     }
     </script>
     {% endif %}
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>

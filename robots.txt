@@ -3,7 +3,6 @@ Disallow: /search
 Disallow: /results
 Disallow: /historical
 Disallow: /watchlist
-Disallow: /static/
 Disallow: /google-verification
 Disallow: /write
 Disallow: /api/
