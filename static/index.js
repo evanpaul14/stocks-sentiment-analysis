@@ -2500,6 +2500,81 @@ function initializeSearchSuggestions() {
         bodyElement.appendChild(buildStocktwitsCashtagFragment(textValue));
     }
 
+    function buildStocktwitsQuotedPostElement(qp) {
+        const block = document.createElement('blockquote');
+        block.className = 'stocktwits-quoted-post';
+
+        const head = document.createElement('div');
+        head.className = 'stocktwits-quoted-post-head';
+
+        const avatar = document.createElement('img');
+        avatar.className = 'stocktwits-feed-avatar';
+        avatar.alt = 'avatar';
+        avatar.loading = 'lazy';
+        avatar.decoding = 'async';
+        avatar.referrerPolicy = 'no-referrer';
+        const avatarUrl = ((qp && qp.avatar_url) || '').toString().trim();
+        avatar.src = avatarUrl || 'https://stocktwits.com/favicon.ico';
+        avatar.addEventListener('error', () => { avatar.src = 'https://stocktwits.com/favicon.ico'; });
+        head.appendChild(avatar);
+
+        const username = ((qp && qp.username) || '').toString().trim();
+        const userEl = document.createElement('span');
+        userEl.className = 'stocktwits-feed-user';
+        if (username && qp.profile_url) {
+            const a = document.createElement('a');
+            a.href = qp.profile_url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = `@${username}`;
+            userEl.appendChild(a);
+        } else {
+            userEl.textContent = username ? `@${username}` : 'StockTwits User';
+        }
+        head.appendChild(userEl);
+
+        if (qp.created_at) {
+            const dateObj = new Date(qp.created_at);
+            if (!Number.isNaN(dateObj.getTime())) {
+                const timeEl = document.createElement('span');
+                timeEl.className = 'stocktwits-quoted-post-time';
+                timeEl.textContent = formatDate(qp.created_at);
+                head.appendChild(timeEl);
+            }
+        }
+
+        block.appendChild(head);
+
+        const body = document.createElement('p');
+        body.className = 'stocktwits-feed-body stocktwits-quoted-post-body';
+        mountStocktwitsMessageBody(body, ((qp && qp.body) || '').toString());
+        block.appendChild(body);
+
+        const imageUrls = qp && Array.isArray(qp.image_urls)
+            ? qp.image_urls.filter(url => typeof url === 'string' && url.trim())
+            : [];
+        if (imageUrls.length) {
+            const isGallery = imageUrls.length > 1;
+            const embedEl = document.createElement('div');
+            embedEl.className = isGallery ? 'stocktwits-feed-gallery' : 'stocktwits-feed-embed';
+            imageUrls.forEach((url, i) => {
+                const img = document.createElement('img');
+                img.className = isGallery ? 'stocktwits-feed-gallery-thumb' : 'stocktwits-feed-embed-image';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.referrerPolicy = 'no-referrer';
+                img.src = url;
+                img.alt = 'StockTwits media';
+                img.style.cursor = 'pointer';
+                img.addEventListener('click', () => _openLightbox(imageUrls, i));
+                embedEl.appendChild(img);
+            });
+            block.appendChild(embedEl);
+        }
+
+        return block;
+    }
+
     function buildStocktwitsFeedItemElement(item) {
         const row = document.createElement('article');
         row.className = 'stocktwits-feed-item';
@@ -2610,6 +2685,9 @@ function initializeSearchSuggestions() {
 
         row.appendChild(header);
         row.appendChild(body);
+        if (item && item.quoted_post) {
+            row.appendChild(buildStocktwitsQuotedPostElement(item.quoted_post));
+        }
         if (embedEl) {
             row.appendChild(embedEl);
         }

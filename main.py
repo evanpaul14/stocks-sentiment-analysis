@@ -1323,6 +1323,26 @@ def _build_stocktwits_message_feed(messages, symbol, feed_limit=40):
         message_id = message.get("id")
         label = _stocktwits_sentiment_label_from_message(message)
 
+        quoted_post = None
+        reshare = message.get("reshare_message")
+        if isinstance(reshare, dict):
+            inner = reshare.get("message")
+            if isinstance(inner, dict) and not reshare.get("reshared_deleted") and not reshare.get("reshared_user_deleted"):
+                inner_user = inner.get("user") or {}
+                inner_username = (inner_user.get("username") or "").strip()
+                inner_id = inner.get("id")
+                quoted_post = {
+                    "id": inner_id,
+                    "created_at": inner.get("created_at"),
+                    "username": inner_username or None,
+                    "avatar_url": inner_user.get("avatar_url") or inner_user.get("avatar_url_ssl") or None,
+                    "sentiment": _stocktwits_sentiment_label_from_message(inner),
+                    "body": inner.get("body"),
+                    "image_urls": _extract_stocktwits_message_images(inner),
+                    "message_url": f"https://stocktwits.com/message/{inner_id}" if inner_id else None,
+                    "profile_url": f"https://stocktwits.com/{inner_username}" if inner_username else None,
+                }
+
         feed.append({
             "id": message_id,
             "created_at": message.get("created_at"),
@@ -1333,7 +1353,8 @@ def _build_stocktwits_message_feed(messages, symbol, feed_limit=40):
             "image_urls": _extract_stocktwits_message_images(message),
             "message_url": f"https://stocktwits.com/message/{message_id}" if message_id else None,
             "profile_url": f"https://stocktwits.com/{username}" if username else None,
-            "symbol_url": f"https://www.stocksentimentapp.com/results?q={normalized_symbol}" if normalized_symbol else None
+            "symbol_url": f"https://www.stocksentimentapp.com/results?q={normalized_symbol}" if normalized_symbol else None,
+            "quoted_post": quoted_post,
         })
 
     return feed
