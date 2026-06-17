@@ -162,6 +162,7 @@
     {% set resolved_page = page_view or 'home' %}
     {% set body_class = resolved_page + '-page' %}
     <body class="{{ body_class }}" data-page="{{ resolved_page }}" data-search-query="{{ initial_query or '' }}" data-unsplash-ref="{{ unsplash_referral_url }}" data-market-article-slug="{{ market_summary_slug|default('', true) }}" data-trending-source="{{ trending_source|default('stocktwits', true) }}">
+    {% if page_view == 'home' %}<canvas id="homeFlowCanvas" aria-hidden="true"></canvas>{% endif %}
     <header class="top-nav" aria-label="Main navigation">
         <div class="nav-logo-wrap">
             <a id="homeTitle" class="home-title-link nav-logo" href="/">Stock Sentiment Analysis<span>.</span></a>

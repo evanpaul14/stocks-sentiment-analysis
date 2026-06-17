@@ -513,6 +513,17 @@ main.container {
     overflow: hidden;
 }
 
+#homeFlowCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+}
+
 .home-scroll-orb {
     position: absolute;
     border-radius: 50%;

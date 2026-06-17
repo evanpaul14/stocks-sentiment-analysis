@@ -232,6 +232,125 @@ function initializeHomeScrollEffect() {
     window.addEventListener('scroll', onScroll, { passive: true });
 }
 
+function initializeFlowField() {
+    if (!isHomePage) return;
+    const canvas = document.getElementById('homeFlowCanvas');
+    if (!canvas) return;
+    if (!canvas.getContext) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const COLOR = '#6366f1';
+    const TRAIL_OPACITY = 0.25;
+    const PARTICLE_COUNT = 500;
+    const SPEED = 0.85;
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let particles = [];
+    let rafId;
+    let mouse = { x: -2000, y: -2000 };
+
+    function Particle() {
+        this.reset = function() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.vx = 0;
+            this.vy = 0;
+            this.age = 0;
+            this.life = Math.random() * 200 + 100;
+        };
+        this.reset();
+        // stagger initial ages so they don't all fade in at once
+        this.age = Math.floor(Math.random() * this.life);
+
+        this.update = function() {
+            const angle = (Math.cos(this.x * 0.005) + Math.sin(this.y * 0.005)) * Math.PI;
+            this.vx += Math.cos(angle) * 0.2 * SPEED;
+            this.vy += Math.sin(angle) * 0.2 * SPEED;
+
+            const dx = mouse.x - this.x;
+            const dy = mouse.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 150) {
+                const force = (150 - dist) / 150;
+                this.vx -= dx * force * 0.05;
+                this.vy -= dy * force * 0.05;
+            }
+
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vx *= 0.95;
+            this.vy *= 0.95;
+            this.age++;
+
+            if (this.age > this.life) this.reset();
+            if (this.x < 0) this.x = width;
+            if (this.x > width) this.x = 0;
+            if (this.y < 0) this.y = height;
+            if (this.y > height) this.y = 0;
+        };
+
+        this.draw = function() {
+            const alpha = 1 - Math.abs((this.age / this.life) - 0.5) * 2;
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.fillStyle = COLOR;
+            ctx.fillRect(this.x, this.y, 1.5, 1.5);
+        };
+    }
+
+    function initCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+
+        particles = [];
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            particles.push(new Particle());
+        }
+    }
+
+    function animate() {
+        ctx.fillStyle = 'rgba(0, 0, 0, ' + TRAIL_OPACITY + ')';
+        ctx.fillRect(0, 0, width, height);
+
+        for (let i = 0; i < particles.length; i++) {
+            particles[i].update();
+            particles[i].draw();
+        }
+        ctx.globalAlpha = 1;
+        rafId = requestAnimationFrame(animate);
+    }
+
+    function onResize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        initCanvas();
+    }
+
+    function onMouseMove(e) {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+    }
+
+    function onMouseLeave() {
+        mouse.x = -2000;
+        mouse.y = -2000;
+    }
+
+    initCanvas();
+    animate();
+
+    window.addEventListener('resize', onResize, { passive: true });
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    document.documentElement.addEventListener('mouseleave', onMouseLeave, { passive: true });
+}
+
 function loadRecentSearches() {
     if (typeof localStorage === 'undefined') return [];
     try {
@@ -3524,6 +3643,7 @@ function initializeSearchSuggestions() {
 
     document.addEventListener('DOMContentLoaded', function() {
         initializeHomeScrollEffect();
+        initializeFlowField();
         initializeSearchSuggestions();
         const tabs = document.querySelectorAll('.chart-tab');
 
