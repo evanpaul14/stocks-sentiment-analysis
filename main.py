@@ -154,7 +154,8 @@ def _resolve_sqlalchemy_engine(bind_key=None):
 
 
 HOME_META_DESCRIPTION = (
-    "Get the ultimate market sentiment and stock sentiment analysis using AI to get live data and news analysis that help make stock predictions and stock forecasts."
+    "Live stock sentiment analysis powered by AI — see today's trending tickers, the daily market recap, and "
+    "bullish/bearish signals from news and social media for any stock, free and in real time."
 )
 TRENDING_META_DESCRIPTION = (
     "See trending stocks on Stocktwits, Reddit, and stock volume to see today's most active stocks."
@@ -930,6 +931,153 @@ _SEO_PAGE_CACHE_TTL_DAYS = 7
 _SEO_PAGE_CACHE_LOCK = threading.Lock()
 _SENTIMENT_SCORE_MAP = {"positive": 1, "neutral": 0, "negative": -1}
 
+_HOME_SNAPSHOT_CACHE = {"data": None, "expires_at": 0}
+_HOME_SNAPSHOT_LOCK = threading.Lock()
+
+HOME_FAQ_ITEMS = [
+    {
+        "question": "What is stock sentiment analysis?",
+        "answer": (
+            "Stock sentiment analysis measures whether news articles, social media posts, and market commentary "
+            "about a ticker are <strong>bullish</strong> (positive), <strong>bearish</strong> (negative), or "
+            "<strong>neutral</strong>. AI models read coverage in real time to give traders an instant read on "
+            "how the crowd feels — so you can see whether momentum has fundamental backing or is just noise."
+        ),
+    },
+    {
+        "question": "How does the AI analyze stock sentiment?",
+        "answer": (
+            "For each news article, the AI evaluates tone, word choice, and financial context to produce a "
+            "bullish, bearish, or neutral classification. Those per-article scores are aggregated into an "
+            "overall sentiment reading for the ticker. All sentiment is based on the most recent headlines — "
+            "so it reflects what's happening <em>now</em>, not last week."
+        ),
+    },
+    {
+        "question": "Which stocks can I analyze?",
+        "answer": (
+            "Any US-listed equity or ETF — from mega-cap tech like <strong>AAPL, MSFT, NVDA, TSLA, META</strong> "
+            "to small caps and index funds like <strong>SPY, QQQ, and DIA</strong>. Just type a company name or "
+            "ticker symbol in the search bar at the top of the page."
+        ),
+    },
+    {
+        "question": "Is this free? Do I need an account?",
+        "answer": (
+            "Yes — completely free, and no sign-up required. Search any ticker and get instant AI sentiment "
+            "results. Your watchlist is saved locally in your browser, so it persists between sessions without "
+            "a login."
+        ),
+    },
+    {
+        "question": "What data sources does the platform use?",
+        "answer": (
+            "We aggregate from four sources: <strong>Google News</strong> for the latest headlines, "
+            "<strong>StockTwits</strong> for trader sentiment and trending tickers, <strong>Reddit</strong> "
+            "(via ApeWisdom) for retail investor discussions, and <strong>Yahoo Finance</strong> for real-time "
+            "prices and key statistics."
+        ),
+    },
+    {
+        "question": "How is the Daily Market Recap generated?",
+        "answer": (
+            "Each trading day, our system fetches top market headlines and passes them through an AI "
+            "summarization pipeline to produce a concise briefing — what moved, which sectors led or lagged, "
+            "and the macro narrative. You can subscribe to receive it by email on the "
+            "<a href=\"/market-summary\">Market Summary page</a>."
+        ),
+    },
+]
+
+
+def build_breadcrumbs(*items):
+    """Build a breadcrumb list from (name, url_or_None) tuples; last item's url should be None."""
+    breadcrumbs = []
+    for name, url in items:
+        if not name:
+            continue
+        breadcrumbs.append({"name": name, "url": url})
+    return breadcrumbs
+
+
+def _build_home_trending_teaser():
+    try:
+        trending = get_trending_source_data("stocktwits", include_prices=True) or []
+    except Exception as exc:
+        app_logger.warning("[Home] Error building trending teaser: %s", exc)
+        return []
+    return trending[:6]
+
+
+def _build_home_market_summary_teaser():
+    try:
+        record = get_latest_market_summary_record()
+        serialized = serialize_market_summary(record) if record else None
+    except Exception as exc:
+        app_logger.warning("[Home] Error building market summary teaser: %s", exc)
+        return None
+    if not serialized:
+        return None
+
+    body_text = re.sub(r"<[^>]+>", " ", serialized.get("body") or "")
+    body_text = re.sub(r"\s+", " ", body_text).strip()
+    excerpt = (body_text[:897].rsplit(" ", 1)[0] + "...") if len(body_text) > 900 else body_text
+
+    return {
+        "title": serialized.get("title"),
+        "excerpt": excerpt,
+        "permalink": serialized.get("permalink"),
+        "indices": [
+            {"name": item.get("label") or item.get("symbol"), "change_percent": item.get("change_percent")}
+            for item in (serialized.get("indices") or [])[:3]
+        ],
+    }
+
+
+def _build_home_popular_stocks():
+    popular_stocks = []
+    for slug, info in SEO_SENTIMENT_PAGES.items():
+        ticker = info.get("ticker")
+        snapshot = {}
+        if ticker:
+            try:
+                snapshot = get_price_change_snapshot(ticker) or {}
+            except Exception as exc:
+                app_logger.warning("[Home] Error fetching price snapshot for %s: %s", ticker, exc)
+                snapshot = {}
+        popular_stocks.append({
+            "slug": slug,
+            "name": info.get("name"),
+            "ticker": ticker,
+            "price": snapshot.get("price"),
+            "change_percent": snapshot.get("change_percent"),
+            "href": url_for("sentiment_seo_page", company=slug),
+        })
+    return popular_stocks
+
+
+def get_home_snapshot():
+    """Return cached home-page teaser data, rebuilding under a lock when stale."""
+    now = time.time()
+    cached = _HOME_SNAPSHOT_CACHE.get("data")
+    if cached is not None and _HOME_SNAPSHOT_CACHE.get("expires_at", 0) > now:
+        return cached
+
+    with _HOME_SNAPSHOT_LOCK:
+        now = time.time()
+        cached = _HOME_SNAPSHOT_CACHE.get("data")
+        if cached is not None and _HOME_SNAPSHOT_CACHE.get("expires_at", 0) > now:
+            return cached
+
+        snapshot = {
+            "trending": _build_home_trending_teaser(),
+            "market_summary": _build_home_market_summary_teaser(),
+            "popular_stocks": _build_home_popular_stocks(),
+        }
+        _HOME_SNAPSHOT_CACHE["data"] = snapshot
+        _HOME_SNAPSHOT_CACHE["expires_at"] = now + HOME_SNAPSHOT_TTL_SECONDS
+        return snapshot
+
 
 def _normalize_trending_page_source(raw_value, default="stocktwits"):
     """Validate/normalize requested trending source against known source IDs."""
@@ -950,6 +1098,7 @@ def _get_int_env(var_name, default):
         return default
 
 
+HOME_SNAPSHOT_TTL_SECONDS = max(30, _get_int_env("HOME_SNAPSHOT_TTL_SECONDS", 120))
 BLOG_ARTICLE_FETCH_LIMIT = max(1, _get_int_env("BLOG_ARTICLE_FETCH_LIMIT", 50))
 
 
@@ -4220,12 +4369,17 @@ def _build_or_refresh_sentiment_page_cache(slug):
 @limiter.limit("50 per minute")
 def index():
     '''Render the main page'''
+    snapshot = get_home_snapshot()
     return render_template(
         'index.html',
         page_view='home',
         initial_query='',
         meta_description=HOME_META_DESCRIPTION,
-        canonical_url=url_for('index', _external=True)
+        canonical_url=url_for('index', _external=True),
+        home_trending=snapshot.get('trending') or [],
+        home_market_summary=snapshot.get('market_summary'),
+        home_popular_stocks=snapshot.get('popular_stocks') or [],
+        faq_items=HOME_FAQ_ITEMS
     )
 
 @app.route('/privacy')
@@ -4262,6 +4416,13 @@ def search_results_page():
     )
 
 
+TRENDING_SOURCE_LABELS = {
+    "stocktwits": "StockTwits",
+    "reddit": "Reddit",
+    "volume": "Volume",
+}
+
+
 @app.route('/trending-list')
 @limiter.limit("50 per minute")
 def trending_board_page():
@@ -4272,7 +4433,8 @@ def trending_board_page():
         initial_query='',
         trending_source='stocktwits',
         meta_description=TRENDING_META_DESCRIPTION,
-        canonical_url=url_for('trending_board_page', _external=True)
+        canonical_url=url_for('trending_board_page', _external=True),
+        breadcrumbs=build_breadcrumbs(("Home", url_for('index')), ("Trending", None))
     )
 
 
@@ -4284,13 +4446,19 @@ def trending_board_page_source(source):
     normalized = _normalize_trending_page_source(source_text)
     if source_text != normalized:
         return redirect(url_for('trending_board_page_source', source=normalized))
+    source_label = TRENDING_SOURCE_LABELS.get(normalized, normalized.title())
     return render_template(
         'index.html',
         page_view='trending',
         initial_query='',
         trending_source=normalized,
         meta_description=TRENDING_META_DESCRIPTION,
-        canonical_url=url_for('trending_board_page_source', source=normalized, _external=True)
+        canonical_url=url_for('trending_board_page_source', source=normalized, _external=True),
+        breadcrumbs=build_breadcrumbs(
+            ("Home", url_for('index')),
+            ("Trending", url_for('trending_board_page')),
+            (source_label, None)
+        )
     )
 
 
@@ -4305,7 +4473,8 @@ def market_summary_page():
         market_summary_slug=None,
         initial_market_summary_article=None,
         meta_description=MARKET_META_DESCRIPTION,
-        canonical_url=url_for('market_summary_page', _external=True)
+        canonical_url=url_for('market_summary_page', _external=True),
+        breadcrumbs=build_breadcrumbs(("Home", url_for('index')), ("Market Summary", None))
     )
 
 
@@ -4316,6 +4485,11 @@ def market_summary_stock_market_today_page():
     latest_record = get_latest_market_summary_record()
     canonical_url = url_for('market_summary_stock_market_today_page', _external=True)
     page_title = "Stock Market Today"
+    breadcrumbs = build_breadcrumbs(
+        ("Home", url_for('index')),
+        ("Market Summary", url_for('market_summary_page')),
+        (page_title, None)
+    )
     if not latest_record:
         return render_template(
             'index.html',
@@ -4325,7 +4499,8 @@ def market_summary_stock_market_today_page():
             initial_market_summary_article=None,
             market_summary_page_title=page_title,
             market_summary_canonical_url=canonical_url,
-            meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION
+            meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION,
+            breadcrumbs=breadcrumbs
         )
     serialized = serialize_market_summary(latest_record)
     return render_template(
@@ -4336,7 +4511,8 @@ def market_summary_stock_market_today_page():
         initial_market_summary_article=serialized,
         market_summary_page_title=page_title,
         market_summary_canonical_url=canonical_url,
-        meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION
+        meta_description=STOCK_MARKET_TODAY_META_DESCRIPTION,
+        breadcrumbs=breadcrumbs
     )
 
 
@@ -4357,7 +4533,12 @@ def market_summary_article_page(summary_slug):
         market_summary_slug=canonical_slug,
         initial_market_summary_article=serialized,
         market_summary_page_title=page_title,
-        meta_description=MARKET_META_DESCRIPTION
+        meta_description=MARKET_META_DESCRIPTION,
+        breadcrumbs=build_breadcrumbs(
+            ("Home", url_for('index')),
+            ("Market Summary", url_for('market_summary_page')),
+            (page_title, None)
+        )
     )
 
 
@@ -4372,7 +4553,8 @@ def blog_listing_page():
         seo_pages=SEO_SENTIMENT_PAGES,
         meta_description=BLOG_LIST_META_DESCRIPTION,
         page_title='Market Notes Blog',
-        canonical_url=url_for('blog_listing_page', _external=True)
+        canonical_url=url_for('blog_listing_page', _external=True),
+        breadcrumbs=build_breadcrumbs(("Home", url_for('index')), ("Blog", None))
     )
 
 
@@ -4440,6 +4622,10 @@ def sentiment_seo_page(company):
         all_seo_pages=SEO_SENTIMENT_PAGES,
         generated_at=cache.generated_at,
         canonical_url=url_for('sentiment_seo_page', company=company, _external=True),
+        breadcrumbs=build_breadcrumbs(
+            ("Home", url_for('index')),
+            (f"{name} Sentiment", None)
+        ),
     )
 
 
@@ -4459,7 +4645,12 @@ def blog_article_page(slug):
         article=article,
         meta_description=article.title,
         page_title=article.title,
-        canonical_url=url_for('blog_article_page', slug=slug, _external=True)
+        canonical_url=url_for('blog_article_page', slug=slug, _external=True),
+        breadcrumbs=build_breadcrumbs(
+            ("Home", url_for('index')),
+            ("Blog", url_for('blog_listing_page')),
+            (article.title, None)
+        )
     )
 
 

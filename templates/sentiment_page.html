@@ -36,6 +36,24 @@
         "mainEntityOfPage": {"@type": "WebPage", "@id": {{ canonical_url | tojson }}}
     }
     </script>
+    {% if breadcrumbs %}
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {% for crumb in breadcrumbs %}
+            {
+                "@type": "ListItem",
+                "position": {{ loop.index }},
+                "name": {{ crumb.name | tojson }}{% if crumb.url %},
+                "item": {{ (crumb.url if crumb.url.startswith('http') else (request.url_root.rstrip('/') + crumb.url)) | tojson }}{% endif %}
+            }{{ "," if not loop.last }}
+            {% endfor %}
+        ]
+    }
+    </script>
+    {% endif %}
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

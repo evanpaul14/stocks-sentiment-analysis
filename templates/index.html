@@ -104,55 +104,64 @@
         ]
     }
     </script>
+    {% if faq_items %}
     <script nonce="{{ csp_nonce }}" type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
+            {% for item in faq_items %}
             {
                 "@type": "Question",
-                "name": "What is stock sentiment analysis?",
+                "name": {{ item.question | tojson }},
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Stock sentiment analysis measures whether news articles, social media posts, and market commentary about a stock are bullish (positive), bearish (negative), or neutral. AI models read headlines and posts in real time to give traders a fast read on how the crowd feels about a particular ticker."
+                    "text": {{ item.answer | striptags | trim | tojson }}
                 }
-            },
-            {
-                "@type": "Question",
-                "name": "How does AI analyze stock sentiment?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Our AI reads each news article about a ticker and classifies it as bullish, bearish, or neutral based on language, tone, and context. It weighs dozens of linguistic signals to produce a sentiment score per article and an overall aggregate for the stock."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Which stocks can I analyze?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "You can search any US-listed ticker — from mega-cap tech (AAPL, MSFT, NVDA, TSLA) to small caps and ETFs like SPY, QQQ, and DIA. Just type a company name or ticker symbol in the search bar."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Is stock sentiment analysis free to use?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. Stock Sentiment Analysis is completely free. No account, credit card, or sign-up required. Search any ticker to get instant AI-powered sentiment results."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "What data sources does the platform use?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "The platform pulls from Google News (latest headlines), StockTwits (trader sentiment and trending tickers), Reddit (retail investor discussions via ApeWisdom), and Yahoo Finance (real-time prices and key statistics)."
-                }
-            }
+            }{{ "," if not loop.last }}
+            {% endfor %}
         ]
     }
     </script>
-    
+    {% endif %}
+    {% if breadcrumbs %}
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {% for crumb in breadcrumbs %}
+            {
+                "@type": "ListItem",
+                "position": {{ loop.index }},
+                "name": {{ crumb.name | tojson }}{% if crumb.url %},
+                "item": {{ (crumb.url if crumb.url.startswith('http') else (request.url_root.rstrip('/') + crumb.url)) | tojson }}{% endif %}
+            }{{ "," if not loop.last }}
+            {% endfor %}
+        ]
+    }
+    </script>
+    {% endif %}
+    {% if home_trending %}
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Trending Stocks",
+        "itemListElement": [
+            {% for stock in home_trending %}
+            {
+                "@type": "ListItem",
+                "position": {{ loop.index }},
+                "name": {{ (stock.name or stock.ticker) | tojson }},
+                "url": {{ (request.url_root.rstrip('/') + url_for('search_results_page', q=stock.ticker)) | tojson }}
+            }{{ "," if not loop.last }}
+            {% endfor %}
+        ]
+    }
+    </script>
+    {% endif %}
+
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
@@ -249,12 +258,62 @@
             </div>
         </section>
 
+        {% if home_trending or home_market_summary %}
+        <section class="home-live-grid" aria-label="Live market snapshot">
+            {% if home_trending %}
+            <div class="home-trending-teaser" aria-labelledby="homeTrendingTitle">
+                <div class="home-section-header">
+                    <h2 id="homeTrendingTitle">Trending Right Now</h2>
+                    <p>Live from StockTwits — what traders are watching this minute.</p>
+                </div>
+                <ul class="home-trending-list">
+                    {% for stock in home_trending %}
+                    <li class="home-trending-item">
+                        <a href="/results?q={{ stock.ticker }}">
+                            <span class="home-trending-rank">{{ loop.index }}</span>
+                            <span class="home-trending-name">{{ stock.name or stock.ticker }} <span class="home-trending-ticker">{{ stock.ticker }}</span></span>
+                            {% if stock.change_percent is not none %}
+                            <span class="home-trending-change {{ 'positive' if stock.change_percent >= 0 else 'negative' }}">{{ '%+.2f' | format(stock.change_percent) }}%</span>
+                            {% endif %}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% if home_market_summary %}
+            <div class="home-market-teaser" aria-labelledby="homeMarketTeaserTitle">
+                <div class="home-section-header">
+                    <h2 id="homeMarketTeaserTitle">Today's Market Recap</h2>
+                </div>
+                <a class="home-market-teaser-card" href="{{ home_market_summary.permalink }}">
+                    <h3>{{ home_market_summary.title }}</h3>
+                    {% if home_market_summary.excerpt %}<p>{{ home_market_summary.excerpt }}</p>{% endif %}
+                    {% if home_market_summary.indices %}
+                    <div class="home-market-teaser-indices">
+                        {% for idx in home_market_summary.indices %}
+                        <span class="home-market-teaser-index {{ 'positive' if (idx.change_percent or 0) >= 0 else 'negative' }}">
+                            {{ idx.name or idx.symbol }} {{ '%+.2f' | format(idx.change_percent) if idx.change_percent is not none else '' }}%
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <span class="home-market-teaser-link">Read the full recap &rarr;</span>
+                </a>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         <section class="home-popular-stocks" aria-labelledby="homePopularStocksTitle">
             <div class="home-section-header">
                 <h2 id="homePopularStocksTitle">AI Sentiment Analysis for Popular Stocks</h2>
                 <p>Instantly check bullish/bearish sentiment for the most-searched tickers. Updated in real time from news and social platforms.</p>
             </div>
             <div class="home-popular-stocks-grid">
+                {% for stock in home_popular_stocks %}
+                <a class="home-stock-chip" href="{{ stock.href }}">{{ stock.name }} <span>{{ stock.ticker }}</span>{% if stock.change_percent is not none %}<span class="home-stock-chip-change {{ 'positive' if stock.change_percent >= 0 else 'negative' }}">{{ '%+.2f' | format(stock.change_percent) }}%</span>{% endif %}</a>
+                {% else %}
                 <a class="home-stock-chip" href="/blog/sentiment-of-apple-stock">Apple <span>AAPL</span></a>
                 <a class="home-stock-chip" href="/blog/sentiment-of-microsoft-stock">Microsoft <span>MSFT</span></a>
                 <a class="home-stock-chip" href="/blog/sentiment-of-alphabet-stock">Alphabet <span>GOOGL</span></a>
@@ -265,6 +324,7 @@
                 <a class="home-stock-chip" href="/blog/sentiment-of-sp-500-stock">S&amp;P 500 <span>SPY</span></a>
                 <a class="home-stock-chip" href="/blog/sentiment-of-nasdaq-stock">Nasdaq <span>QQQ</span></a>
                 <a class="home-stock-chip" href="/blog/sentiment-of-dow-jones-stock">Dow Jones <span>DIA</span></a>
+                {% endfor %}
             </div>
         </section>
 
@@ -360,42 +420,14 @@
                 <p>Everything you need to know about AI-powered stock sentiment analysis.</p>
             </div>
             <div class="home-faq-list">
+                {% for item in faq_items %}
                 <details class="home-faq-item">
-                    <summary class="home-faq-q">What is stock sentiment analysis?</summary>
+                    <summary class="home-faq-q">{{ item.question }}</summary>
                     <div class="home-faq-a">
-                        <p>Stock sentiment analysis measures whether news articles, social media posts, and market commentary about a ticker are <strong>bullish</strong> (positive), <strong>bearish</strong> (negative), or <strong>neutral</strong>. AI models read coverage in real time to give traders an instant read on how the crowd feels — so you can see whether momentum has fundamental backing or is just noise.</p>
+                        <p>{{ item.answer | safe }}</p>
                     </div>
                 </details>
-                <details class="home-faq-item">
-                    <summary class="home-faq-q">How does the AI analyze stock sentiment?</summary>
-                    <div class="home-faq-a">
-                        <p>For each news article, the AI evaluates tone, word choice, and financial context to produce a bullish, bearish, or neutral classification. Those per-article scores are aggregated into an overall sentiment reading for the ticker. All sentiment is based on the most recent headlines — so it reflects what's happening <em>now</em>, not last week.</p>
-                    </div>
-                </details>
-                <details class="home-faq-item">
-                    <summary class="home-faq-q">Which stocks can I analyze?</summary>
-                    <div class="home-faq-a">
-                        <p>Any US-listed equity or ETF — from mega-cap tech like <strong>AAPL, MSFT, NVDA, TSLA, META</strong> to small caps and index funds like <strong>SPY, QQQ, and DIA</strong>. Just type a company name or ticker symbol in the search bar at the top of the page.</p>
-                    </div>
-                </details>
-                <details class="home-faq-item">
-                    <summary class="home-faq-q">Is this free? Do I need an account?</summary>
-                    <div class="home-faq-a">
-                        <p>Yes — completely free, and no sign-up required. Search any ticker and get instant AI sentiment results. Your watchlist is saved locally in your browser, so it persists between sessions without a login.</p>
-                    </div>
-                </details>
-                <details class="home-faq-item">
-                    <summary class="home-faq-q">What data sources does the platform use?</summary>
-                    <div class="home-faq-a">
-                        <p>We aggregate from four sources: <strong>Google News</strong> for the latest headlines, <strong>StockTwits</strong> for trader sentiment and trending tickers, <strong>Reddit</strong> (via ApeWisdom) for retail investor discussions, and <strong>Yahoo Finance</strong> for real-time prices and key statistics.</p>
-                    </div>
-                </details>
-                <details class="home-faq-item">
-                    <summary class="home-faq-q">How is the Daily Market Recap generated?</summary>
-                    <div class="home-faq-a">
-                        <p>Each trading day, our system fetches top market headlines and passes them through an AI summarization pipeline to produce a concise briefing — what moved, which sectors led or lagged, and the macro narrative. You can subscribe to receive it by email on the <a href="/market-summary">Market Summary page</a>.</p>
-                    </div>
-                </details>
+                {% endfor %}
             </div>
         </section>
 

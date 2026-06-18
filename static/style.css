@@ -699,6 +699,150 @@ main.container {
     background: rgba(124, 106, 255, 0.08);
 }
 
+.home-stock-chip-change {
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+.home-stock-chip-change.positive {
+    color: var(--up);
+}
+
+.home-stock-chip-change.negative {
+    color: var(--down);
+}
+
+.home-live-grid {
+    margin-bottom: 44px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.home-trending-teaser,
+.home-market-teaser {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    background: rgba(14, 14, 22, 0.72);
+    display: flex;
+    flex-direction: column;
+}
+
+.home-trending-list {
+    margin-top: 12px;
+    flex: 1;
+    list-style: none;
+    display: grid;
+    align-content: start;
+    gap: 6px;
+}
+
+.home-trending-item a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+    transition: background 0.15s;
+}
+
+.home-trending-item a:hover {
+    background: rgba(124, 106, 255, 0.08);
+}
+
+.home-trending-rank {
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    width: 16px;
+}
+
+.home-trending-name {
+    flex: 1;
+    font-size: 13px;
+}
+
+.home-trending-ticker {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.home-trending-change {
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.home-trending-change.positive {
+    color: var(--up);
+}
+
+.home-trending-change.negative {
+    color: var(--down);
+}
+
+.home-market-teaser-card {
+    margin-top: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: var(--text);
+}
+
+.home-market-teaser-card h3 {
+    font-family: var(--display);
+    font-size: 16px;
+    margin-bottom: 7px;
+}
+
+.home-market-teaser-card p {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.home-market-teaser-indices {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.home-market-teaser-index {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: rgba(107, 107, 133, 0.1);
+}
+
+.home-market-teaser-index.positive {
+    color: var(--up);
+}
+
+.home-market-teaser-index.negative {
+    color: var(--down);
+}
+
+.home-market-teaser-link {
+    display: inline-block;
+    margin-top: auto;
+    padding-top: 12px;
+    color: var(--accent);
+    font-size: 13px;
+}
+
+@media (max-width: 720px) {
+    .home-live-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .trending-section,
 .watchlist-section,
 .market-summary-section {
