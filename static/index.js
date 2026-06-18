@@ -534,6 +534,39 @@ function initializeSearchSuggestions() {
     });
 }
 
+function initializeNavMenu() {
+    const toggleBtn = document.getElementById('navMenuToggle');
+    const navLinks = document.getElementById('navLinks');
+    if (!toggleBtn || !navLinks) return;
+
+    function closeMenu() {
+        navLinks.classList.remove('is-open');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleMenu() {
+        const isOpen = navLinks.classList.toggle('is-open');
+        toggleBtn.setAttribute('aria-expanded', String(isOpen));
+    }
+
+    toggleBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleMenu();
+    });
+
+    navLinks.querySelectorAll('.nav-pill-btn').forEach((link) => {
+        link.addEventListener('click', closeMenu);
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest || !event.target.closest('.nav-links, .nav-menu-toggle')) {
+            closeMenu();
+        }
+    });
+
+    window.addEventListener('resize', closeMenu, { passive: true });
+}
+
     function formatNumber(num) {
         if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
         if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
@@ -3661,6 +3694,7 @@ function initializeSearchSuggestions() {
         initializeHomeScrollEffect();
         initializeFlowField();
         initializeSearchSuggestions();
+        initializeNavMenu();
         const tabs = document.querySelectorAll('.chart-tab');
 
         tabs.forEach(tab => {

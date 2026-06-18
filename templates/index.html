@@ -210,7 +210,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             </button>
         </div>
-        <nav class="nav-links" aria-label="Primary links">
+        <button id="navMenuToggle" class="nav-menu-toggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <nav class="nav-links" id="navLinks" aria-label="Primary links">
             <a id="trendingBtn" class="nav-pill-btn" href="/trending-list">Trending</a>
             <a id="watchlistNavBtn" class="nav-pill-btn" href="/watchlist">Watchlist</a>
             <a id="marketSummaryBtn" class="nav-pill-btn" href="/market-summary">Market Summary</a>
