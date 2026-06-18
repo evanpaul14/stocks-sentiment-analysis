@@ -918,6 +918,11 @@ main.container {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 420px;
+}
+
+.market-summary-latest {
+    min-height: 180px;
 }
 
 .trending-item {

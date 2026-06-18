@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 SCRIPT_PATH = Path(__file__).resolve()
 PROJECT_ROOT = SCRIPT_PATH.parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "instance" / "ip_log.db"
+DEFAULT_BLOG_DB_PATH = PROJECT_ROOT / "instance" / "blog.db"
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "sitemap.xml"
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -52,6 +53,15 @@ def parse_args() -> argparse.Namespace:
         "--base-url",
         default="https://stocksentimentapp.com",
         help="Website base URL (default: https://stocksentimentapp.com)",
+    )
+    parser.add_argument(
+        "--blog-db",
+        dest="blog_db_path",
+        default=str(DEFAULT_BLOG_DB_PATH),
+        help=(
+            "Path to the blog SQLite database (editorial posts). Relative paths are "
+            f"resolved from project root (default: {DEFAULT_BLOG_DB_PATH})."
+        ),
     )
     parser.add_argument(
         "--stock-market-today-lastmod",
@@ -93,6 +103,36 @@ def _collect_summary_dates(db_path: Path) -> list[str]:
         connection.close()
 
     return sorted(dates, reverse=True)
+
+
+def _collect_blog_articles(blog_db_path: Path) -> list[tuple[str, str | None]]:
+    """Return (slug, lastmod) pairs for published editorial blog posts.
+
+    Missing/unreadable blog DB is tolerated (returns []) since editorial
+    posts are optional and this script must still produce a valid sitemap
+    for the core + programmatic pages without them.
+    """
+    if not blog_db_path.exists():
+        return []
+
+    articles: list[tuple[str, str | None]] = []
+    connection = sqlite3.connect(str(blog_db_path))
+    try:
+        cursor = connection.execute(
+            "SELECT slug, published_at, updated_at FROM blog_articles WHERE is_published = 1"
+        )
+        for slug, published_at, updated_at in cursor:
+            if not slug:
+                continue
+            marker = (published_at or updated_at or "").strip()
+            lastmod = marker[:10] if len(marker) >= 10 else None
+            articles.append((slug, lastmod))
+    except sqlite3.DatabaseError:
+        return []
+    finally:
+        connection.close()
+
+    return articles
 
 
 def _add_url(
@@ -143,6 +183,7 @@ def build_sitemap(
     base_url: str,
     summary_dates: list[str],
     stock_market_today_lastmod: str | None = None,
+    blog_articles: list[tuple[str, str | None]] | None = None,
 ) -> ET.ElementTree:
     root = ET.Element(
         f"{{{SITEMAP_NS}}}urlset",
@@ -158,7 +199,11 @@ def build_sitemap(
 
     # Required core URLs.
     _add_url(root, f"{base_url}/", "daily", "1.0")
+    _add_url(root, f"{base_url}/privacy", "monthly", "0.3")
+    _add_url(root, f"{base_url}/blog", "daily", "0.7")
     _add_url(root, f"{base_url}/trending-list", "daily", "0.9")
+    for source in ("stocktwits", "reddit", "volume"):
+        _add_url(root, f"{base_url}/trending-list/{source}", "daily", "0.7")
     _add_url(root, f"{base_url}/market-summary", "daily", "1.0")
     _add_url(
         root,
@@ -182,6 +227,16 @@ def build_sitemap(
             f"{base_url}/blog/sentiment-of-{slug}-stock",
             "weekly",
             "0.8",
+        )
+
+    # Editorial blog posts published via the /write workspace.
+    for slug, lastmod in (blog_articles or []):
+        _add_url(
+            root,
+            f"{base_url}/blog/{slug}",
+            "weekly",
+            "0.7",
+            lastmod=lastmod,
         )
 
     # Date-based market summary URLs sourced from the DB.
@@ -220,16 +275,24 @@ def main() -> None:
     else:
         output_path = output_path.resolve()
 
+    blog_db_path = Path(args.blog_db_path).expanduser()
+    if not blog_db_path.is_absolute():
+        blog_db_path = (PROJECT_ROOT / blog_db_path).resolve()
+    else:
+        blog_db_path = blog_db_path.resolve()
+
     base_url = _normalize_base_url(args.base_url)
     stock_market_today_lastmod = _validate_iso_date(args.stock_market_today_lastmod)
 
     summary_dates = _collect_summary_dates(db_path)
-    tree = build_sitemap(base_url, summary_dates, stock_market_today_lastmod)
+    blog_articles = _collect_blog_articles(blog_db_path)
+    tree = build_sitemap(base_url, summary_dates, stock_market_today_lastmod, blog_articles)
     write_sitemap(tree, output_path)
 
     effective_lastmod = stock_market_today_lastmod or (max(summary_dates) if summary_dates else "(none found)")
     print(f"Generated sitemap: {output_path}")
     print(f"Market summary rows included: {len(summary_dates)}")
+    print(f"Editorial blog posts included: {len(blog_articles)}")
     print(f"Date used for stock-market-today lastmod: {effective_lastmod}")
 
 

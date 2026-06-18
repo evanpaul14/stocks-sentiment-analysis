@@ -19,6 +19,7 @@ All other env vars are optional and degrade gracefully. See README.md for the fu
 - `LOG_LEVEL` — logging verbosity, defaults to `INFO`
 - `GEMMA_MAX_CALLS_PER_MINUTE`, `GEMMA_RATE_WINDOW_SECONDS`, `GEMMA_SENTIMENT_TIMEOUT_SECONDS` — tune Gemma rate limiting (defaults: 45/min, 60s window, 3s timeout)
 - `STATIC_ASSET_CACHE_MAX_AGE_SECONDS` — Cache-Control for static files (default: 86400)
+- `INDEXNOW_KEY` — when set, pushes new/updated market-summary and blog URLs to IndexNow (Bing/Yandex/Naver/Seznam) on publish; also served back at `/<key>.txt` for verification
 
 **Sitemap generation:**
 ```bash

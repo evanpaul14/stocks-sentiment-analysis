@@ -161,6 +161,30 @@
     }
     </script>
     {% endif %}
+    {% if page_view == 'market' and initial_market_summary_article %}
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": {{ initial_market_summary_article.title | default('Market Summary', true) | tojson }},
+        "description": {{ resolved_meta_description | tojson }},
+        "url": {{ (canonical_url|default(market_summary_canonical_url, true)|default(request.url, true)) | tojson }},
+        "datePublished": {{ (initial_market_summary_article.published_at|default(initial_market_summary_article.created_at, true)) | tojson }},
+        "dateModified": {{ (initial_market_summary_article.updated_at|default(initial_market_summary_article.published_at, true)|default(initial_market_summary_article.created_at, true)) | tojson }},
+        "image": {{ url_for('static', filename='og-image.png', _external=True) | tojson }},
+        "author": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
+        "publisher": {
+            "@type": "Organization",
+            "name": "Stock Sentiment Analysis",
+            "logo": {
+                "@type": "ImageObject",
+                "url": {{ url_for('static', filename='og-image.png', _external=True) | tojson }}
+            }
+        },
+        "mainEntityOfPage": {"@type": "WebPage", "@id": {{ (canonical_url|default(market_summary_canonical_url, true)|default(request.url, true)) | tojson }}}
+    }
+    </script>
+    {% endif %}
 
     <script defer src="https://cloud.umami.is/script.js" data-website-id="078f3d2c-6b5f-470f-8a31-50607dd5f0cd"></script>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -446,21 +470,67 @@
                         <div class="card-icon icon-stocktwits">ST</div>
                         <div class="card-title">StockTwits Trending</div>
                     </div>
-                    <div id="stocktwitsList" class="trending-list card-body"></div>
+                    <div id="stocktwitsList" class="trending-list card-body">
+                        {% for item in (initial_trending.stocktwits if initial_trending else [])[:10] %}
+                        <div class="ticker-row" data-ticker="{{ (item.ticker|default('', true))|upper }}">
+                            <span class="ticker-rank">{{ item.rank|default(loop.index, true) }}</span>
+                            <div class="ticker-info">
+                                <div class="ticker-symbol">{{ item.ticker|default('N/A', true) }}</div>
+                                <div class="ticker-name">{{ item.name|default('', true) }}</div>
+                            </div>
+                            <div class="ticker-right">
+                                <div class="ticker-price">{{ '$%.2f'|format(item.price) if item.price is not none else '' }}</div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="trending-empty">Trending data will appear here.</div>
+                        {% endfor %}
+                    </div>
                 </div>
                 <div class="dashboard-card trending-column active" data-source="reddit">
                     <div class="card-header">
                         <div class="card-icon icon-reddit">RD</div>
                         <div class="card-title">Reddit Trending</div>
                     </div>
-                    <div id="redditList" class="trending-list card-body"></div>
+                    <div id="redditList" class="trending-list card-body">
+                        {% for item in (initial_trending.reddit if initial_trending else [])[:10] %}
+                        <div class="ticker-row" data-ticker="{{ (item.ticker|default('', true))|upper }}">
+                            <span class="ticker-rank">{{ item.rank|default(loop.index, true) }}</span>
+                            <div class="ticker-info">
+                                <div class="ticker-symbol">{{ item.ticker|default('N/A', true) }}</div>
+                                <div class="ticker-name">{{ item.name|default('', true) }}</div>
+                                {% if item.pct_increase is not none %}<div class="ticker-mentions-delta">{{ '%+.0f'|format(item.pct_increase) }}% mentions</div>{% endif %}
+                            </div>
+                            <div class="ticker-right">
+                                <div class="ticker-price">{{ '$%.2f'|format(item.price) if item.price is not none else '' }}</div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="trending-empty">Trending data will appear here.</div>
+                        {% endfor %}
+                    </div>
                 </div>
                 <div class="dashboard-card trending-column active" data-source="volume">
                     <div class="card-header">
                         <div class="card-icon icon-volume">VL</div>
                         <div class="card-title">Top Volume</div>
                     </div>
-                    <div id="volumeList" class="trending-list card-body"></div>
+                    <div id="volumeList" class="trending-list card-body">
+                        {% for item in (initial_trending.volume if initial_trending else [])[:10] %}
+                        <div class="ticker-row" data-ticker="{{ (item.ticker|default('', true))|upper }}">
+                            <span class="ticker-rank">{{ item.rank|default(loop.index, true) }}</span>
+                            <div class="ticker-info">
+                                <div class="ticker-symbol">{{ item.ticker|default('N/A', true) }}</div>
+                                <div class="ticker-name">{{ item.name|default('', true) }}</div>
+                            </div>
+                            <div class="ticker-right">
+                                <div class="ticker-price">{{ '$%.2f'|format(item.price) if item.price is not none else '' }}</div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="trending-empty">Trending data will appear here.</div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </section>
@@ -492,10 +562,53 @@
             <div class="market-two-col {% if market_summary_slug|default('', true) %}market-two-col-single{% endif %}">
                 <div class="market-left-col">
                     <div id="marketSummaryLatest" class="market-summary-latest summaries-list">
+                        {% if initial_market_summary_article %}
+                        <article class="summary-card {{ 'summary-card-detail' if market_summary_slug|default('', true) else 'latest' }}">
+                            <div class="summary-card-top {{ 'summary-card-detail-top' if market_summary_slug|default('', true) else '' }}">
+                                <div class="summary-content">
+                                    <div class="summary-headline">{{ initial_market_summary_article.title|default('Market Summary') }}</div>
+                                    {% if market_summary_slug|default('', true) %}
+                                    <div class="summary-detail-published">Published {{ initial_market_summary_article.published_at|default(initial_market_summary_article.created_at, true) }}</div>
+                                    {% endif %}
+                                    <div class="summary-body{{ ' expanded' if not market_summary_slug|default('', true) else '' }}">
+                                        {% for para in (initial_market_summary_article.body or '').split('\n') %}
+                                            {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% if initial_market_summary_article.indices %}
+                            <div class="summary-card-footer">
+                                <div class="index-chips">
+                                    {% for idx in initial_market_summary_article.indices[:3] %}
+                                    <span class="chip chip-neutral">{{ idx.label|default(idx.symbol, true)|default('Index', true) }}{% if idx.change_percent is not none %} {{ '%+.2f'|format(idx.change_percent) }}%{% endif %}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% if not market_summary_slug|default('', true) and initial_market_summary_article.permalink %}
+                            <a class="summary-card-link" href="{{ initial_market_summary_article.permalink }}">Read full summary &rarr;</a>
+                            {% endif %}
+                        </article>
+                        {% else %}
                         <div class="market-summary-empty">Latest edition will appear here.</div>
+                        {% endif %}
                     </div>
                     <h3 class="section-title market-summary-archive-heading {% if market_summary_slug|default('', true) %}is-hidden{% endif %}" id="marketSummaryArchiveHeading">Past Editions</h3>
-                    <div class="market-summary-archive summaries-list {% if market_summary_slug|default('', true) %}is-hidden{% endif %}" id="marketSummaryArchive"></div>
+                    <div class="market-summary-archive summaries-list {% if market_summary_slug|default('', true) %}is-hidden{% endif %}" id="marketSummaryArchive">
+                        {% for item in initial_market_summary_archive|default([], true) %}
+                        <a class="summary-card" href="{{ item.permalink|default('/market-summary/' + item.slug, true) }}">
+                            <div class="summary-headline">{{ item.title|default('Market Summary') }}</div>
+                            {% if item.indices %}
+                            <div class="index-chips">
+                                {% for idx in item.indices[:3] %}
+                                <span class="chip chip-neutral">{{ idx.label|default(idx.symbol, true)|default('Index', true) }}{% if idx.change_percent is not none %} {{ '%+.2f'|format(idx.change_percent) }}%{% endif %}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
 
                 <aside class="market-right-col {% if market_summary_slug|default('', true) %}is-hidden{% endif %}">

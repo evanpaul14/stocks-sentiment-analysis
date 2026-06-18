@@ -60,6 +60,10 @@ A Flask web app for real-time stock search, trending dashboards, sentiment analy
   # Optional: Toggle market summary automation
   ENABLE_MARKET_SUMMARY=1
 
+  # Optional: IndexNow push-to-index (Bing/Yandex/Naver/Seznam) on publish
+  # Generate any random hex string (8-128 chars); served back at /<key>.txt
+  INDEXNOW_KEY=generate_a_random_hex_string
+
   # Authenticated writer workspace
   # Required: use a long, random string and keep it stable across deployments
   BLOG_ADMIN_USERNAME=choose_a_username

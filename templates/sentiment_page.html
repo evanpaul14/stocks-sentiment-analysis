@@ -31,6 +31,7 @@
         "url": {{ canonical_url | tojson }},
         "datePublished": "{{ generated_at.isoformat() if generated_at else '' }}",
         "dateModified": "{{ generated_at.isoformat() if generated_at else '' }}",
+        "image": {{ url_for('static', filename='og-image.png', _external=True) | tojson }},
         "author": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "publisher": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "mainEntityOfPage": {"@type": "WebPage", "@id": {{ canonical_url | tojson }}}
@@ -187,6 +188,30 @@
             margin-bottom: 22px;
             max-width: 620px;
         }
+        .verdict-banner {
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 18px;
+            border: 1px solid var(--border2);
+            background: var(--surface2);
+        }
+        .verdict-label {
+            font-family: var(--display);
+            font-weight: 700;
+            font-size: 18px;
+        }
+        .verdict-detail {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .verdict-bullish .verdict-label { color: #2dffb8; }
+        .verdict-bearish .verdict-label { color: #ff4d6a; }
+        .verdict-mixed .verdict-label { color: var(--text); }
         .profile-link {
             display: inline-flex;
             align-items: center;
@@ -334,6 +359,12 @@
     <div class="hero">
         <div class="ticker-badge">{{ ticker }}</div>
         <h1>{{ page_title }}</h1>
+        {% if verdict %}
+        <div class="verdict-banner verdict-{{ verdict.verdict|lower }}">
+            <span class="verdict-label">{{ verdict.verdict }}</span>
+            <span class="verdict-detail">{{ verdict.bullish }} bullish &middot; {{ verdict.neutral }} neutral &middot; {{ verdict.bearish }} bearish ({{ verdict.total }} articles analyzed, last 30 days)</span>
+        </div>
+        {% endif %}
         {% if intro_text %}
         <p class="hero-intro">{{ intro_text }}</p>
         {% endif %}
@@ -396,6 +427,12 @@
             </div>
             {% endfor %}
         </div>
+    </section>
+
+    <section class="section-card methodology-note">
+        <p class="section-eyebrow">Methodology</p>
+        <h2 class="section-heading" style="border-bottom:none; padding-bottom:0; margin-bottom:16px;">How this sentiment score is calculated</h2>
+        <p class="section-body">An AI model reads the headline and content of each recent news article about {{ company_name }} ({{ ticker }}) and classifies it as bullish, bearish, or neutral. {% if verdict %}The verdict above aggregates {{ verdict.total }} articles from the trailing 30 days.{% endif %} Sentiment reflects what news coverage is saying, not a guarantee of future price movement.</p>
     </section>
 
     <footer class="page-footer">

@@ -46,10 +46,33 @@
         "url": {{ canonical_url | default(request.url) | tojson }},
         "datePublished": "{{ article.published_at.isoformat() if article.published_at else '' }}",
         "dateModified": "{{ article.updated_at.isoformat() if article.updated_at else article.published_at.isoformat() if article.published_at else '' }}",
-        {% if article.image_url %}"image": {{ article.image_url | tojson }},{% endif %}
+        "image": {{ (article.image_url if article.image_url else url_for('static', filename='og-image.png', _external=True)) | tojson }},
         "author": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "publisher": {"@type": "Organization", "name": "Stock Sentiment Analysis", "url": "https://stocksentimentapp.com"},
         "mainEntityOfPage": {"@type": "WebPage", "@id": {{ canonical_url | default(request.url) | tojson }}}
+    }
+    </script>
+    {% endif %}
+    {% if view_mode == 'list' %}
+    <script nonce="{{ csp_nonce }}" type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Blog",
+        "name": "Stock Sentiment Analysis Blog",
+        "description": {{ resolved_meta_description | tojson }},
+        "url": {{ (canonical_url|default(request.url, true)) | tojson }}
+        {% if articles is defined and articles %},
+        "blogPost": [
+            {% for post in articles %}
+            {
+                "@type": "BlogPosting",
+                "headline": {{ post.title | tojson }},
+                "url": {{ (request.url_root.rstrip('/') + url_for('blog_article_page', slug=post.slug)) | tojson }},
+                "datePublished": "{{ post.published_at.isoformat() if post.published_at else '' }}"
+            }{{ "," if not loop.last }}
+            {% endfor %}
+        ]
+        {% endif %}
     }
     </script>
     {% endif %}

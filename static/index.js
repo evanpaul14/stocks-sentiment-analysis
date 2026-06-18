@@ -244,13 +244,15 @@ function initializeFlowField() {
 
     const COLOR = '#6366f1';
     const TRAIL_OPACITY = 0.25;
-    const PARTICLE_COUNT = 500;
+    const PARTICLE_COUNT = window.innerWidth < 768 ? 120 : 500;
     const SPEED = 0.85;
+    const TARGET_FRAME_INTERVAL_MS = 1000 / 30; // throttle to ~30fps to reduce main-thread/INP contention
 
     let width = window.innerWidth;
     let height = window.innerHeight;
     let particles = [];
     let rafId;
+    let lastFrameTime = 0;
     let mouse = { x: -2000, y: -2000 };
 
     function Particle() {
@@ -315,7 +317,11 @@ function initializeFlowField() {
         }
     }
 
-    function animate() {
+    function animate(timestamp) {
+        rafId = requestAnimationFrame(animate);
+        if (timestamp - lastFrameTime < TARGET_FRAME_INTERVAL_MS) return;
+        lastFrameTime = timestamp;
+
         ctx.fillStyle = 'rgba(0, 0, 0, ' + TRAIL_OPACITY + ')';
         ctx.fillRect(0, 0, width, height);
 
@@ -324,7 +330,16 @@ function initializeFlowField() {
             particles[i].draw();
         }
         ctx.globalAlpha = 1;
-        rafId = requestAnimationFrame(animate);
+    }
+
+    function onVisibilityChange() {
+        if (document.hidden) {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = null;
+        } else if (!rafId) {
+            lastFrameTime = 0;
+            rafId = requestAnimationFrame(animate);
+        }
     }
 
     function onResize() {
@@ -344,11 +359,12 @@ function initializeFlowField() {
     }
 
     initCanvas();
-    animate();
+    rafId = requestAnimationFrame(animate);
 
     window.addEventListener('resize', onResize, { passive: true });
     window.addEventListener('mousemove', onMouseMove, { passive: true });
     document.documentElement.addEventListener('mouseleave', onMouseLeave, { passive: true });
+    document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
 }
 
 function loadRecentSearches() {

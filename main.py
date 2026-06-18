@@ -25,7 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import cloudscraper
 from dotenv import load_dotenv
 import finnhub
-from flask import Flask, g, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, Response, g, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
@@ -49,6 +49,38 @@ MARKET_SUMMARY_SITEMAP_BASE_URL = (
     (os.getenv("MARKET_SUMMARY_SITEMAP_BASE_URL") or "https://stocksentimentapp.com/market-summary").rstrip("/")
     or "https://stocksentimentapp.com/market-summary"
 )
+SITE_BASE_URL = (os.getenv("SITE_BASE_URL") or "https://stocksentimentapp.com").rstrip("/")
+INDEXNOW_KEY = os.getenv("INDEXNOW_KEY")
+INDEXNOW_ENABLED = bool(INDEXNOW_KEY)
+
+
+def ping_indexnow(urls):
+    """Best-effort notify IndexNow (Bing/Yandex/Naver/Seznam) about new/updated URLs.
+
+    No-ops when INDEXNOW_KEY isn't configured. Never raises — publishing a
+    market summary or blog post must not fail because of this side effect.
+    """
+    if not INDEXNOW_ENABLED:
+        return False
+    url_list = [u for u in (urls or []) if u]
+    if not url_list:
+        return False
+    try:
+        host = urlparse(SITE_BASE_URL).netloc
+        requests.post(
+            "https://api.indexnow.org/indexnow",
+            json={
+                "host": host,
+                "key": INDEXNOW_KEY,
+                "keyLocation": f"{SITE_BASE_URL}/{INDEXNOW_KEY}.txt",
+                "urlList": url_list,
+            },
+            timeout=5,
+        )
+        return True
+    except Exception as exc:
+        app_logger.warning("[IndexNow] Ping failed: %s", exc)
+        return False
 SITEMAP_XML_NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
 SITEMAP_XSI_NAMESPACE = "http://www.w3.org/2001/XMLSchema-instance"
 SITEMAP_SCHEMA_LOCATION = (
@@ -934,6 +966,9 @@ _SENTIMENT_SCORE_MAP = {"positive": 1, "neutral": 0, "negative": -1}
 _HOME_SNAPSHOT_CACHE = {"data": None, "expires_at": 0}
 _HOME_SNAPSHOT_LOCK = threading.Lock()
 
+_TRENDING_PAGE_CACHE = {}
+_TRENDING_PAGE_LOCK = threading.Lock()
+
 HOME_FAQ_ITEMS = [
     {
         "question": "What is stock sentiment analysis?",
@@ -1099,6 +1134,33 @@ def _get_int_env(var_name, default):
 
 
 HOME_SNAPSHOT_TTL_SECONDS = max(30, _get_int_env("HOME_SNAPSHOT_TTL_SECONDS", 120))
+TRENDING_PAGE_SNAPSHOT_TTL_SECONDS = max(30, _get_int_env("TRENDING_PAGE_SNAPSHOT_TTL_SECONDS", 90))
+
+
+def get_trending_page_snapshot(source):
+    """Return cached trending-list data for a source, rebuilt under a lock when stale.
+
+    Used to server-render the /trending-list pages so non-JS crawlers see real
+    content instead of an empty shell, without hitting upstream APIs on every request.
+    """
+    now = time.time()
+    cached = _TRENDING_PAGE_CACHE.get(source)
+    if cached is not None and cached.get("expires_at", 0) > now:
+        return cached.get("data") or []
+
+    with _TRENDING_PAGE_LOCK:
+        now = time.time()
+        cached = _TRENDING_PAGE_CACHE.get(source)
+        if cached is not None and cached.get("expires_at", 0) > now:
+            return cached.get("data") or []
+
+        try:
+            data = get_trending_source_data(source, include_prices=True) or []
+        except Exception as exc:
+            app_logger.warning("[TrendingPage] Error building snapshot for %s: %s", source, exc)
+            data = []
+        _TRENDING_PAGE_CACHE[source] = {"data": data, "expires_at": now + TRENDING_PAGE_SNAPSHOT_TTL_SECONDS}
+        return data
 BLOG_ARTICLE_FETCH_LIMIT = max(1, _get_int_env("BLOG_ARTICLE_FETCH_LIMIT", 50))
 
 
@@ -2951,6 +3013,8 @@ def upsert_market_summary_sitemap_entry(summary_date):
 
     _write_sitemap_tree(tree, sitemap_path)
 
+    ping_indexnow([target_loc, current_day_loc, stock_market_today_loc])
+
     return True
 
 
@@ -2984,6 +3048,7 @@ def upsert_blog_article_sitemap_entry(article):
 
     _ensure_sitemap_url(root, loc_value, lastmod_text)
     _write_sitemap_tree(tree, sitemap_path)
+    ping_indexnow([loc_value])
     return True
 
 
@@ -3252,6 +3317,44 @@ def bootstrap_market_summary_if_needed():
         market_summary_logger.error("Bootstrap market summary failed: %s", exc)
 
 
+def ensure_core_sitemap_entries():
+    """Backfill sitemap.xml with every always-present, crawlable page.
+
+    This is the single source of truth for "static" sitemap coverage —
+    it runs once per process via ensure_market_runtime_bootstrap() and is
+    idempotent (_ensure_sitemap_url upserts by loc), so it self-heals any
+    drift instead of relying on scripts/generate_sitemap.py being rerun.
+    Date-based market-summary and individual blog-post entries are kept
+    current separately via upsert_market_summary_sitemap_entry() and
+    upsert_blog_article_sitemap_entry() on publish.
+    """
+    try:
+        tree, root, sitemap_path = _load_sitemap_tree_for_upsert()
+        today = datetime.now(EASTERN_TZ).date().strftime('%Y-%m-%d')
+
+        _ensure_sitemap_url(root, f"{SITE_BASE_URL}/", today)
+        _ensure_sitemap_url(root, f"{SITE_BASE_URL}/privacy", today)
+        _ensure_sitemap_url(root, f"{SITE_BASE_URL}/blog", today)
+        _ensure_sitemap_url(root, f"{MARKET_SUMMARY_SITEMAP_BASE_URL}", today)
+        _ensure_sitemap_url(root, f"{SITE_BASE_URL}/trending-list", today)
+        for source in TRENDING_PAGE_SOURCES:
+            _ensure_sitemap_url(root, f"{SITE_BASE_URL}/trending-list/{source}", today)
+        for slug in SEO_SENTIMENT_PAGES:
+            _ensure_sitemap_url(root, f"{BLOG_SITEMAP_BASE_URL}/sentiment-of-{slug}-stock", today)
+
+        published_articles = BlogArticle.query.filter_by(is_published=True).all()
+        for article in published_articles:
+            if not article.slug:
+                continue
+            marker = article.published_at or article.updated_at or _utcnow_naive()
+            lastmod = marker.strftime('%Y-%m-%d') if isinstance(marker, datetime) else today
+            _ensure_sitemap_url(root, f"{BLOG_SITEMAP_BASE_URL}/{article.slug}", lastmod)
+
+        _write_sitemap_tree(tree, sitemap_path)
+    except Exception as exc:
+        app_logger.warning("[Sitemap] Core entry backfill failed: %s", exc)
+
+
 def ensure_market_runtime_bootstrap():
     """Initialize market summary data and scheduler once per process."""
     global _runtime_bootstrap_complete
@@ -3263,6 +3366,7 @@ def ensure_market_runtime_bootstrap():
             return
         with app.app_context():
             bootstrap_market_summary_if_needed()
+            ensure_core_sitemap_entries()
         # Scheduler starts once per process to avoid duplicate cron jobs.
         start_market_summary_scheduler()
         _runtime_bootstrap_complete = True
@@ -3289,7 +3393,7 @@ def _set_security_headers(response):
     if request.is_secure:
         response.headers.setdefault(
             "Strict-Transport-Security",
-            "max-age=31536000; includeSubDomains"
+            "max-age=31536000; includeSubDomains; preload"
         )
 
     request_path = (request.path or "").lower()
@@ -4178,6 +4282,51 @@ def _get_monthly_sentiment_data_from_history(ticker):
     return week_data
 
 
+def _build_sentiment_verdict(ticker):
+    """Return a numeric bullish/bearish/neutral breakdown for the trailing 30 days.
+
+    Powers the scannable verdict line on /blog/sentiment-of-<company>-stock pages —
+    SXO review found these pages lacked the numeric source-count breakdown that
+    competitor data hubs (MarketBeat, TipRanks) lead with.
+    """
+    cutoff_dt = datetime.combine(
+        datetime.now(timezone.utc).date() - timedelta(days=30), datetime.min.time()
+    )
+    try:
+        records = (
+            SentimentHistory.query
+            .filter(SentimentHistory.ticker == ticker, SentimentHistory.analyzed_at >= cutoff_dt)
+            .all()
+        )
+    except Exception as exc:
+        app_logger.warning("[SEO] Verdict query failed for %s: %s", ticker, exc)
+        records = []
+
+    counts = {"positive": 0, "neutral": 0, "negative": 0}
+    for r in records:
+        if r.sentiment_label in counts:
+            counts[r.sentiment_label] += 1
+    total = sum(counts.values())
+    if not total:
+        return None
+
+    net_score = (counts["positive"] - counts["negative"]) / total
+    if net_score > 0.15:
+        verdict = "Bullish"
+    elif net_score < -0.15:
+        verdict = "Bearish"
+    else:
+        verdict = "Mixed"
+
+    return {
+        "verdict": verdict,
+        "total": total,
+        "bullish": counts["positive"],
+        "neutral": counts["neutral"],
+        "bearish": counts["negative"],
+    }
+
+
 def _get_monthly_sentiment_data(ticker, company_name):
     """Return weekly sentiment data, preferring stored SentimentHistory over live API calls."""
     history_data = _get_monthly_sentiment_data_from_history(ticker)
@@ -4423,6 +4572,11 @@ TRENDING_SOURCE_LABELS = {
 }
 
 
+def _build_initial_trending_payload():
+    """Fetch cached trending snapshots for all sources, for server-side rendering."""
+    return {source: get_trending_page_snapshot(source) for source in TRENDING_PAGE_SOURCES}
+
+
 @app.route('/trending-list')
 @limiter.limit("50 per minute")
 def trending_board_page():
@@ -4432,6 +4586,7 @@ def trending_board_page():
         page_view='trending',
         initial_query='',
         trending_source='stocktwits',
+        initial_trending=_build_initial_trending_payload(),
         meta_description=TRENDING_META_DESCRIPTION,
         canonical_url=url_for('trending_board_page', _external=True),
         breadcrumbs=build_breadcrumbs(("Home", url_for('index')), ("Trending", None))
@@ -4452,6 +4607,7 @@ def trending_board_page_source(source):
         page_view='trending',
         initial_query='',
         trending_source=normalized,
+        initial_trending=_build_initial_trending_payload(),
         meta_description=TRENDING_META_DESCRIPTION,
         canonical_url=url_for('trending_board_page_source', source=normalized, _external=True),
         breadcrumbs=build_breadcrumbs(
@@ -4466,12 +4622,24 @@ def trending_board_page_source(source):
 @limiter.limit("50 per minute")
 def market_summary_page():
     """Render the market summary landing page"""
+    latest_record = get_latest_market_summary_record()
+    serialized = serialize_market_summary(latest_record) if latest_record else None
+    archive_records = []
+    if latest_record:
+        archive_records = (
+            MarketSummary.query
+            .filter(MarketSummary.id != latest_record.id)
+            .order_by(MarketSummary.summary_date.desc())
+            .limit(10)
+            .all()
+        )
     return render_template(
         'index.html',
         page_view='market',
         initial_query='',
         market_summary_slug=None,
-        initial_market_summary_article=None,
+        initial_market_summary_article=serialized,
+        initial_market_summary_archive=[serialize_market_summary(rec) for rec in archive_records],
         meta_description=MARKET_META_DESCRIPTION,
         canonical_url=url_for('market_summary_page', _external=True),
         breadcrumbs=build_breadcrumbs(("Home", url_for('index')), ("Market Summary", None))
@@ -4604,6 +4772,7 @@ def sentiment_seo_page(company):
         f"Explore AI-driven sentiment analysis for {name} ({ticker}) stock. "
         f"See last month's sentiment trends, news analysis, and what sentiment data suggests about future price direction."
     )
+    verdict = _build_sentiment_verdict(ticker)
 
     return render_template(
         'sentiment_page.html',
@@ -4618,6 +4787,7 @@ def sentiment_seo_page(company):
         prediction_text=cache.prediction_text or '',
         price_data=price_data,
         sentiment_data=sentiment_data,
+        verdict=verdict,
         groups_info=groups_info,
         all_seo_pages=SEO_SENTIMENT_PAGES,
         generated_at=cache.generated_at,
@@ -5317,16 +5487,25 @@ def stocktwits_symbol_sentiment(symbol):
     return jsonify(payload)
 
 @app.route('/robots.txt', methods=['GET'])
-@limiter.limit("100 per minute")
+@limiter.exempt
 def robots_txt():
     '''Serve robots.txt file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "robots.txt")
 
 @app.route('/sitemap.xml', methods=['GET'])
-@limiter.limit("100 per minute")
+@limiter.exempt
 def sitemap_xml():
     '''Serve sitemap.xml file'''
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "sitemap.xml")
+
+
+@app.route('/<string:indexnow_key>.txt', methods=['GET'])
+@limiter.exempt
+def indexnow_key_file(indexnow_key):
+    '''Serve the IndexNow key-verification file at /<key>.txt.'''
+    if not INDEXNOW_ENABLED or indexnow_key != INDEXNOW_KEY:
+        return render_template('404.html'), 404
+    return Response(INDEXNOW_KEY, mimetype='text/plain')
 
 
 if __name__ == '__main__':
