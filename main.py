@@ -5273,7 +5273,7 @@ def analyze_article_sentiment():
 @app.route('/sentiment-history/<string:symbol>', methods=['GET'])
 @limiter.limit("20 per minute")
 def get_sentiment_history(symbol):
-    """Return daily-aggregated sentiment scores and 30-day price data for a ticker."""
+    """Return daily-aggregated sentiment scores and 3-month price data for a ticker."""
     symbol = normalize_ticker_symbol(symbol) or symbol.upper()
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=90)
     records = (
@@ -5291,12 +5291,16 @@ def get_sentiment_history(symbol):
         {'date': day, 'score': round(sum(v) / len(v), 3), 'count': len(v)}
         for day, v in sorted(daily.items())
     ]
-    price_data = get_historical_data(symbol, '1mo')
+    price_data = get_historical_data(symbol, '3mo')
     price_by_day = {}
     for pt in price_data:
         day = pt['date'][:10]
         price_by_day[day] = pt['price']
-    price_series = [{'date': d, 'price': p} for d, p in sorted(price_by_day.items())]
+    earliest_sentiment_day = sentiment_series[0]['date'] if sentiment_series else None
+    price_series = [
+        {'date': d, 'price': p} for d, p in sorted(price_by_day.items())
+        if earliest_sentiment_day is None or d >= earliest_sentiment_day
+    ]
     return jsonify({'sentiment': sentiment_series, 'prices': price_series})
 
 
