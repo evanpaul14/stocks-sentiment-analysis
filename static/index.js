@@ -3633,6 +3633,7 @@ function initializeNavMenu() {
                         tension: 0.4,
                         pointRadius: 0,
                         yAxisID: 'y',
+                        spanGaps: true,
                         order: 0
                     },
                     {
