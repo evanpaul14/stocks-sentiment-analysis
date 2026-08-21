@@ -3632,19 +3632,20 @@ function initializeNavMenu() {
                         fill: false,
                         tension: 0.4,
                         pointRadius: 0,
-                        yAxisID: 'y'
+                        yAxisID: 'y',
+                        order: 0
                     },
                     {
                         label: 'Sentiment',
                         data: sentValues,
                         borderColor: '#10b981',
                         borderWidth: 2,
-                        fill: true,
-                        backgroundColor: 'rgba(16,185,129,0.1)',
+                        fill: false,
                         tension: 0.4,
                         pointRadius: 3,
                         yAxisID: 'y1',
-                        spanGaps: true
+                        spanGaps: true,
+                        order: 1
                     }
                 ]
             },
