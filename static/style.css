@@ -739,6 +739,21 @@ main.container {
     color: var(--down);
 }
 
+.home-popular-stocks-more {
+    margin-top: 18px;
+}
+
+.home-popular-stocks-more a {
+    color: var(--accent);
+    font-family: var(--body);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.home-popular-stocks-more a:hover {
+    text-decoration: underline;
+}
+
 .home-live-grid {
     margin-bottom: 44px;
     display: grid;

@@ -217,6 +217,7 @@
             <a id="trendingBtn" class="nav-pill-btn" href="/trending-list">Trending</a>
             <a id="watchlistNavBtn" class="nav-pill-btn" href="/watchlist">Watchlist</a>
             <a id="marketSummaryBtn" class="nav-pill-btn" href="/market-summary">Market Summary</a>
+            <a id="blogNavBtn" class="nav-pill-btn" href="/blog">Blog</a>
         </nav>
     </header>
     <main class="container">
@@ -239,6 +240,7 @@
                 <a class="home-hero-link primary" href="/trending-list">See What's Trending Now &rarr;</a>
                 <a class="home-hero-link" href="/watchlist">Open Watchlist</a>
                 <a class="home-hero-link" href="/market-summary">Today's Market Recap</a>
+                <a class="home-hero-link" href="/blog">Read the Blog</a>
             </div>
 
             <div class="home-kpis home-proof-strip" aria-label="Platform stats">
@@ -353,6 +355,7 @@
                 <a class="home-stock-chip" href="/blog/sentiment-of-dow-jones-stock">Dow Jones <span>DIA</span></a>
                 {% endfor %}
             </div>
+            <p class="home-popular-stocks-more"><a href="/blog">View all sentiment articles &rarr;</a></p>
         </section>
 
         <section class="home-insights" aria-labelledby="homeInsightsTitle">
@@ -778,6 +781,7 @@
     <footer class="site-footer">
         <div class="container">
             <nav class="site-footer-links" aria-label="Footer navigation">
+                <a href="/blog">Blog</a>
                 <a href="/privacy">Privacy Policy</a>
             </nav>
             <p>&copy; {{ now().year if now is defined else '2026' }} Stock Sentiment Analysis. All rights reserved.</p>
