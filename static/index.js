@@ -3631,6 +3631,7 @@ function initializeNavMenu() {
                         borderWidth: 2,
                         fill: false,
                         tension: 0.4,
+                        cubicInterpolationMode: 'monotone',
                         pointRadius: 0,
                         yAxisID: 'y',
                         spanGaps: true,
