@@ -2093,6 +2093,30 @@ body[data-market-article-slug]:not([data-market-article-slug=""]) .market-right-
     margin-bottom: 10px;
 }
 
+.watchlist-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.watchlist-add-btn {
+    background-color: rgba(147, 51, 234, 0.15);
+    border: 1px solid rgba(147, 51, 234, 0.4);
+    color: #e9d5ff;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-family: var(--body);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.watchlist-add-btn:hover,
+.watchlist-add-btn:focus-visible {
+    background-color: rgba(147, 51, 234, 0.25);
+}
+
 .watchlist-toggle-btn {
     background-color: rgba(147, 51, 234, 0.15);
     border: 1px solid rgba(147, 51, 234, 0.4);

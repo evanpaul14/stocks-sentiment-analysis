@@ -478,7 +478,10 @@
         {% endif %}
 
         <section class="watchlist-section {% if page_view != 'watchlist' %}is-hidden{% endif %}" id="watchlistSection" aria-labelledby="watchlistHeading">
-            <h2 class="section-title" id="watchlistHeading">My Watchlist</h2>
+            <div class="watchlist-header-row">
+                <h2 class="section-title" id="watchlistHeading">My Watchlist</h2>
+                <button type="button" id="watchlistAddStockBtn" class="watchlist-add-btn" data-umami-event="watchlist add stock">+ Add Stock</button>
+            </div>
             <div id="watchlistEmptyState" class="watchlist-empty">Save tickers to build a personalized list you can revisit with one click.</div>
             <table class="watchlist-table is-hidden" id="watchlistTable">
                 <thead>

@@ -183,6 +183,7 @@ let activeStocktwitsSentimentRequestId = 0;
 let recentSearches = [];
 let visibleSearchSuggestions = [];
 let activeSearchSuggestionIndex = -1;
+const MAG_SEVEN_SUGGESTIONS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'];
 
 function initializeHomeScrollEffect() {
     if (!isHomePage || typeof window === 'undefined') return;
@@ -455,7 +456,15 @@ function handleSearchSuggestionSelect(value) {
 function renderSearchSuggestions(query = '') {
     if (!searchSuggestionsEl) return;
 
-    const matches = getMatchingRecentSearches(query);
+    const trimmedQuery = (query || '').trim();
+    let matches = getMatchingRecentSearches(query);
+    let headerLabel = 'Recent Searches';
+
+    if (!matches.length && !trimmedQuery) {
+        matches = MAG_SEVEN_SUGGESTIONS;
+        headerLabel = 'Popular Tickers';
+    }
+
     if (!matches.length) {
         hideSearchSuggestions();
         return;
@@ -464,7 +473,7 @@ function renderSearchSuggestions(query = '') {
     visibleSearchSuggestions = matches;
     activeSearchSuggestionIndex = -1;
     searchSuggestionsEl.innerHTML = `
-        <div class="search-suggestions-header">Recent Searches</div>
+        <div class="search-suggestions-header">${headerLabel}</div>
         ${matches.map(item => `
             <button type="button" class="search-suggestion-item" role="option" data-value="${escapeAttribute(item)}">
                 <span class="search-suggestion-value">${escapeHtml(item)}</span>
@@ -3690,6 +3699,14 @@ function initializeNavMenu() {
                 },
                 interaction: { mode: 'nearest', axis: 'x', intersect: false }
             }
+        });
+    }
+
+    const watchlistAddStockBtn = document.getElementById('watchlistAddStockBtn');
+    if (watchlistAddStockBtn && companyInputEl) {
+        watchlistAddStockBtn.addEventListener('click', () => {
+            companyInputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            companyInputEl.focus();
         });
     }
 
