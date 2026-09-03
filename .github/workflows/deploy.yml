@@ -23,7 +23,7 @@ jobs:
         run: npm prune --omit=dev
 
       - name: Package build artifact
-        run: tar czf artifact.tar.gz .next node_modules
+        run: tar -I 'zstd -T0 -3' -cf artifact.tar.zst .next node_modules
 
       - name: Deploy over SSH
         env:
@@ -36,4 +36,4 @@ jobs:
           # The server's forced command (ci-deploy-receive.sh) ignores whatever
           # command we pass and always runs itself, reading this tarball from
           # stdin — it does its own git fetch/reset, extraction, and restart.
-          ssh -i ~/.ssh/deploy_key flaskuser@"$DEPLOY_HOST" < artifact.tar.gz
+          ssh -i ~/.ssh/deploy_key flaskuser@"$DEPLOY_HOST" < artifact.tar.zst
