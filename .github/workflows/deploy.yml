@@ -31,7 +31,10 @@ jobs:
         run: npm prune --omit=dev
 
       - name: Package build artifact
-        run: tar -I 'zstd -T0 -3' -cf artifact.tar.zst .next node_modules
+        # .next/cache is build-only (not read by `next start`) and there's no
+        # cross-run cache configured for it here, so shipping it is pure
+        # waste — it was ~128MB of every artifact and every deploy's disk.
+        run: tar -I 'zstd -T0 -3' --exclude='.next/cache' -cf artifact.tar.zst .next node_modules
 
       - name: Deploy over SSH
         env:
