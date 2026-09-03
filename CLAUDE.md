@@ -48,6 +48,15 @@ a cache wrapper in `lib/cache` if it needs one → one thin `app/api/.../route.t
 integration + cache + `withRateLimit` → a page that calls it server-side. Keep route handlers
 compose-only.
 
+## VPS access
+
+The production server is reachable via `ssh digitalocean` (host alias already configured).
+App lives at `/opt/stocks-sentiment-analysis-v2`, owned by `flaskuser`. The live systemd service
+is named `stocks-nextjs` (not `stocks-sentiment`, despite `deploy/stocks-sentiment.service`'s
+example name) — use `systemctl restart stocks-nextjs` after editing `.env` on the server, and
+`journalctl -u stocks-nextjs -f` to tail logs. There's also a leftover failed `stocks.service`
+(the old Flask app) — ignore it.
+
 ## Known gaps / intentionally deferred
 
 Tracked in `todo.md` — check it before assuming something is "done" vs. "needs a human"

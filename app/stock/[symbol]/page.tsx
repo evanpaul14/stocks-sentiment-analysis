@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
 import { SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
 import { PriceChart } from "@/components/stock/PriceChart";
+import { CompanyLogo } from "@/components/stock/CompanyLogo";
 import { LivePrice } from "@/components/stock/LivePrice";
 import { SentimentStream } from "@/components/stock/SentimentStream";
 import { WatchlistToggleButton } from "@/components/watchlist/WatchlistToggleButton";
@@ -49,8 +50,13 @@ export default async function StockPage({ params }: StockPageProps) {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <header className="mb-6">
-        <p className="text-sm text-muted-foreground">{stockInfo.symbol}</p>
-        <h1 className="text-2xl font-semibold">{stockInfo.companyName}</h1>
+        <div className="flex items-center gap-3">
+          <CompanyLogo symbol={stockInfo.symbol} companyName={stockInfo.companyName} />
+          <div>
+            <p className="text-sm text-muted-foreground">{stockInfo.symbol}</p>
+            <h1 className="text-2xl font-semibold">{stockInfo.companyName}</h1>
+          </div>
+        </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <LivePrice
             symbol={stockInfo.symbol}
