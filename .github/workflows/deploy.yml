@@ -15,7 +15,20 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # setup-node's npm cache only avoids re-downloading tarballs — npm ci
+      # still does a full clean reinstall every run regardless, which was the
+      # entire deploy time (~7min of a ~7.5min run). Caching node_modules
+      # directly and skipping npm ci on an unchanged lockfile turns that into
+      # a few seconds for the common case.
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
 
       # Pre-migrate the disposable CI-local DB single-threaded before build.
       # next build's parallel page-data workers each import lib/db/client,
