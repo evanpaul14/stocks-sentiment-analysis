@@ -62,6 +62,11 @@ sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit the domain first
 sudo systemctl reload caddy
 ```
 
+404s are handled by the app itself (`app/not-found.tsx`). A 502 means the Node process is down
+or unreachable — the app can't serve a page for that, so `deploy/Caddyfile` points Caddy at
+`deploy/error-pages/502.html`, a static page served straight from disk (the nginx equivalent is
+in the Caddyfile's comment block).
+
 ## 6. Database backups
 
 `deploy/backup-db.sh` does an online SQLite backup (safe with WAL mode) and keeps the last 14

@@ -1,9 +1,20 @@
 # Caddy automatically provisions HTTPS via Let's Encrypt and sets
 # X-Forwarded-For, which lib/ratelimit relies on to key rate limits per IP.
 # Replace the domain and adjust the upstream port if you changed it.
+#
+# 404s are handled by the Next.js app itself (app/not-found.tsx) since the app
+# is up to serve them. A 502/503/504 means the Node process is down or
+# unreachable, so Caddy serves a static page from disk instead — see
+# error-pages/502.html.
 
 stocksentimentapp.com {
 	reverse_proxy localhost:3000
+
+	handle_errors {
+		root * /opt/stocks-sentiment-analysis-v2/deploy/error-pages
+		rewrite * /502.html
+		file_server
+	}
 }
 
 # If you'd rather use nginx, the equivalent server block is:
@@ -20,5 +31,11 @@ stocksentimentapp.com {
 #         proxy_set_header Host $host;
 #         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 #         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     error_page 502 503 504 /502.html;
+#     location = /502.html {
+#         root /opt/stocks-sentiment-analysis-v2/deploy/error-pages;
+#         internal;
 #     }
 # }
