@@ -1,0 +1,41 @@
+import { eq } from "drizzle-orm";
+import { db } from "../client";
+import { sentimentPageCache } from "../schema";
+
+export interface SentimentPageCacheRecord {
+  slug: string;
+  ticker: string;
+  sectionsJson: string;
+  priceJson: string | null;
+  sentimentJson: string | null;
+  expiresAt: string;
+}
+
+export async function getBySlug(slug: string) {
+  return db.query.sentimentPageCache.findFirst({
+    where: eq(sentimentPageCache.slug, slug),
+  });
+}
+
+export function isFresh(row: { expiresAt: string }) {
+  return new Date(row.expiresAt).getTime() > Date.now();
+}
+
+export function upsert(record: SentimentPageCacheRecord) {
+  return db
+    .insert(sentimentPageCache)
+    .values(record)
+    .onConflictDoUpdate({
+      target: sentimentPageCache.slug,
+      set: {
+        ticker: record.ticker,
+        sectionsJson: record.sectionsJson,
+        priceJson: record.priceJson,
+        sentimentJson: record.sentimentJson,
+        expiresAt: record.expiresAt,
+        generatedAt: new Date().toISOString(),
+      },
+    })
+    .returning()
+    .get();
+}

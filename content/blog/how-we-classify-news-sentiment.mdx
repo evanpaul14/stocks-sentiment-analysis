@@ -1,0 +1,27 @@
+---
+title: "How We Classify News Sentiment"
+description: "A look under the hood at the AI pipeline that scores news articles as positive, negative, or neutral for each stock."
+author: "Stock Sentiment Team"
+publishedAt: "2026-08-10"
+tags: ["how-it-works"]
+---
+
+Every article we show on a stock's page gets run through a sentiment classifier that answers one
+question: does this article read as positive, negative, or neutral **specifically for this
+company**?
+
+## The pipeline
+
+1. We pull recent headlines for the ticker from Google News.
+2. Each headline and description is sent to a fast primary classifier.
+3. If that classifier is unavailable or times out, a backup model picks up the slack automatically.
+4. Results are cached, so the same article is never re-analyzed twice.
+
+## Why sentiment, not just headlines
+
+A headline alone can be misleading — "Company X sued over patent dispute" sounds bad, but if the
+suit is minor and the stock barely moves, that context matters. Sentiment analysis distills the
+tone of the *whole* article, not just the first ten words.
+
+We're continuing to refine the prompts and models behind this pipeline. If you notice a
+sentiment call that looks off, we'd love to hear about it.

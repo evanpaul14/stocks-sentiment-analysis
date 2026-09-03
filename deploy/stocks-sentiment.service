@@ -1,0 +1,20 @@
+[Unit]
+Description=Stock Sentiment (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust these two paths for your server.
+WorkingDirectory=/opt/stocks-sentiment-analysis-v2
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+User=stocksentiment
+Group=stocksentiment
+Environment=NODE_ENV=production
+# The .env file in WorkingDirectory is loaded automatically by Next.js.
+# Redirect stdout/stderr to the journal (default) — view with:
+#   journalctl -u stocks-sentiment -f
+
+[Install]
+WantedBy=multi-user.target

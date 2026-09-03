@@ -1,188 +1,93 @@
+# Stock Sentiment
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+A modern rebuild of the stocks-sentiment-analysis app — real-time stock prices, historical
+charts, AI-powered news sentiment analysis, trending dashboards, an automated daily market
+summary, and a blog — built as a single Next.js app (App Router, TypeScript), self-hosted on a
+VPS with SQLite for storage.
 
-# Stocks Sentiment Analysis
+This is a ground-up rewrite of the original Flask app. Only the feature set and the external API
+integrations were carried over; none of the original code was reused.
 
-A Flask web app for real-time stock search, trending dashboards, sentiment analysis, and an authenticated writer workspace using Yahoo Finance, ApeWisdom, StockTwits, Alpaca, Google News, Finnhub, and LLM-powered summaries. SQLite backs the Unsplash image cache, market summary history, and the internal blog editor; everything else is fetched live and rendered client-side.
+## Stack
 
-## Features
-- Search stocks by ticker or company name
-- Dedicated pages for watchlist (`/watchlist`), search results (`/results`), and trending dashboards (`/trending-list`)
-- Trending stocks from Reddit (ApeWisdom), StockTwits, and Alpaca
-- Real-time price charts (Chart.js)
-- News aggregation and AI-powered sentiment analysis (Gemma, LLM7, Cloudflare)
-- Market summary dashboard with daily wrap + email subscription (Mailgun)
-- Unsplash-powered article images
-- Private `/write` page with a mini word processor that saves long-form articles into `blog.db`
-- Rate-limited endpoints for API safety
+- **Next.js 16** (App Router, TypeScript, Turbopack)
+- **SQLite** via `better-sqlite3` + a typed Drizzle query layer — no external database
+- **Tailwind CSS + shadcn/ui** (`base-nova` style)
+- **Recharts** for charts
+- **node-cron** for the daily market-summary and weekly sentiment-backfill jobs, running
+  in-process (see `instrumentation.ts` / `lib/cron/`)
 
 ## Quickstart
 
-1. **Clone & setup:**
-  ```bash
-  git clone https://github.com/evanpaul14/stocks-sentiment-analysis.git
-  cd stocks-sentiment-analysis
-  python -m venv .venv && source .venv/bin/activate
-  pip install -r requirements.txt
-  ```
+```bash
+npm install
+cp .env.example .env   # fill in real API keys — see comments in the file
+npm run dev
+```
 
-2. **Configure `.env`:**
-  Create a `.env` file with these keys:
-  ```
-  GOOGLE_API_KEY=your_google_gemma_key
-  FLASK_SECRET_KEY=replace_with_random_string
+Open http://localhost:3000.
 
-  # Optional: AI
-  LLM7_API_KEY=your_llm7_key
-  LLM7_BASE_URL=https://api.llm7.io/v1
-  LLM7_MODEL=fast
+## Environment variables
 
-  # Optional: data sources
-  ALPACA_API_KEY_ID=your_alpaca_key
-  ALPACA_API_SECRET_KEY=your_alpaca_secret
-  FINNHUB_API_KEY=your_finnhub_key
+See `.env.example` for the full list with comments. Everything is optional except
+`GOOGLE_API_KEY` (Gemini backup sentiment classifier) — every other integration degrades
+gracefully (returns empty results, or skips the feature) if its keys are unset.
 
-  # Optional: Unsplash image cache (used for article thumbnails)
-  UNSPLASH_ACCESS_KEY=your_unsplash_key
-  UNSPLASH_APP_NAME=stocks-sentiment-analysis
-  UNSPLASH_DEFAULT_QUERY="stock market"
+## Scripts
 
-  # Optional: Cloudflare AI fallback sentiment
-  CLOUDFLARE_ACCOUNT_ID=your_cf_account
-  CLOUDFLARE_API_TOKEN=your_cf_token
-  CLOUDFLARE_SENTIMENT_MODEL=@cf/meta/llama-3-8b-instruct
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build (also runs `prebuild`, which writes the IndexNow verification file) |
+| `npm run start` | Run the production build |
+| `npm run db:migrate` | Apply any pending SQLite migrations (also happens automatically on first DB connection) |
+| `npm run lint` | ESLint |
 
-  # Optional: Market summary email subscription (Mailgun)
-  MAILGUN_API_KEY=your_mailgun_key
-  MAILGUN_DOMAIN=your_mailgun_domain
-  MAILGUN_MARKET_LIST_ADDRESS=marketsummary@your_mailgun_domain
+## Project structure
 
-  # Optional: Toggle market summary automation
-  ENABLE_MARKET_SUMMARY=1
+```
+app/                    Pages and API routes (App Router)
+lib/
+  db/                    SQLite client, schema (Drizzle), migrations, per-table query modules
+  integrations/          One module per external API (Yahoo, StockTwits, Mailgun, etc.)
+  cron/                  node-cron scheduler + the two scheduled jobs
+  cache/                 In-memory TTL cache for hot short-lived data
+  ratelimit/              In-memory per-IP token bucket
+  auth/                  Single admin bearer-token check (no accounts system)
+  seo/                   Structured data (JSON-LD), CSP nonce helper, sitemap key file writer
+content/blog/*.mdx       Blog posts — see "Publishing a blog post" below
+components/              UI, organized by feature area
+```
 
-  # Optional: IndexNow push-to-index (Bing/Yandex/Naver/Seznam) on publish
-  # Generate any random hex string (8-128 chars); served back at /<key>.txt
-  INDEXNOW_KEY=generate_a_random_hex_string
+**Adding a new data source**: put typed functions in `lib/integrations/<source>/*.ts` (no
+Next.js imports there), add a cache wrapper in `lib/cache` if it needs one, expose it via one
+thin `app/api/.../route.ts`, and call it from a page. Route handlers stay compose-only — that's
+the pattern the whole app follows.
 
-  # Authenticated writer workspace
-  # Required: use a long, random string and keep it stable across deployments
-  BLOG_ADMIN_USERNAME=choose_a_username
-  BLOG_ADMIN_PASSWORD=choose_a_password
-  BLOG_DEFAULT_AUTHOR=stocksentimentapp.com Team
-  ```
+## Publishing a blog post
 
-3. **Run the app:**
-  ```bash
-  python main.py
-  # Visit http://127.0.0.1:5000/
-  ```
+There's no admin UI — posts are `.mdx` files with frontmatter:
 
-## API Endpoints
+```mdx
+---
+title: "Post Title"
+description: "One-sentence summary for SEO/social."
+author: "Your Name"
+publishedAt: "2026-08-22"
+tags: ["announcements"]
+---
 
-### Pages (HTML)
-| Method | Path | Auth Required | Description |
-| --- | --- | --- | --- |
-| GET | `/` | No | Main app UI. |
-| GET | `/privacy` | No | Privacy policy page. |
-| GET | `/watchlist` | No | Watchlist view. |
-| GET | `/results` | No | Dedicated search results page. |
-| GET | `/trending-list` | No | Trending dashboards page. |
-| GET | `/trending-list/<source>` | No | Trending dashboard for a specific source. |
-| GET | `/market-summary` | No | Market summary landing page. |
-| GET | `/market-summary/stock-market-today` | No | Always show latest market summary. |
-| GET | `/market-summary/<slug>` | No | Dedicated market summary article page. |
-| GET | `/blog` | No | Blog listing. |
-| GET | `/blog/<slug>` | No | Blog article detail page. |
-| GET | `/write` | No | Writer workspace page (prompts for auth in UI). |
-| GET | `/confirm` | No | Market summary subscription confirmation page. |
+Post body in Markdown/MDX goes here.
+```
 
-### Public JSON APIs
-| Method | Path | Auth Required | Description |
-| --- | --- | --- | --- |
-| POST | `/search` | No | Search for a stock; returns `stock_info`, `historical_data`, and `articles`. |
-| POST | `/movement-insight` | No | Build movement insight from `stock_info` or `symbol`. |
-| GET | `/historical/<symbol>/<period>` | No | Get historical price data for a symbol and period. |
-| GET | `/trending` | No | Get trending stocks (Reddit/ApeWisdom). |
-| GET | `/trending/<source>` | No | Get trending stocks from `stocktwits`, `reddit`, or `volume`. |
-| POST | `/trending/prices` | No | Batch quote hydration for trending symbols. |
-| POST | `/sentiment` | No | Analyze sentiment for a stock/news article. |
-| GET | `/quote/<symbol>` | No | Quick price/quote lookup. |
-| GET | `/stocktwits/<symbol>/summary` | No | StockTwits summary for a symbol. |
-| GET | `/api/market-summary/latest` | No | Latest market summary payload. |
-| GET | `/api/market-summary/week-glance` | No | Weekly index snapshots for the market summary dashboard. |
-| GET | `/api/market-summary/archive` | No | Market summary archive payload. |
-| GET | `/api/market-summary/<slug>` | No | Specific market summary by slug (`YYYY-MM-DD` or `id-<pk>`). |
-| POST | `/api/market-summary/subscribe` | No | Subscribe to market summary email updates (Mailgun). |
+Drop it in `content/blog/`, commit, redeploy. It'll appear at `/blog/<filename-without-extension>`.
 
-### Authenticated APIs (writer/admin)
-| Method | Path | Auth Required | Description |
-| --- | --- | --- | --- |
-| POST | `/write/login` | No | Authenticate writer/admin session. |
-| POST | `/write/logout` | No | End writer/admin session. |
-| GET, POST | `/api/blog/articles` | Yes | List or create private blog articles in `blog.db`. |
-| PUT, PATCH, DELETE | `/api/blog/articles/<article_identifier>` | Yes | Update or delete a draft. |
-| POST | `/api/blog/articles/<article_identifier>/publish` | Yes | Publish a draft to the public blog. |
-| POST | `/api/blog/articles/<article_identifier>/unpublish` | Yes | Revert a post back to draft. |
-| POST | `/api/market-summary/generate` | Yes | Force regenerate the market summary. |
+## Deployment
 
-### Static assets
-| Method | Path | Auth Required | Description |
-| --- | --- | --- | --- |
-| GET | `/robots.txt` | No | Robots file. |
-| GET | `/sitemap.xml` | No | Sitemap file. |
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for the full self-hosted VPS setup (systemd service,
+reverse proxy, SQLite backups).
 
-## Frontend
+## What's left to do
 
-- Single-page app in `templates/index.html` (vanilla JS + Chart.js)
-- Trending cards and search bar trigger backend endpoints
-- All formatting (currency, numbers) is client-side
-
-## Writer Workspace
-
-- Visit `/write` and unlock the page with `BLOG_ADMIN_USERNAME` / `BLOG_ADMIN_PASSWORD` (set in `.env`).
-- The page bundles a lightweight word processor (contenteditable + formatting toolbar) where admins can craft long-form posts, specify a hero image URL, and save directly to SQLite.
-- Articles persist inside `blog.db` through the SQLAlchemy `blog` bind, alongside created/updated timestamps and auto-generated slugs.
-- `/api/blog/articles` responds with JSON so you can preview or repurpose drafts elsewhere; the endpoint stays locked behind the same session to avoid public exposure.
-
-## Architecture
-
-- **No external database service required** (SQLite stores Unsplash cache, market summaries, and the authenticated blog workspace)
-- All data fetched live from third-party APIs
-- Sentiment and movement summaries use Gemma, LLM7, or Cloudflare (rate-limited)
-- Trending APIs are wrapped with timeouts and error handling
-- Flask-Limiter caps all endpoints (see `main.py`)
-
-## Development
-
-- Add new dependencies to `requirements.txt`
-- Use `curl` or browser to test endpoints
-- Check server logs for errors
-
-## Environment Variables
-
-Required:
-- `GOOGLE_API_KEY` (Google AI Studio)
-- `FLASK_SECRET_KEY` or `SECRET_KEY` (session signing; must be the same across all workers)
-
-Optional (degrades gracefully if missing):
-- `LLM7_API_KEY`, `LLM7_BASE_URL`, `LLM7_MODEL`
-- `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` (or `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` aliases)
-- `FINNHUB_API_KEY`
-- `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`, `UNSPLASH_DEFAULT_QUERY`
-- `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SENTIMENT_MODEL`
-- `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_MARKET_LIST_ADDRESS`, `MAILGUN_FROM_EMAIL` (email market summary subscription)
-- `ENABLE_MARKET_SUMMARY` (set to `0` to disable market summary generation)
-- `FLASK_SKIP_SCHEDULER` (set to `1` to disable APScheduler startup in a process)
-- `MARKET_SUMMARY_RELEASE_HOUR`, `MARKET_SUMMARY_RELEASE_MINUTE`, `MARKET_SUMMARY_RETENTION_DAYS`, `MARKET_SUMMARY_MAX_HEADLINES`
-- `BLOG_ARTICLE_FETCH_LIMIT`
-- `GEMMA_MAX_CALLS_PER_MINUTE`, `GEMMA_RATE_WINDOW_SECONDS`, `GEMMA_SENTIMENT_TIMEOUT_SECONDS`
-- `BLOG_ADMIN_USERNAME`, `BLOG_ADMIN_PASSWORD`, `BLOG_DEFAULT_AUTHOR` (unlock the `/write` workspace)
-
-## Rate Limits
-
-- All endpoints are rate-limited via Flask-Limiter (see decorators in `main.py`)
-- Adjust limits via environment or per-route decorators
-
-## License
-
-[MIT](LICENSE)
+See [`todo.md`](./todo.md) for a running list of things that need a human (API credentials to
+verify, DNS/mail setup, design polish opportunities, etc).
