@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Strip devDependencies from node_modules
+        run: npm prune --omit=dev
+
+      - name: Package build artifact
+        run: tar czf artifact.tar.gz .next node_modules
+
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          # The server's forced command (ci-deploy-receive.sh) ignores whatever
+          # command we pass and always runs itself, reading this tarball from
+          # stdin — it does its own git fetch/reset, extraction, and restart.
+          ssh -i ~/.ssh/deploy_key flaskuser@"$DEPLOY_HOST" < artifact.tar.gz
