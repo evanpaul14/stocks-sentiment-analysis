@@ -17,6 +17,14 @@ jobs:
 
       - run: npm ci
 
+      # Pre-migrate the disposable CI-local DB single-threaded before build.
+      # next build's parallel page-data workers each import lib/db/client,
+      # which self-migrates on open — racing that across workers on a fresh
+      # (nonexistent) DB file causes "duplicate column" / "database is
+      # locked" errors. This DB is never shipped; only .next + node_modules
+      # are packaged below.
+      - run: npm run db:migrate
+
       - run: npm run build
 
       - name: Strip devDependencies from node_modules
