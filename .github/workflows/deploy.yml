@@ -20,9 +20,9 @@ jobs:
       # entire deploy time (~7min of a ~7.5min run). Caching node_modules
       # directly and skipping npm ci on an unchanged lockfile turns that into
       # a few seconds for the common case.
-      - name: Cache node_modules
+      - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -39,6 +39,17 @@ jobs:
       - run: npm run db:migrate
 
       - run: npm run build
+
+      # Save the cache here, with devDependencies still present — the
+      # automatic post-job save of actions/cache@v4 would otherwise capture
+      # node_modules *after* the prune step below strips devDependencies
+      # (like tsx), so a later cache hit would restore a pruned
+      # node_modules and skip npm ci, breaking npm run db:migrate.
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: ${{ steps.node-modules-cache.outputs.cache-primary-key }}
 
       - name: Strip devDependencies from node_modules
         run: npm prune --omit=dev
