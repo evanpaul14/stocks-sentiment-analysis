@@ -61,7 +61,7 @@ export default function WatchlistPage() {
             return (
               <li
                 key={entry.symbol}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 transition-colors duration-150 hover:border-foreground/20 hover:bg-muted/50"
               >
                 <Link
                   href={`/stock/${entry.symbol}`}

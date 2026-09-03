@@ -20,7 +20,7 @@ export function TrendingList({ items }: TrendingListProps) {
         <li key={item.symbol}>
           <Link
             href={`/stock/${item.symbol}`}
-            className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm hover:bg-muted"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted hover:shadow-sm active:translate-y-0"
           >
             <div className="flex min-w-0 items-center gap-3">
               <span className="w-5 shrink-0 text-xs text-muted-foreground">{index + 1}</span>

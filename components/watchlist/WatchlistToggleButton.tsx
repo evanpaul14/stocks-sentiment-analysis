@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWatchlist } from "@/lib/watchlist/useWatchlist";
@@ -19,6 +20,7 @@ export function WatchlistToggleButton({
 }: WatchlistToggleButtonProps) {
   const { add, remove, has } = useWatchlist();
   const inWatchlist = has(symbol);
+  const [justAdded, setJustAdded] = useState(false);
 
   return (
     <Button
@@ -26,6 +28,7 @@ export function WatchlistToggleButton({
       variant={inWatchlist ? "secondary" : "outline"}
       size="sm"
       data-umami-event={inWatchlist ? "watchlist-remove" : "watchlist-add"}
+      className="transition-colors"
       onClick={() => {
         if (inWatchlist) {
           remove(symbol);
@@ -36,12 +39,14 @@ export function WatchlistToggleButton({
             lastPrice: price,
             lastChangePercent: changePercent,
           });
+          setJustAdded(true);
         }
       }}
     >
       <Star
-        className={inWatchlist ? "fill-current" : ""}
+        className={`transition-transform ${inWatchlist ? "fill-current" : ""} ${justAdded ? "animate-pop" : ""}`}
         data-icon="inline-start"
+        onAnimationEnd={() => setJustAdded(false)}
       />
       {inWatchlist ? "In Watchlist" : "Add to Watchlist"}
     </Button>

@@ -75,7 +75,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isSearchOpen ? "Close search" : "Open search"}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
             onClick={() => {
               setIsSearchOpen((open) => !open);
               setIsMenuOpen(false);
@@ -89,6 +89,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isSearchOpen ? "Close search" : "Open search"}
+            className="text-muted-foreground transition-colors hover:text-foreground"
             onClick={() => {
               setIsSearchOpen((open) => !open);
               setIsMenuOpen(false);
@@ -99,6 +100,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+            className="text-muted-foreground transition-colors hover:text-foreground"
             onClick={() => {
               setIsMenuOpen((open) => !open);
               setIsSearchOpen(false);
@@ -110,18 +112,18 @@ export function Header() {
       </div>
 
       {isSearchOpen && (
-        <div className="mx-auto mt-3 flex max-w-4xl justify-center px-4">
+        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4">
           <SearchBar showSuggestions />
         </div>
       )}
 
       {isMenuOpen && (
-        <nav className="mx-auto mt-3 flex max-w-4xl flex-col gap-1 px-4 sm:hidden">
+        <nav className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl flex-col gap-1 px-4 sm:hidden">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="rounded-lg px-2 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-lg px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {link.label}
             </Link>

@@ -33,10 +33,10 @@ function TabLink({ href, label, isActive }: { href: string; label: string; isAct
   return (
     <Link
       href={href}
-      className={`border-b-2 px-3 py-2 text-sm font-medium ${
+      className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
         isActive
           ? "border-primary text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground"
+          : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
       }`}
     >
       {label}

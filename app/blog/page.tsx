@@ -38,7 +38,10 @@ export default function BlogIndexPage() {
         <ul className="space-y-6">
           {posts.map((post) => (
             <li key={post.slug}>
-              <Link href={`/blog/${post.slug}`} className="block hover:opacity-80">
+              <Link
+                href={`/blog/${post.slug}`}
+                className="block transition-opacity duration-150 hover:opacity-80"
+              >
                 <h2 className="text-lg font-medium">{post.frontmatter.title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {post.frontmatter.description}

@@ -26,8 +26,8 @@ export function PanelSwitcher() {
         <button
           type="button"
           onClick={() => setPanel("trending")}
-          className={`flex-1 rounded-md py-1.5 transition-colors ${
-            panel === "trending" ? "bg-background shadow-sm" : "text-muted-foreground"
+          className={`flex-1 rounded-md py-1.5 transition-all duration-200 ${
+            panel === "trending" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Trending
@@ -35,8 +35,8 @@ export function PanelSwitcher() {
         <button
           type="button"
           onClick={() => setPanel("watchlist")}
-          className={`flex-1 rounded-md py-1.5 transition-colors ${
-            panel === "watchlist" ? "bg-background shadow-sm" : "text-muted-foreground"
+          className={`flex-1 rounded-md py-1.5 transition-all duration-200 ${
+            panel === "watchlist" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           Watchlist
@@ -44,7 +44,7 @@ export function PanelSwitcher() {
       </div>
 
       {panel === "trending" ? (
-        <ul className="space-y-1">
+        <ul className="animate-fade-in-down space-y-1">
           {trending.length === 0 ? (
             <p className="py-4 text-center text-xs text-muted-foreground">Loading…</p>
           ) : (
@@ -52,7 +52,7 @@ export function PanelSwitcher() {
           )}
         </ul>
       ) : (
-        <ul className="space-y-1">
+        <ul className="animate-fade-in-down space-y-1">
           {entries.length === 0 ? (
             <p className="py-4 text-center text-xs text-muted-foreground">
               No stocks in your watchlist yet.
@@ -92,7 +92,7 @@ function TeaserRow({
     <li>
       <Link
         href={`/stock/${symbol}`}
-        className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
+        className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-muted"
       >
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           <span className="font-medium text-foreground">{symbol}</span> {label}

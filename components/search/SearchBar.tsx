@@ -136,19 +136,19 @@ export function SearchBar({ showSuggestions = false }: { showSuggestions?: boole
           onFocus={() => showSuggestions && setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder="Search a ticker or company (e.g. AAPL, Apple)"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
           autoComplete="off"
         />
         <Button type="submit">Search</Button>
       </form>
 
       {showSuggestions && isOpen && filteredHistory.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+        <ul className="animate-fade-in-down absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
           {filteredHistory.map((entry, index) => (
             <li key={entry}>
               <button
                 type="button"
-                className={`block w-full px-3 py-2 text-left text-sm ${
+                className={`block w-full px-3 py-2 text-left text-sm transition-colors duration-100 ${
                   index === highlightedIndex ? "bg-muted" : "hover:bg-muted"
                 }`}
                 onMouseDown={(e) => {
