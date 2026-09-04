@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import dynamic from "next/dynamic";
 import type { NewsArticle } from "@/lib/integrations/news/googleNews";
+import type { SentimentLabel } from "@/components/stock/SentimentPieChart";
+import { SENTIMENT_COLORS } from "@/components/stock/SentimentPieChart";
 
-type SentimentLabel = "positive" | "negative" | "neutral";
+const SentimentPieChart = dynamic(
+  () => import("@/components/stock/SentimentPieChart").then((m) => m.SentimentPieChart),
+  { ssr: false }
+);
 
 interface ArticleSentiment {
   article: NewsArticle;
@@ -16,12 +21,6 @@ interface SentimentStreamProps {
   companyName: string;
   articles: NewsArticle[];
 }
-
-const SENTIMENT_COLORS: Record<SentimentLabel, string> = {
-  positive: "var(--color-chart-1)",
-  negative: "var(--color-destructive)",
-  neutral: "var(--color-muted-foreground)",
-};
 
 export function SentimentStream({ ticker, companyName, articles }: SentimentStreamProps) {
   const [results, setResults] = useState<ArticleSentiment[]>(
@@ -102,21 +101,7 @@ export function SentimentStream({ ticker, companyName, articles }: SentimentStre
       <div className="flex items-center gap-4">
         <div className="h-24 w-24 shrink-0">
           {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="value"
-                  innerRadius={28}
-                  outerRadius={44}
-                  isAnimationActive={false}
-                >
-                  {chartData.map((entry) => (
-                    <Cell key={entry.name} fill={SENTIMENT_COLORS[entry.name]} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+            <SentimentPieChart chartData={chartData} />
           ) : (
             <div className="flex h-full items-center justify-center rounded-full border border-border text-xs text-muted-foreground">
               —

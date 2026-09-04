@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
 import { SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
-import { PriceChart } from "@/components/stock/PriceChart";
 import { CompanyLogo } from "@/components/stock/CompanyLogo";
 import { LivePrice } from "@/components/stock/LivePrice";
 import { SentimentStream } from "@/components/stock/SentimentStream";
@@ -10,6 +10,11 @@ import { WatchlistToggleButton } from "@/components/watchlist/WatchlistToggleBut
 import { MovementInsight } from "@/components/stock/MovementInsight";
 import { StockTwitsCard } from "@/components/stock/StockTwitsCard";
 import { SentimentPriceOverlaySection } from "@/components/stock/SentimentPriceOverlaySection";
+
+const PriceChart = dynamic(
+  () => import("@/components/stock/PriceChart").then((m) => m.PriceChart),
+  { loading: () => <div className="h-64 w-full animate-pulse rounded-lg bg-muted" /> }
+);
 
 interface StockPageProps {
   params: Promise<{ symbol: string }>;

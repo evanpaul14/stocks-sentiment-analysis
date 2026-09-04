@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SentimentPriceOverlayChart } from "@/components/blog/SentimentPriceOverlayChart";
+import dynamic from "next/dynamic";
 import type { SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
+
+const SentimentPriceOverlayChart = dynamic(
+  () =>
+    import("@/components/blog/SentimentPriceOverlayChart").then(
+      (m) => m.SentimentPriceOverlayChart
+    ),
+  { ssr: false }
+);
 
 export function SentimentPriceOverlaySection({ symbol }: { symbol: string }) {
   const [data, setData] = useState<SentimentPricePoint[] | null>(null);

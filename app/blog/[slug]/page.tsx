@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/posts";
 import { getSeoSentimentPageData } from "@/lib/blog/seoSentimentPageData";
 import { companySlug } from "@/lib/utils/tickers";
-import { SentimentPriceOverlayChart } from "@/components/blog/SentimentPriceOverlayChart";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd } from "@/lib/seo/structuredData";
+
+const SentimentPriceOverlayChart = dynamic(() =>
+  import("@/components/blog/SentimentPriceOverlayChart").then(
+    (m) => m.SentimentPriceOverlayChart
+  )
+);
 
 interface BlogSlugPageProps {
   params: Promise<{ slug: string }>;
