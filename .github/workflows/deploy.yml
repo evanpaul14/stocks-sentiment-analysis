@@ -31,6 +31,32 @@ jobs:
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # A second, prod-only node_modules built alongside the dev one, so
+      # packaging can restore it directly instead of running `npm prune
+      # --omit=dev` on the full tree every run. Pruning has to individually
+      # stat+unlink devDependency files out of a 800MB+/50k-file tree, which
+      # cost ~100s regardless of whether the lockfile changed; this cache
+      # only misses (and pays for a second `npm ci`) on the same lockfile
+      # changes that already invalidate the cache above.
+      - name: Restore prod-only node_modules cache
+        id: prod-node-modules-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: prod-modules/node_modules
+          key: node-modules-prod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - if: steps.prod-node-modules-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p prod-modules
+          cp package.json package-lock.json prod-modules/
+          npm ci --omit=dev --prefix prod-modules
+
+      - if: steps.prod-node-modules-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: prod-modules/node_modules
+          key: ${{ steps.prod-node-modules-cache.outputs.cache-primary-key }}
+
       # Pre-migrate the disposable CI-local DB single-threaded before build.
       # next build's parallel page-data workers each import lib/db/client,
       # which self-migrates on open — racing that across workers on a fresh
@@ -41,25 +67,19 @@ jobs:
 
       - run: npm run build
 
-      # Save the cache here, with devDependencies still present — the
-      # automatic post-job save of actions/cache@v4 would otherwise capture
-      # node_modules *after* the prune step below strips devDependencies
-      # (like tsx), so a later cache hit would restore a pruned
-      # node_modules and skip npm ci, breaking npm run db:migrate.
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: node_modules
           key: ${{ steps.node-modules-cache.outputs.cache-primary-key }}
 
-      - name: Strip devDependencies from node_modules
-        run: npm prune --omit=dev
-
       - name: Package build artifact
         # .next/cache is build-only (not read by `next start`) and there's no
         # cross-run cache configured for it here, so shipping it is pure
         # waste — it was ~128MB of every artifact and every deploy's disk.
-        run: tar -I 'zstd -T0 -3' --exclude='.next/cache' -cf artifact.tar.zst .next node_modules
+        # node_modules comes from prod-modules/ (prod-only, built above) so
+        # this never has to prune the dev tree `build` just used.
+        run: tar -I 'zstd -T0 -3' --exclude='.next/cache' -cf artifact.tar.zst .next -C prod-modules node_modules
 
       - name: Deploy over SSH
         env:
