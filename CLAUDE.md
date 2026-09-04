@@ -17,8 +17,8 @@ npm run lint           # ESLint
 npm run db:migrate      # apply pending SQLite migrations (also runs automatically on first DB open)
 ```
 
-There is no test suite (`todo.md` notes this as a known gap — the original Flask app had none
-either). There's no single-test command because there are no tests to target.
+There is no test suite (the original Flask app had none either). There's no single-test command
+because there are no tests to target.
 
 ## Key architectural decisions (don't relitigate these without cause)
 
@@ -57,11 +57,6 @@ is named `stocks-nextjs` (not `stocks-sentiment`, despite `deploy/stocks-sentime
 example name) — use `systemctl restart stocks-nextjs` after editing `.env` on the server, and
 `journalctl -u stocks-nextjs -f` to tail logs. There's also a leftover failed `stocks.service`
 (the old Flask app) — ignore it.
-
-## Known gaps / intentionally deferred
-
-Tracked in `todo.md` — check it before assuming something is "done" vs. "needs a human"
-(unverified API credentials, DNS/Mailgun domain setup, design polish, etc).
 
 ## Git commit messages
 
