@@ -39,6 +39,10 @@ function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
+function startOfYear(): Date {
+  return new Date(new Date().getUTCFullYear(), 0, 1);
+}
+
 function toDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -78,6 +82,14 @@ export async function getHistoricalPrices(
     const result = await yahooFinance.chart(symbol, {
       period1: daysAgo(5),
       interval: "15m",
+    });
+    return toPricePoints(result.quotes);
+  }
+
+  if (period === "ytd") {
+    const result = await yahooFinance.chart(symbol, {
+      period1: startOfYear(),
+      interval: "1d",
     });
     return toPricePoints(result.quotes);
   }

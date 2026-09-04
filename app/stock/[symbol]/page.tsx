@@ -73,7 +73,7 @@ export default async function StockPage({ params }: StockPageProps) {
       </header>
 
       <section className="mb-8 rounded-xl border border-border bg-card p-4">
-        <PriceChart data={historicalData} />
+        <PriceChart symbol={stockInfo.symbol} data={historicalData} />
       </section>
 
       <MovementInsight
