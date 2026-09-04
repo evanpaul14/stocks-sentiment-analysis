@@ -57,7 +57,7 @@ async function summarizeWithLlm7(
   changePercent: number,
   headlines: Headline[]
 ): Promise<string | null> {
-  if (!llm7Client) return null;
+  if (!llm7Client || headlines.length === 0) return null;
 
   const direction = changePercent >= 0 ? "up" : "down";
   const bullets = headlines
@@ -72,9 +72,9 @@ async function summarizeWithLlm7(
   ).toFixed(2)}% today.
 
 Catalyst headlines:
-${bullets || "(none available)"}
+${bullets}
 
-Write a 2-3 sentence, no-speculation explanation of the move. Refer to the company by its ticker (${symbol}), not its full name. Do not reference "the headlines" or "the article" directly, and do not speculate beyond what the headlines state.`;
+Write a 2-3 sentence, no-speculation explanation of the move. Refer to the company by its ticker (${symbol}), not its full name. Do not reference "the headlines" or "the article" directly, and do not speculate beyond what the headlines state. If the headlines do not explain the move, clearly state that. Do not specifically mention the stock price or percentage change in the summary. Do not include a headline or summary section indicator, just give the summary.`;
 
   try {
     const response = await llm7Client.chat.completions.create({
