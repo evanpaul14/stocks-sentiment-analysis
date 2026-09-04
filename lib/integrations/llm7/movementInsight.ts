@@ -1,6 +1,7 @@
 import { llm7Client, llm7Model } from "./client";
 import { fetchFinnhubCompanyNews, type Headline } from "@/lib/integrations/news/finnhub";
 import { getNewsArticles } from "@/lib/integrations/news/googleNews";
+import { TtlCache } from "@/lib/cache/memory";
 
 const MOVEMENT_THRESHOLD_PERCENT = 3;
 
@@ -8,6 +9,10 @@ export interface MovementInsight {
   summary: string;
   source: "Finnhub" | "news";
 }
+
+const CACHE_TTL_MS =
+  Number(process.env.MOVEMENT_INSIGHT_CACHE_TTL_SECONDS ?? 900) * 1000;
+const insightCache = new TtlCache<MovementInsight | null>(CACHE_TTL_MS);
 
 async function getCatalystHeadlines(
   symbol: string
@@ -92,7 +97,10 @@ Write a 2-3 sentence, no-speculation explanation of the move. Refer to the compa
   }
 }
 
-/** Only triggers for stocks with a +/-3% price move. */
+/**
+ * Only triggers for stocks with a +/-3% price move. Cached per symbol so
+ * reloading the same stock page within the TTL doesn't re-hit the LLM.
+ */
 export async function buildMovementInsight(
   symbol: string,
   companyName: string,
@@ -100,10 +108,12 @@ export async function buildMovementInsight(
 ): Promise<MovementInsight | null> {
   if (Math.abs(changePercent) < MOVEMENT_THRESHOLD_PERCENT) return null;
 
-  const { headlines, source } = await getCatalystHeadlines(symbol);
+  return insightCache.getOrCompute(symbol.toUpperCase(), async () => {
+    const { headlines, source } = await getCatalystHeadlines(symbol);
 
-  const llmSummary = await summarizeWithLlm7(symbol, companyName, changePercent, headlines);
-  const summary = llmSummary ?? fallbackSummary(companyName, changePercent, headlines);
+    const llmSummary = await summarizeWithLlm7(symbol, companyName, changePercent, headlines);
+    const summary = llmSummary ?? fallbackSummary(companyName, changePercent, headlines);
 
-  return { summary, source };
+    return { summary, source };
+  });
 }
