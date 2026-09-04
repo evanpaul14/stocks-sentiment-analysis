@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import { TtlCache } from "@/lib/cache/memory";
 
 export interface NewsArticle {
   title: string;
@@ -55,21 +56,32 @@ function toArticle(item: GoogleNewsItem): NewsArticle | null {
   };
 }
 
-/** Per-ticker news, used by /api/search (sentiment excluded, kept fast). */
+const ARTICLES_CACHE_TTL_MS =
+  Number(process.env.NEWS_ARTICLES_CACHE_TTL_SECONDS ?? 600) * 1000;
+const articlesCache = new TtlCache<NewsArticle[]>(ARTICLES_CACHE_TTL_MS);
+
+/**
+ * Per-ticker news, used by /api/search (sentiment excluded, kept fast) and
+ * the stock page's sentiment stream. Cached per symbol+limit so reloading
+ * the same stock page doesn't re-fetch the feed (or re-trigger the
+ * sentiment stream's per-article classification loop) within the TTL.
+ */
 export async function getNewsArticles(
   symbol: string,
   limit = 10
 ): Promise<NewsArticle[]> {
-  try {
-    const items = await fetchGoogleNews(`${symbol} stock`);
-    return items
-      .slice(0, limit)
-      .map(toArticle)
-      .filter((a): a is NewsArticle => a !== null);
-  } catch (error) {
-    console.error(`[googleNews] getNewsArticles(${symbol}) failed`, error);
-    return [];
-  }
+  return articlesCache.getOrCompute(`${symbol.toUpperCase()}:${limit}`, async () => {
+    try {
+      const items = await fetchGoogleNews(`${symbol} stock`);
+      return items
+        .slice(0, limit)
+        .map(toArticle)
+        .filter((a): a is NewsArticle => a !== null);
+    } catch (error) {
+      console.error(`[googleNews] getNewsArticles(${symbol}) failed`, error);
+      return [];
+    }
+  });
 }
 
 const MARKET_DIGEST_QUERIES = [
