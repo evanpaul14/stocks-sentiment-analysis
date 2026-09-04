@@ -84,8 +84,9 @@ Drop it in `content/blog/`, commit, redeploy. It'll appear at `/blog/<filename-w
 
 ## Deployment
 
-See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for the full self-hosted VPS setup (systemd service,
-reverse proxy, SQLite backups).
+Runs as a systemd service on a self-hosted VPS behind Caddy, with SQLite backed up via
+`deploy/backup-db.sh`. `.github/workflows/deploy.yml` builds and deploys automatically on every
+push to `master`.
 
 ## What's left to do
 

@@ -3,8 +3,9 @@
 # Project notes for AI agents
 
 Ground-up Next.js rebuild of the old Flask `stocks-sentiment-analysis` app. No code was ported —
-only the feature set and external API shapes were carried over. See `README.md` for stack/scripts
-and `DEPLOYMENT.md` for how this actually runs (self-hosted VPS, systemd, no serverless).
+only the feature set and external API shapes were carried over. See `README.md` for stack/scripts.
+Runs as a systemd service on a self-hosted VPS behind Caddy, no serverless; `.github/workflows/deploy.yml`
+builds and deploys automatically on every push to `master`.
 
 ## Commands
 

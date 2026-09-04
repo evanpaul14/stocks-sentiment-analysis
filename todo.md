@@ -53,14 +53,6 @@ skill to:
   should be deleted once you have real brand assets)
 - Give the particle background, charts, and cards a more considered visual treatment
 
-## Deployment (not something I can do for you)
-
-`DEPLOYMENT.md` has the full runbook (systemd service, Caddy/nginx reverse proxy, SQLite
-backups via cron). None of it has been run against a real server — you'll need to:
-1. Provision/point a VPS + domain
-2. Copy the code over, fill in `.env` with production values
-3. Follow `DEPLOYMENT.md` steps 3–6
-
 ## Nice-to-haves, not blockers
 
 - **Blog has 2 starter posts** (`content/blog/*.mdx`) written by me as pipeline examples — add
