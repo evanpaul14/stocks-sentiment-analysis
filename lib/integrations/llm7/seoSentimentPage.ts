@@ -44,7 +44,7 @@ Respond with ONLY the JSON object, no markdown fences.`;
     const response = await llm7Client.chat.completions.create({
       model: llm7Model,
       temperature: 0.4,
-      max_tokens: 400,
+      max_tokens: 700,
       messages: [
         {
           role: "system",
@@ -55,8 +55,11 @@ Respond with ONLY the JSON object, no markdown fences.`;
     });
 
     const raw = response.choices[0]?.message?.content?.trim() ?? "";
-    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(cleaned);
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+    // Models occasionally prepend/append prose around the JSON object despite instructions —
+    // extract the outermost {...} block rather than assuming the whole response is clean JSON.
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : cleaned);
 
     if (
       typeof parsed.intro === "string" &&

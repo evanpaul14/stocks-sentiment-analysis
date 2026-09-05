@@ -1,3 +1,4 @@
+import { cache } from "react";
 import * as sentimentPageCache from "@/lib/db/queries/sentimentPageCache";
 import { getSentimentPriceOverlay, type SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
 import { generateSeoPageSections, type SeoPageSections } from "@/lib/integrations/llm7/seoSentimentPage";
@@ -49,8 +50,15 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
   };
 }
 
-/** Loads (or regenerates, TTL-refreshed) a programmatic SEO sentiment page's data. */
-export async function getSeoSentimentPageData(slug: string): Promise<SeoSentimentPageData | null> {
+/**
+ * Loads (or regenerates, TTL-refreshed) a programmatic SEO sentiment page's data.
+ * Wrapped in React's `cache()` so `generateMetadata` and the page component — which both
+ * call this for the same request — share one in-flight call instead of each triggering their
+ * own `generateFresh`, which was double-hitting the llm7 API per page load on a cache miss.
+ */
+export const getSeoSentimentPageData = cache(async function getSeoSentimentPageData(
+  slug: string
+): Promise<SeoSentimentPageData | null> {
   const company = findSeoCompanyBySlug(slug);
   if (!company) return null;
 
@@ -67,7 +75,7 @@ export async function getSeoSentimentPageData(slug: string): Promise<SeoSentimen
   }
 
   return generateFresh(company);
-}
+});
 
 export function getAllSeoSentimentSlugs(): string[] {
   return SEO_SENTIMENT_COMPANIES.map((c) => companySlug(c.companyName));
