@@ -1,5 +1,10 @@
 import { llm7Client, llm7Model } from "./client";
+import { getLimiter } from "@/lib/ratelimit/tokenBucket";
 import type { SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
+
+// Matches v1's Flask rate limit on the sentiment SEO page route
+// (`@limiter.limit("20 per minute")`), which gated the same llm7 call.
+const seoGenerationLimiter = getLimiter("llm7-seo-sentiment", 20, 60_000);
 
 export interface SeoPageSections {
   intro: string;
@@ -22,6 +27,10 @@ export async function generateSeoPageSections(
   overlay: SentimentPricePoint[]
 ): Promise<SeoPageSections> {
   if (!llm7Client) return fallbackSections(companyName, ticker);
+  if (!seoGenerationLimiter.consume("global")) {
+    console.warn(`[llm7] SEO sentiment generation rate-limited, using fallback for ${ticker}`);
+    return fallbackSections(companyName, ticker);
+  }
 
   const recentAvg =
     overlay.filter((p) => p.averageSentiment != null).slice(-14).reduce(
