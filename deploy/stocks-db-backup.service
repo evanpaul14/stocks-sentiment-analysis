@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup stocks-sentiment-analysis-v2 SQLite database (local + Google Drive)
+
+[Service]
+Type=oneshot
+User=flaskuser
+Group=flaskuser
+ExecStart=/opt/stocks-sentiment-analysis-v2/deploy/backup-db.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily timer for stocks-db-backup.service
+
+[Timer]
+# 1am US Eastern, DST-aware (systemd resolves the named zone at trigger time).
+OnCalendar=*-*-* 01:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target
