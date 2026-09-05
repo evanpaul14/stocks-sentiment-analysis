@@ -6,7 +6,9 @@ After=network.target
 Type=simple
 # Adjust these two paths for your server.
 WorkingDirectory=/opt/stocks-sentiment-analysis-v2
-ExecStart=/usr/bin/npm run start
+# Calls `next start` directly rather than `npm run start` — skips the extra
+# npm + shell wrapper process, which otherwise idles at ~50MB RSS for no benefit.
+ExecStart=/opt/stocks-sentiment-analysis-v2/node_modules/.bin/next start
 Restart=on-failure
 RestartSec=5
 User=stocksentiment
