@@ -78,7 +78,7 @@ export async function ensureMarketSummaryEmailSent(
   imageUrl?: string | null
 ) {
   if (!isMailgunEnabled()) return;
-  if (await sendLog.hasSentSuccessfully(summaryId)) return;
+  if (!sendLog.tryClaimSend(summaryId)) return;
 
   try {
     await dispatchMarketSummaryEmail(title, body, buildEmailHtml(title, body, imageUrl));

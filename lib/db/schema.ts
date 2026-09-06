@@ -53,7 +53,7 @@ export const marketWrapSendLog = sqliteTable(
     marketWrapId: integer("market_wrap_id")
       .notNull()
       .references(() => marketWrap.id),
-    status: text("status", { enum: ["sent", "failed"] }).notNull(),
+    status: text("status", { enum: ["sent", "failed", "pending"] }).notNull(),
     errorMessage: text("error_message"),
     sentAt: text("sent_at")
       .notNull()
