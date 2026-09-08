@@ -66,7 +66,7 @@ function buildEmailHtml(title: string, body: string, imageUrl?: string | null): 
     .map((p) => `<p>${p}</p>`)
     .join("\n");
   const imageHtml = imageUrl
-    ? `<p><img src="${imageUrl}" alt="${title}" style="width:100%;border-radius:12px;" /></p>`
+    ? `<p><img src="${imageUrl}" alt="${title}" style="max-width:320px;width:100%;border-radius:12px;display:block;" /></p>`
     : "";
   return `<html><body><h1>${title}</h1>${imageHtml}${paragraphs}<p><a href="%unsubscribe_url%">Unsubscribe</a></p></body></html>`;
 }
