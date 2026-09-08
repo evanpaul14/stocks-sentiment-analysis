@@ -39,7 +39,7 @@ async function handler(request: NextRequest) {
   try {
     const sentiment = await classifySentiment(companyName, title, description);
 
-    sentimentHistory.insert({
+    await sentimentHistory.insert({
       ticker,
       articleTitle: title,
       articleLink: link,

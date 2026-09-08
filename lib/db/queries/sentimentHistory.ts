@@ -27,8 +27,24 @@ export async function findExisting(
   });
 }
 
-export function insert(record: NewSentimentRecord) {
-  return db.insert(sentimentHistory).values(record).returning().get();
+/**
+ * Concurrent requests for the same ticker+article can both pass findExisting
+ * before either finishes inserting, so this must tolerate losing the race
+ * against the unique index instead of throwing SQLITE_CONSTRAINT_UNIQUE.
+ */
+export async function insert(record: NewSentimentRecord) {
+  const inserted = db
+    .insert(sentimentHistory)
+    .values(record)
+    .onConflictDoNothing({
+      target: [sentimentHistory.ticker, sentimentHistory.articleLink],
+    })
+    .returning()
+    .get();
+
+  if (inserted) return inserted;
+
+  return findExisting(record.ticker, record.articleLink);
 }
 
 /** Used for the 90-day sentiment-vs-price overlay chart. */
