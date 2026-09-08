@@ -18,6 +18,7 @@ const DEFAULT_MAX_ENTRIES = 200;
  */
 export class TtlCache<T> {
   private readonly store = new Map<string, CacheEntry<T>>();
+  private readonly inFlight = new Map<string, Promise<T>>();
 
   constructor(
     private readonly ttlMs: number,
@@ -43,12 +44,28 @@ export class TtlCache<T> {
     this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
 
-  /** Fetches from cache, or computes + caches on miss. */
+  /**
+   * Fetches from cache, or computes + caches on miss. Concurrent misses for the
+   * same key share one in-flight `compute()` call instead of each firing their
+   * own (a "cache stampede") — important since `compute` is typically a paid or
+   * rate-limited external API call.
+   */
   async getOrCompute(key: string, compute: () => Promise<T>): Promise<T> {
     const cached = this.get(key);
     if (cached !== undefined) return cached;
-    const value = await compute();
-    this.set(key, value);
-    return value;
+
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+
+    const promise = compute()
+      .then((value) => {
+        this.set(key, value);
+        return value;
+      })
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+    this.inFlight.set(key, promise);
+    return promise;
   }
 }

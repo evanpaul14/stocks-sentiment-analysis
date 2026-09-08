@@ -50,6 +50,24 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
   };
 }
 
+// Module-scope (process-wide) in-flight dedup, keyed by slug. React's `cache()`
+// below only dedupes calls within a single request's render (generateMetadata +
+// the page component); it can't stop two *different* requests (e.g. two
+// visitors, or a crawler + a visitor) from both missing the DB cache and both
+// firing `generateFresh` — which hits the paid llm7 API — at the same time.
+const inFlightGenerations = new Map<string, Promise<SeoSentimentPageData>>();
+
+function generateFreshDeduped(company: SeoSentimentCompany, slug: string) {
+  const pending = inFlightGenerations.get(slug);
+  if (pending) return pending;
+
+  const promise = generateFresh(company).finally(() => {
+    inFlightGenerations.delete(slug);
+  });
+  inFlightGenerations.set(slug, promise);
+  return promise;
+}
+
 /**
  * Loads (or regenerates, TTL-refreshed) a programmatic SEO sentiment page's data.
  * Wrapped in React's `cache()` so `generateMetadata` and the page component — which both
@@ -74,7 +92,7 @@ export const getSeoSentimentPageData = cache(async function getSeoSentimentPageD
     };
   }
 
-  return generateFresh(company);
+  return generateFreshDeduped(company, slug);
 });
 
 export function getAllSeoSentimentSlugs(): string[] {

@@ -39,7 +39,7 @@ async function handler(request: NextRequest) {
   try {
     const sentiment = await classifySentiment(companyName, title, description);
 
-    await sentimentHistory.insert({
+    const row = await sentimentHistory.insert({
       ticker,
       articleTitle: title,
       articleLink: link,
@@ -48,7 +48,9 @@ async function handler(request: NextRequest) {
       sentiment,
     });
 
-    return NextResponse.json({ sentiment, cached: false });
+    // A concurrent request may have inserted this (ticker, link) first; serve
+    // its result instead of erroring, since classification still succeeded.
+    return NextResponse.json({ sentiment: row?.sentiment ?? sentiment, cached: false });
   } catch (error) {
     if (error instanceof ModelOverloadedError) {
       return NextResponse.json({ error: "MODEL_OVERLOADED" }, { status: 503 });

@@ -28,22 +28,20 @@ export async function findExisting(
 }
 
 /**
- * Concurrent requests for the same ticker+article can both pass findExisting
- * before either finishes inserting, so this must tolerate losing the race
- * against the unique index instead of throwing SQLITE_CONSTRAINT_UNIQUE.
+ * Race-safe: a concurrent insert for the same (ticker, articleLink) is fine —
+ * SQLite's unique index makes the losing insert a no-op (`returning` yields
+ * nothing) and we just re-read the winner's row. Rows with a null
+ * `articleLink` never conflict (SQLite treats NULLs as distinct in a unique
+ * index), matching `findExisting`'s "only dedupe when there's a link" rule.
  */
 export async function insert(record: NewSentimentRecord) {
   const inserted = db
     .insert(sentimentHistory)
     .values(record)
-    .onConflictDoNothing({
-      target: [sentimentHistory.ticker, sentimentHistory.articleLink],
-    })
+    .onConflictDoNothing()
     .returning()
     .get();
-
   if (inserted) return inserted;
-
   return findExisting(record.ticker, record.articleLink);
 }
 

@@ -14,7 +14,7 @@ export async function runMag7SentimentJob() {
         if (existing) continue;
 
         const sentiment = await classifySentiment(ticker, article.title, article.description);
-        sentimentHistory.insert({
+        await sentimentHistory.insert({
           ticker,
           articleTitle: article.title,
           articleLink: article.link,
