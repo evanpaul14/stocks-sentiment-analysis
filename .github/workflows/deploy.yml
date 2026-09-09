@@ -65,7 +65,14 @@ jobs:
       # are packaged below.
       - run: npm run db:migrate
 
+      # NEXT_PUBLIC_* vars are inlined into the client JS bundle at build
+      # time (not read at runtime), so they must be present here in CI —
+      # setting them on the VPS's .env alone does nothing for the bundle,
+      # since the VPS only ever runs what CI already built.
       - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
