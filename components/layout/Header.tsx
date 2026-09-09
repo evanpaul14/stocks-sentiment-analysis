@@ -34,8 +34,14 @@ export function Header() {
   }
 
   useEffect(() => {
+    // Hysteresis: shrinking the header changes its height, which shifts
+    // scrollY across a single fixed threshold and toggles it right back
+    // (visible as bouncing). Separate enter/exit points give it a dead
+    // zone wider than that shift so it can't retrigger itself.
     function handleScroll() {
-      setIsScrolled(window.scrollY > 8);
+      setIsScrolled((wasScrolled) =>
+        wasScrolled ? window.scrollY > 4 : window.scrollY > 24,
+      );
     }
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -48,10 +54,10 @@ export function Header() {
         isScrolled ? "py-2" : "py-4"
       }`}
     >
-      <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 sm:max-w-none sm:grid sm:grid-cols-[1fr_minmax(0,36rem)_1fr] sm:px-6 lg:px-10">
+      <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 sm:max-w-none sm:px-6 lg:px-10">
         <Link
           href="/"
-          className="flex items-center gap-2 font-serif text-lg tracking-tight text-foreground sm:justify-self-start"
+          className="flex shrink-0 items-center gap-2 whitespace-nowrap font-serif text-lg tracking-tight text-foreground"
         >
           <Image
             src="/logo-mark.png"
@@ -64,52 +70,52 @@ export function Header() {
           Stock Sentiment
         </Link>
 
-        <div className="hidden sm:block">
+        <div className="hidden min-w-0 flex-1 lg:block">
           <SearchBar showSuggestions className="" />
         </div>
 
-        <nav className="hidden items-center gap-6 text-sm sm:flex sm:justify-self-end">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`transition-colors ${
-                pathname === link.href
-                  ? "text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
-          {loggedIn ? (
-            <Link
-              href="/account"
-              aria-label="Account"
-              className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
-            >
-              <User className="size-5" />
-            </Link>
-          ) : (
-            <>
+        <div className="flex shrink-0 items-center gap-4 lg:gap-6">
+          <nav className="hidden items-center gap-4 whitespace-nowrap text-sm sm:flex lg:gap-6">
+            {NAV_LINKS.map((link) => (
               <Link
-                href="/login"
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                key={link.href}
+                href={link.href}
+                className={`transition-colors ${
+                  pathname === link.href
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                Sign in
+                {link.label}
               </Link>
-              <Link href="/signup" className={buttonVariants({ variant: "default", size: "sm" })}>
-                Sign up
+            ))}
+            {loggedIn ? (
+              <Link
+                href="/account"
+                aria-label="Account"
+                className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
+              >
+                <User className="size-5" />
               </Link>
-            </>
-          )}
-        </nav>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Sign in
+                </Link>
+                <Link href="/signup" className={buttonVariants({ variant: "default", size: "sm" })}>
+                  Sign up
+                </Link>
+              </>
+            )}
+          </nav>
 
-        <div className="flex items-center gap-4 sm:hidden">
           <button
             type="button"
             aria-label={isSearchOpen ? "Close search" : "Open search"}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="text-muted-foreground transition-colors hover:text-foreground lg:hidden"
             onClick={() => {
               setIsSearchOpen((open) => !open);
               setIsMenuOpen(false);
@@ -120,7 +126,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="text-muted-foreground transition-colors hover:text-foreground sm:hidden"
             onClick={() => {
               setIsMenuOpen((open) => !open);
               setIsSearchOpen(false);
@@ -132,7 +138,7 @@ export function Header() {
       </div>
 
       {isSearchOpen && (
-        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4 sm:hidden">
+        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4 lg:hidden">
           <SearchBar showSuggestions />
         </div>
       )}
