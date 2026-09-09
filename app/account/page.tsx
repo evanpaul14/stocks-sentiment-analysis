@@ -2,14 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { mergeLocalDataIntoAccount } from "@/lib/auth/mergeLocalData";
 import { createClient } from "@/lib/supabase/client";
 
+interface AccountInfo {
+  email: string | null;
+  emailConfirmedAt: string | null;
+  providers: string[];
+}
+
 export default function AccountPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AccountInfo | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "unauthenticated">("loading");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -22,7 +27,11 @@ export default function AccountPage() {
         setStatus("unauthenticated");
         return;
       }
-      setUser(data.user);
+      setUser({
+        email: data.user.email ?? null,
+        emailConfirmedAt: data.user.email_confirmed_at ?? null,
+        providers: (data.user.identities ?? []).map((i) => i.provider),
+      });
       setStatus("loaded");
       // Idempotent — covers landing here fresh from the Google OAuth
       // redirect, which can't run client-side merge logic itself.
@@ -60,7 +69,7 @@ export default function AccountPage() {
     );
   }
 
-  const providers = new Set((user.identities ?? []).map((i) => i.provider));
+  const providers = new Set(user.providers);
 
   return (
     <main className="mx-auto max-w-sm px-4 py-10">
@@ -73,7 +82,7 @@ export default function AccountPage() {
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Status</dt>
-          <dd>{user.email_confirmed_at ? "Verified" : "Not verified"}</dd>
+          <dd>{user.emailConfirmedAt ? "Verified" : "Not verified"}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Sign-in methods</dt>
