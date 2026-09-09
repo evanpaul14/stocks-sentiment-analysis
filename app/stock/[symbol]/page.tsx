@@ -10,6 +10,8 @@ import { WatchlistToggleButton } from "@/components/watchlist/WatchlistToggleBut
 import { MovementInsight } from "@/components/stock/MovementInsight";
 import { StockTwitsCard } from "@/components/stock/StockTwitsCard";
 import { SentimentPriceOverlaySection } from "@/components/stock/SentimentPriceOverlaySection";
+import { JsonLd } from "@/lib/seo/JsonLd";
+import { breadcrumbListJsonLd } from "@/lib/seo/structuredData";
 
 const PriceChart = dynamic(
   () => import("@/components/stock/PriceChart").then((m) => m.PriceChart),
@@ -52,8 +54,16 @@ export default async function StockPage({ params }: StockPageProps) {
 
   const { stockInfo, historicalData, articles } = data;
 
+  const baseUrl = process.env.SITE_BASE_URL ?? "";
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
+      <JsonLd
+        data={breadcrumbListJsonLd([
+          { name: "Home", url: `${baseUrl}/` },
+          { name: stockInfo.symbol, url: `${baseUrl}/stock/${stockInfo.symbol}` },
+        ])}
+      />
       <header className="mb-6">
         <div className="flex items-center gap-3">
           <CompanyLogo symbol={stockInfo.symbol} companyName={stockInfo.companyName} />

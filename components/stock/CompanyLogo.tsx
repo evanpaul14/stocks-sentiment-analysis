@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 interface CompanyLogoProps {
   symbol: string;
@@ -30,8 +31,7 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- external, per-ticker, not size-known at build time
-    <img
+    <Image
       src={`https://logos.stocktwits-cdn.com/${encodeURIComponent(symbol.toUpperCase())}.png`}
       alt=""
       width={size}

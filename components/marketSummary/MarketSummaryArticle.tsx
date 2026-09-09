@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd } from "@/lib/seo/structuredData";
 
@@ -58,9 +59,11 @@ export function MarketSummaryArticle({
 
       {imageUrl && (
         <figure className="mt-4 w-full">
-          <img
+          <Image
             src={imageUrl}
             alt={title}
+            width={1280}
+            height={720}
             className="aspect-video w-full rounded-xl border border-border object-cover"
           />
           {imagePhotographerName && (

@@ -2,9 +2,21 @@ import type { Metadata } from "next";
 import * as marketSummary from "@/lib/db/queries/marketWrap";
 import { MarketSummaryArticle } from "@/components/marketSummary/MarketSummaryArticle";
 
+const title = "Stock Market Today — Latest Wrap";
+const description =
+  "What's happening in the stock market today — always the latest AI-generated wrap.";
+
 export const metadata: Metadata = {
-  title: "Stock Market Today — Latest Wrap",
-  description: "What's happening in the stock market today — always the latest AI-generated wrap.",
+  title,
+  description,
+  alternates: { canonical: "/market-summary/stock-market-today" },
+  openGraph: {
+    title,
+    description,
+    url: "/market-summary/stock-market-today",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 export const dynamic = "force-dynamic";

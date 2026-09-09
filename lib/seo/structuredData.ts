@@ -23,6 +23,31 @@ export function websiteJsonLd() {
   };
 }
 
+export function breadcrumbListJsonLd(items: Array<{ name: string; url: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: item.url,
+    })),
+  };
+}
+
+export function faqPageJsonLd(questions: Array<{ question: string; answer: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: questions.map((q) => ({
+      "@type": "Question",
+      name: q.question,
+      acceptedAnswer: { "@type": "Answer", text: q.answer },
+    })),
+  };
+}
+
 export function articleJsonLd(options: {
   headline: string;
   description: string;

@@ -7,7 +7,7 @@ import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/
 import { getSeoSentimentPageData } from "@/lib/blog/seoSentimentPageData";
 import { companySlug } from "@/lib/utils/tickers";
 import { JsonLd } from "@/lib/seo/JsonLd";
-import { articleJsonLd } from "@/lib/seo/structuredData";
+import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
 
 const SentimentPriceOverlayChart = dynamic(() =>
@@ -104,6 +104,13 @@ function BlogPostView({ slug }: { slug: string }) {
           author: post.frontmatter.author,
         })}
       />
+      <JsonLd
+        data={breadcrumbListJsonLd([
+          { name: "Home", url: `${process.env.SITE_BASE_URL ?? ""}/` },
+          { name: "Blog", url: `${process.env.SITE_BASE_URL ?? ""}/blog` },
+          { name: post.frontmatter.title, url: `${process.env.SITE_BASE_URL ?? ""}/blog/${slug}` },
+        ])}
+      />
       <article>
         <h1 className="text-2xl font-semibold">{post.frontmatter.title}</h1>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -150,6 +157,8 @@ function SeoSentimentPageView({
   data: NonNullable<Awaited<ReturnType<typeof getSeoSentimentPageData>>>;
 }) {
   const { company, sections, overlay, related } = data;
+  const baseUrl = process.env.SITE_BASE_URL ?? "";
+  const slug = companySlug(company.companyName);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
@@ -158,8 +167,27 @@ function SeoSentimentPageView({
           headline: `${company.companyName} (${company.ticker}) Stock Sentiment`,
           description: sections.intro,
           datePublished: data.generatedAt,
-          url: `${process.env.SITE_BASE_URL ?? ""}/blog/${companySlug(company.companyName)}`,
+          url: `${baseUrl}/blog/${slug}`,
         })}
+      />
+      <JsonLd
+        data={breadcrumbListJsonLd([
+          { name: "Home", url: `${baseUrl}/` },
+          { name: "Blog", url: `${baseUrl}/blog` },
+          { name: `${company.companyName} Stock Sentiment`, url: `${baseUrl}/blog/${slug}` },
+        ])}
+      />
+      <JsonLd
+        data={faqPageJsonLd([
+          {
+            question: `What is the current sentiment for ${company.companyName} (${company.ticker}) stock?`,
+            answer: sections.sentimentSummary,
+          },
+          {
+            question: `What is the outlook for ${company.companyName} (${company.ticker}) stock?`,
+            answer: sections.prediction,
+          },
+        ])}
       />
       <h1 className="text-2xl font-semibold">
         {company.companyName} ({company.ticker}) Stock Sentiment

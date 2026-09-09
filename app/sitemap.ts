@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogSlugs } from "@/lib/blog/posts";
 import { getAllSeoSentimentSlugs } from "@/lib/blog/seoSentimentPageData";
+import { SEO_SENTIMENT_COMPANIES } from "@/lib/utils/tickers";
 import * as marketSummary from "@/lib/db/queries/marketWrap";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
+  const stockRoutes: MetadataRoute.Sitemap = SEO_SENTIMENT_COMPANIES.map((company) => ({
+    url: `${baseUrl}/stock/${company.ticker}`,
+    changeFrequency: "hourly",
+    priority: 0.7,
+  }));
+
   let marketSummaryRoutes: MetadataRoute.Sitemap = [];
   try {
     const archive = await marketSummary.listArchive(60);
@@ -48,5 +55,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // DB not ready yet (e.g. very first build) — sitemap still returns static routes
   }
 
-  return [...staticRoutes, ...blogRoutes, ...seoSentimentRoutes, ...marketSummaryRoutes];
+  return [
+    ...staticRoutes,
+    ...blogRoutes,
+    ...seoSentimentRoutes,
+    ...stockRoutes,
+    ...marketSummaryRoutes,
+  ];
 }
