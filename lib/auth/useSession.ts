@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { subscribeToSessionChange } from "./sessionEvents";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 export interface SessionState {
   loggedIn: boolean;
@@ -9,47 +9,42 @@ export interface SessionState {
   isLoading: boolean;
 }
 
-function readLoggedInFlag(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie
-    .split("; ")
-    .some((c) => c === "ssa_logged_in=1");
-}
-
 /**
- * Fast path: the non-httpOnly `ssa_logged_in` flag cookie renders the
- * logged-in/out shell instantly with no request. Source of truth: one fetch
- * to /api/account/session reconciles it (and catches a session that expired
- * server-side without the client noticing).
+ * Thin wrapper around the Supabase browser client's session state.
+ * onAuthStateChange fires on sign-in/out/token-refresh in this tab and
+ * across tabs (via localStorage), so every mounted consumer (e.g. the
+ * header) picks up changes automatically — no custom event bus needed.
  */
 export function useSession(): SessionState {
-  const [state, setState] = useState<SessionState>(() => ({
-    loggedIn: readLoggedInFlag(),
+  const [state, setState] = useState<SessionState>({
+    loggedIn: false,
     email: null,
     isLoading: true,
-  }));
+  });
 
-  const refetch = useCallback(() => {
-    let cancelled = false;
-    fetch("/api/account/session")
-      .then((res) => (res.ok ? res.json() : { loggedIn: false, email: null }))
-      .then((data) => {
-        if (cancelled) return;
-        setState({ loggedIn: Boolean(data.loggedIn), email: data.email ?? null, isLoading: false });
-      })
-      .catch(() => {
-        if (!cancelled) setState((s) => ({ ...s, isLoading: false }));
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setState({
+        loggedIn: Boolean(session?.user),
+        email: session?.user.email ?? null,
+        isLoading: false,
       });
-    return () => {
-      cancelled = true;
-    };
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setState({
+        loggedIn: Boolean(session?.user),
+        email: session?.user.email ?? null,
+        isLoading: false,
+      });
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => refetch(), [refetch]);
-
-  // Re-fetch on login/signup/verify/logout so already-mounted consumers
-  // (e.g. the header) pick up the change without a full page reload.
-  useEffect(() => subscribeToSessionChange(refetch), [refetch]);
 
   return state;
 }

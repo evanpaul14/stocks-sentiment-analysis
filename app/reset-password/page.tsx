@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PasswordRequirementsList } from "@/components/auth/PasswordRequirementsList";
 import { isPasswordValid } from "@/lib/auth/passwordPolicy";
-import { useSession } from "@/lib/auth/useSession";
+import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
   return (
@@ -23,18 +23,16 @@ export default function ResetPasswordPage() {
 }
 
 function ResetPasswordForm() {
-  const router = useRouter();
-  const { loggedIn } = useSession();
-  const token = useSearchParams().get("token");
-
-  useEffect(() => {
-    if (loggedIn) router.replace("/account");
-  }, [loggedIn, router]);
+  // Our own /auth/callback appends this after exchanging the recovery
+  // link's code for a session, so we know to show the "set new password"
+  // form rather than Supabase's own event classification (which doesn't
+  // reliably survive our server-side PKCE exchange + redirect).
+  const isRecovery = useSearchParams().get("flow") === "recovery";
 
   return (
     <main className="mx-auto max-w-sm px-4 py-10">
       <h1 className="mb-6 text-2xl font-semibold">Reset password</h1>
-      {token ? <NewPasswordForm token={token} /> : <RequestResetForm />}
+      {isRecovery ? <NewPasswordForm /> : <RequestResetForm />}
     </main>
   );
 }
@@ -46,15 +44,12 @@ function RequestResetForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("loading");
-    try {
-      await fetch("/api/auth/request-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-    } finally {
-      setStatus("done");
-    }
+    const supabase = createClient();
+    const next = encodeURIComponent("/reset-password?flow=recovery");
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=${next}`,
+    });
+    setStatus("done");
   }
 
   if (status === "done") {
@@ -88,32 +83,26 @@ function RequestResetForm() {
   );
 }
 
-function NewPasswordForm({ token }: { token: string }) {
+function NewPasswordForm() {
+  const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("loading");
-    try {
-      const response = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword }),
-      });
-      setStatus(response.ok ? "done" : "error");
-    } catch {
-      setStatus("error");
-    }
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setStatus(error ? "error" : "done");
   }
 
   if (status === "done") {
     return (
       <p className="text-sm text-muted-foreground">
         Password updated.{" "}
-        <Link href="/login" className="underline">
-          Sign in
-        </Link>
+        <button type="button" onClick={() => router.push("/account")} className="underline">
+          Go to your account
+        </button>
         .
       </p>
     );

@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../client";
 import { searchHistoryItem } from "../schema";
 
-export async function listForUser(userId: number, limit = 8) {
+export async function listForUser(userId: string, limit = 8) {
   return db.query.searchHistoryItem.findMany({
     where: eq(searchHistoryItem.userId, userId),
     orderBy: desc(searchHistoryItem.searchedAt),
@@ -11,7 +11,7 @@ export async function listForUser(userId: number, limit = 8) {
 }
 
 /** Delete-then-insert so a re-searched term moves back to the front, matching the old localStorage behavior. */
-export async function record(userId: number, query: string, limit = 8) {
+export async function record(userId: string, query: string, limit = 8) {
   db.delete(searchHistoryItem)
     .where(
       and(
@@ -37,7 +37,7 @@ export async function record(userId: number, query: string, limit = 8) {
 }
 
 /** Idempotent-enough bulk insert used for the one-time localStorage->account merge on login. */
-export async function mergeFromLocal(userId: number, queries: string[]) {
+export async function mergeFromLocal(userId: string, queries: string[]) {
   for (const query of queries) {
     await record(userId, query);
   }

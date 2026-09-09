@@ -2,41 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { mergeLocalDataIntoAccount } from "@/lib/auth/mergeLocalData";
-import { notifySessionChanged } from "@/lib/auth/sessionEvents";
-
-interface AccountInfo {
-  email: string;
-  emailVerified: boolean;
-  hasPassword: boolean;
-  hasGoogle: boolean;
-}
+import { createClient } from "@/lib/supabase/client";
 
 export default function AccountPage() {
   const router = useRouter();
-  const [account, setAccount] = useState<AccountInfo | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "unauthenticated">("loading");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/account")
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setStatus("unauthenticated");
-          return;
-        }
-        setAccount(await res.json());
-        setStatus("loaded");
-        // Idempotent — covers landing here fresh from the Google OAuth
-        // redirect, which can't run client-side merge logic itself.
-        mergeLocalDataIntoAccount();
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("unauthenticated");
-      });
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      if (!data.user) {
+        setStatus("unauthenticated");
+        return;
+      }
+      setUser(data.user);
+      setStatus("loaded");
+      // Idempotent — covers landing here fresh from the Google OAuth
+      // redirect, which can't run client-side merge logic itself.
+      mergeLocalDataIntoAccount();
+    });
     return () => {
       cancelled = true;
     };
@@ -47,26 +38,29 @@ export default function AccountPage() {
   }, [status, router]);
 
   async function handleSignOut() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    notifySessionChanged();
+    const supabase = createClient();
+    await supabase.auth.signOut();
     router.push("/");
     router.refresh();
   }
 
   async function handleDelete() {
     await fetch("/api/account", { method: "DELETE" });
-    notifySessionChanged();
+    const supabase = createClient();
+    await supabase.auth.signOut();
     router.push("/");
     router.refresh();
   }
 
-  if (status !== "loaded" || !account) {
+  if (status !== "loaded" || !user) {
     return (
       <main className="mx-auto max-w-sm px-4 py-10">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </main>
     );
   }
+
+  const providers = new Set((user.identities ?? []).map((i) => i.provider));
 
   return (
     <main className="mx-auto max-w-sm px-4 py-10">
@@ -75,16 +69,16 @@ export default function AccountPage() {
       <dl className="mb-8 space-y-3 text-sm">
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Email</dt>
-          <dd className="truncate font-medium">{account.email}</dd>
+          <dd className="truncate font-medium">{user.email}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Status</dt>
-          <dd>{account.emailVerified ? "Verified" : "Not verified"}</dd>
+          <dd>{user.email_confirmed_at ? "Verified" : "Not verified"}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted-foreground">Sign-in methods</dt>
           <dd>
-            {[account.hasPassword && "Password", account.hasGoogle && "Google"]
+            {[providers.has("email") && "Password", providers.has("google") && "Google"]
               .filter(Boolean)
               .join(", ")}
           </dd>

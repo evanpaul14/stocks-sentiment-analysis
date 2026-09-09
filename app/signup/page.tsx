@@ -8,13 +8,14 @@ import { GoogleIcon } from "@/components/icons/GoogleIcon";
 import { PasswordRequirementsList } from "@/components/auth/PasswordRequirementsList";
 import { isPasswordValid } from "@/lib/auth/passwordPolicy";
 import { useSession } from "@/lib/auth/useSession";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
   const router = useRouter();
   const { loggedIn } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error" | "taken">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
 
   useEffect(() => {
     if (loggedIn) router.replace("/account");
@@ -23,20 +24,24 @@ export default function SignupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("loading");
-    try {
-      const response = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (response.ok) {
-        setStatus("done");
-        return;
-      }
-      setStatus(response.status === 409 ? "taken" : "error");
-    } catch {
-      setStatus("error");
-    }
+    const supabase = createClient();
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
+    // Supabase intentionally doesn't distinguish "already registered" from
+    // success here (anti-enumeration) when email confirmations are on, so
+    // this always shows the same "check your email" state on success.
+    setStatus(error ? "error" : "done");
+  }
+
+  async function handleGoogle() {
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
   }
 
   if (status === "done") {
@@ -44,8 +49,8 @@ export default function SignupPage() {
       <main className="mx-auto max-w-sm px-4 py-10">
         <h1 className="mb-2 text-2xl font-semibold">Check your email</h1>
         <p className="text-sm text-muted-foreground">
-          We sent a verification link to <strong>{email}</strong>. Click it to finish
-          setting up your account.
+          If <strong>{email}</strong> isn&apos;t already registered, we sent a confirmation
+          link. Click it to finish setting up your account.
         </p>
       </main>
     );
@@ -55,13 +60,14 @@ export default function SignupPage() {
     <main className="mx-auto max-w-sm px-4 py-10">
       <h1 className="mb-6 text-2xl font-semibold">Sign up</h1>
 
-      <a
-        href="/api/auth/google/start"
+      <button
+        type="button"
+        onClick={handleGoogle}
         className="mb-4 flex w-full items-center justify-center gap-3 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors duration-150 hover:bg-muted/50"
       >
         <GoogleIcon className="size-4.5" />
         Continue with Google
-      </a>
+      </button>
 
       <div className="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
         <span className="h-px flex-1 bg-border" />
@@ -101,15 +107,6 @@ export default function SignupPage() {
 
         {status === "error" && (
           <p className="text-xs text-destructive">Something went wrong — try again.</p>
-        )}
-        {status === "taken" && (
-          <p className="text-xs text-destructive">
-            An account with that email already exists.{" "}
-            <Link href="/login" className="underline">
-              Sign in
-            </Link>{" "}
-            instead.
-          </p>
         )}
       </form>
 

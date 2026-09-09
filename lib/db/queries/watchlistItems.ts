@@ -2,14 +2,14 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../client";
 import { watchlistItem } from "../schema";
 
-export function listForUser(userId: number) {
+export function listForUser(userId: string) {
   return db.query.watchlistItem.findMany({
     where: eq(watchlistItem.userId, userId),
     orderBy: desc(watchlistItem.addedAt),
   });
 }
 
-export function add(userId: number, symbol: string, companyName: string) {
+export function add(userId: string, symbol: string, companyName: string) {
   return db
     .insert(watchlistItem)
     .values({ userId, symbol, companyName })
@@ -19,7 +19,7 @@ export function add(userId: number, symbol: string, companyName: string) {
     .run();
 }
 
-export function remove(userId: number, symbol: string) {
+export function remove(userId: string, symbol: string) {
   return db
     .delete(watchlistItem)
     .where(
@@ -35,7 +35,7 @@ export interface LocalWatchlistEntry {
 
 /** Idempotent bulk upsert used for the one-time localStorage->account merge on login. */
 export function mergeFromLocal(
-  userId: number,
+  userId: string,
   entries: LocalWatchlistEntry[]
 ) {
   for (const entry of entries) {

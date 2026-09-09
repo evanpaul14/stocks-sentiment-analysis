@@ -1,10 +1,11 @@
 import type { NextRequest } from "next/server";
-import { resolveSession } from "./session";
+import { createReadOnlyClient } from "@/lib/supabase/server";
 
-/** Thin composition of resolveSession, used to gate routes the way isAuthorizedAdminRequest gates admin ones. */
-export async function getCurrentUserId(
-  request: NextRequest
-): Promise<number | null> {
-  const session = await resolveSession(request);
-  return session?.userId ?? null;
+/** Resolves the Supabase user id for the current request's session, if any. */
+export async function getCurrentUserId(request: NextRequest): Promise<string | null> {
+  const supabase = createReadOnlyClient(request);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
 }
