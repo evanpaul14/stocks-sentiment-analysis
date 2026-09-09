@@ -18,12 +18,12 @@ export default function Home() {
       <ParticleFlowField />
 
       <div className="relative z-10 text-center">
-        <p className="text-xs font-medium tracking-[0.2em] text-primary uppercase">
-          Signal, not noise
-        </p>
-        <h1 className="mt-3 font-serif text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+        <h1 className="font-serif text-4xl font-medium tracking-tight text-balance sm:text-5xl">
           Read the market&rsquo;s mood
         </h1>
+        <p className="mt-2 font-serif text-lg text-primary italic">
+          Signal, not noise.
+        </p>
         <p className="mx-auto mt-3 max-w-md text-muted-foreground">
           Real-time prices and AI-powered news sentiment for any stock.
         </p>

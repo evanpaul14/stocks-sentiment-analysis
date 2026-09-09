@@ -8,6 +8,7 @@ import { getSeoSentimentPageData } from "@/lib/blog/seoSentimentPageData";
 import { companySlug } from "@/lib/utils/tickers";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd } from "@/lib/seo/structuredData";
+import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
 
 const SentimentPriceOverlayChart = dynamic(() =>
   import("@/components/blog/SentimentPriceOverlayChart").then(
@@ -120,6 +121,11 @@ function BlogPostView({ slug }: { slug: string }) {
         </div>
       </article>
 
+      <section className="mt-10 rounded-xl border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
+        <EmailSubscribeForm />
+      </section>
+
       {related.length > 0 && (
         <section className="mt-12 border-t border-border pt-6">
           <h2 className="mb-3 text-sm font-medium text-muted-foreground">More posts</h2>
@@ -182,6 +188,11 @@ function SeoSentimentPageView({
           View live {company.ticker} price and news →
         </Link>
       </p>
+
+      <section className="mt-8 rounded-xl border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
+        <EmailSubscribeForm />
+      </section>
 
       {related.length > 0 && (
         <section className="mt-10 border-t border-border pt-6">

@@ -15,16 +15,24 @@ interface InsightResult {
 
 const THRESHOLD_PERCENT = 3;
 
+type FetchState =
+  | { status: "loading" }
+  | { status: "success"; insight: InsightResult }
+  | { status: "error" };
+
 export function MovementInsight({ symbol, companyName, changePercent }: MovementInsightProps) {
-  const [insight, setInsight] = useState<InsightResult | null>(null);
-  // Starts true: whenever this effect actually runs (qualifying move), it's
-  // fetching immediately, so there's no "not loading yet" state to model.
-  const [loading, setLoading] = useState(true);
+  // A single discriminated status keeps loading/success/error mutually
+  // exclusive, so a success can never leave a stale error flag set.
+  const [state, setState] = useState<FetchState>({ status: "loading" });
+  const [retryCount, setRetryCount] = useState(0);
+
+  const qualifies = changePercent != null && Math.abs(changePercent) >= THRESHOLD_PERCENT;
 
   useEffect(() => {
-    if (changePercent == null || Math.abs(changePercent) < THRESHOLD_PERCENT) return;
+    if (!qualifies) return;
 
     let cancelled = false;
+    setState({ status: "loading" });
 
     fetch("/api/movement-insight", {
       method: "POST",
@@ -33,30 +41,41 @@ export function MovementInsight({ symbol, companyName, changePercent }: Movement
     })
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled) setInsight(data.movement_insight ?? null);
+        if (cancelled) return;
+        const result = data.movement_insight ?? null;
+        setState(result ? { status: "success", insight: result } : { status: "error" });
       })
       .catch(() => {
-        // silent: this is a nice-to-have, page still works without it
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setState({ status: "error" });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [symbol, companyName, changePercent]);
+  }, [symbol, companyName, changePercent, retryCount]);
 
-  if (changePercent == null || Math.abs(changePercent) < THRESHOLD_PERCENT) return null;
-  if (!loading && !insight) return null;
+  if (!qualifies) return null;
 
   return (
-    <section className="mb-8 rounded-xl border border-border bg-card p-4">
-      <h2 className="mb-2 text-sm font-medium text-muted-foreground">Why is it moving?</h2>
-      {loading && !insight ? (
+    <section className="mb-8 rounded-xl border border-primary/30 bg-primary/5 p-4 shadow-sm">
+      <h2 className="mb-2 text-sm font-medium text-primary">Why is it moving?</h2>
+      {state.status === "loading" ? (
         <p className="text-sm text-muted-foreground">Analyzing recent headlines…</p>
+      ) : state.status === "error" ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            We couldn&apos;t generate an explanation for this move right now.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((n) => n + 1)}
+            className="shrink-0 rounded-md border border-primary/40 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            Retry
+          </button>
+        </div>
       ) : (
-        <p className="text-sm leading-relaxed">{insight?.summary}</p>
+        <p className="text-base leading-relaxed">{state.insight.summary}</p>
       )}
     </section>
   );
