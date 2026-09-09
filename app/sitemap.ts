@@ -37,7 +37,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  const stockRoutes: MetadataRoute.Sitemap = SEO_SENTIMENT_COMPANIES.map((company) => ({
+  const stockRoutes: MetadataRoute.Sitemap = SEO_SENTIMENT_COMPANIES.filter(
+    (company) => !company.groups.includes("index")
+  ).map((company) => ({
     url: `${baseUrl}/stock/${company.ticker}`,
     changeFrequency: "hourly",
     priority: 0.7,

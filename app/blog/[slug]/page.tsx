@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/posts";
 import { getSeoSentimentPageData } from "@/lib/blog/seoSentimentPageData";
-import { companySlug } from "@/lib/utils/tickers";
+import { companySlug, displayTicker } from "@/lib/utils/tickers";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
@@ -53,7 +53,7 @@ export async function generateMetadata({ params }: BlogSlugPageProps): Promise<M
 
   const seoPage = await getSeoSentimentPageData(slug);
   if (seoPage) {
-    const title = `${seoPage.company.companyName} (${seoPage.company.ticker}) Stock Sentiment`;
+    const title = `What is the sentiment of ${seoPage.company.companyName} (${displayTicker(seoPage.company)}) Stock?`;
     return {
       title,
       description: seoPage.sections.intro,
@@ -164,7 +164,7 @@ function SeoSentimentPageView({
     <main className="mx-auto max-w-2xl px-4 py-10">
       <JsonLd
         data={articleJsonLd({
-          headline: `${company.companyName} (${company.ticker}) Stock Sentiment`,
+          headline: `What is the sentiment of ${company.companyName} (${displayTicker(company)}) Stock?`,
           description: sections.intro,
           datePublished: data.generatedAt,
           url: `${baseUrl}/blog/${slug}`,
@@ -180,17 +180,17 @@ function SeoSentimentPageView({
       <JsonLd
         data={faqPageJsonLd([
           {
-            question: `What is the current sentiment for ${company.companyName} (${company.ticker}) stock?`,
+            question: `What is the current sentiment for ${company.companyName} (${displayTicker(company)}) stock?`,
             answer: sections.sentimentSummary,
           },
           {
-            question: `What is the outlook for ${company.companyName} (${company.ticker}) stock?`,
+            question: `What is the outlook for ${company.companyName} (${displayTicker(company)}) stock?`,
             answer: sections.prediction,
           },
         ])}
       />
       <h1 className="text-2xl font-semibold">
-        {company.companyName} ({company.ticker}) Stock Sentiment
+        What is the sentiment of {company.companyName} ({displayTicker(company)}) Stock?
       </h1>
 
       <div className="prose prose-invert mt-4 max-w-none text-sm leading-relaxed">
@@ -213,7 +213,7 @@ function SeoSentimentPageView({
 
       <p className="mt-4">
         <Link href={`/stock/${company.ticker}`} className="text-sm hover:underline">
-          View live {company.ticker} price and news →
+          View live {displayTicker(company)} price and news →
         </Link>
       </p>
 

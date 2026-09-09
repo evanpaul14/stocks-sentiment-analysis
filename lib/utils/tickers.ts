@@ -5,6 +5,8 @@ export interface SeoSentimentCompany {
   ticker: string;
   companyName: string;
   groups: string[];
+  /** Ticker to show in UI when it differs from the Yahoo Finance lookup symbol (e.g. index tickers). */
+  displayTicker?: string;
 }
 
 /** Static config for programmatic SEO sentiment pages (/blog/sentiment-of-<company>-stock). */
@@ -17,7 +19,15 @@ export const SEO_SENTIMENT_COMPANIES: SeoSentimentCompany[] = [
   { ticker: "NVDA", companyName: "NVIDIA", groups: ["mag7"] },
   { ticker: "TSLA", companyName: "Tesla", groups: ["mag7"] },
   { ticker: "NFLX", companyName: "Netflix", groups: ["faang"] },
+  { ticker: "^DJI", companyName: "Dow Jones Industrial Average", groups: ["index"] },
+  { ticker: "^IXIC", companyName: "Nasdaq Composite", groups: ["index"] },
+  { ticker: "^GSPC", companyName: "S&P 500", groups: ["index"], displayTicker: "SPX" },
 ];
+
+/** UI-facing ticker: uses `displayTicker` when set, otherwise strips a leading "^" (index symbols). */
+export function displayTicker(company: SeoSentimentCompany): string {
+  return company.displayTicker ?? company.ticker.replace(/^\^/, "");
+}
 
 function slugify(companyName: string): string {
   return companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

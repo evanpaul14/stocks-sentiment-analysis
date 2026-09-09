@@ -38,6 +38,9 @@ export function SentimentPriceOverlayChart({ data }: SentimentPriceOverlayChartP
               color: "var(--color-popover-foreground)",
               fontSize: 12,
             }}
+            formatter={(value: number, name: string) =>
+              name === "price" ? [`$${value.toFixed(2)}`, "Price"] : [value, name]
+            }
           />
           <Line
             yAxisId="sentiment"

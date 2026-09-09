@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { SEO_SENTIMENT_COMPANIES, companySlug } from "@/lib/utils/tickers";
+import { SEO_SENTIMENT_COMPANIES, companySlug, displayTicker } from "@/lib/utils/tickers";
 
 interface PriceInfo {
   price: number | null;
@@ -92,7 +92,7 @@ export function PopularSentimentTickers() {
               href={`/blog/${companySlug(company.companyName)}`}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <span className="font-medium text-foreground">{company.ticker}</span>{" "}
+              <span className="font-medium text-foreground">{displayTicker(company)}</span>{" "}
               {info?.price != null ? (
                 <>
                   <span className="tabular-nums">${info.price.toFixed(2)}</span>{" "}

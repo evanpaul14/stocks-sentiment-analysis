@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllBlogPosts } from "@/lib/blog/posts";
-import { SEO_SENTIMENT_COMPANIES, companySlug } from "@/lib/utils/tickers";
+import { SEO_SENTIMENT_COMPANIES, companySlug, displayTicker } from "@/lib/utils/tickers";
 
 export const metadata: Metadata = {
   title: "Blog — Stock Sentiment",
@@ -25,7 +25,7 @@ export default function BlogIndexPage() {
                 href={`/blog/${companySlug(company.companyName)}`}
                 className="block rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
               >
-                {company.companyName} ({company.ticker})
+                {company.companyName} ({displayTicker(company)})
               </Link>
             </li>
           ))}
