@@ -64,6 +64,15 @@ export function removeFromWatchlist(symbol: string) {
   writeWatchlist(readWatchlist().filter((e) => e.symbol !== symbol));
 }
 
+export function clearLocalWatchlist() {
+  try {
+    localStorage.removeItem(WATCHLIST_KEY);
+    window.dispatchEvent(new Event("ssa-watchlist-changed"));
+  } catch {
+    // localStorage unavailable — degrade silently
+  }
+}
+
 export function updateWatchlistPrices(
   prices: Map<string, { price: number | null; changePercent: number | null }>
 ) {

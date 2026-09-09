@@ -47,15 +47,51 @@ export async function addMemberToMailgunList(email: string): Promise<void> {
   }
 }
 
+/**
+ * Removes an address from this domain's unsubscribe suppression list.
+ * Mailgun enforces that suppression at the SMTP layer regardless of any
+ * per-message override header, so account emails (verification, password
+ * reset) that must reach someone even after they unsubscribed from the
+ * market-wrap newsletter need this instead. This only lifts Mailgun's
+ * domain-wide delivery block — it does not touch mailing-list membership
+ * (addMemberToMailgunList), so it can't accidentally re-subscribe anyone
+ * to the newsletter.
+ */
+async function clearUnsubscribeSuppression(email: string): Promise<void> {
+  await fetch(
+    `${API_BASE}/${process.env.MAILGUN_DOMAIN}/unsubscribes/${encodeURIComponent(email)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: authHeader() },
+      signal: AbortSignal.timeout(10_000),
+    }
+  ).catch(() => {
+    // Best-effort — if this fails (e.g. address wasn't suppressed, a 404),
+    // the send below still gets attempted normally.
+  });
+}
+
 interface SendEmailOptions {
   to: string;
   subject: string;
   text: string;
   html: string;
+  /** See clearUnsubscribeSuppression — only for account emails. */
+  bypassUnsubscribeSuppression?: boolean;
 }
 
-async function sendEmail({ to, subject, text, html }: SendEmailOptions): Promise<void> {
+async function sendEmail({
+  to,
+  subject,
+  text,
+  html,
+  bypassUnsubscribeSuppression,
+}: SendEmailOptions): Promise<void> {
   if (!isEnabled()) throw new MailgunNotConfiguredError();
+
+  if (bypassUnsubscribeSuppression) {
+    await clearUnsubscribeSuppression(to);
+  }
 
   const fromAddress =
     process.env.MAILGUN_FROM_EMAIL ??
@@ -105,6 +141,37 @@ export async function sendMarketSummaryToRecipient(
   html: string
 ): Promise<void> {
   await sendEmail({ to: recipient, subject, text, html });
+}
+
+/**
+ * Transactional account emails — sent to a single recipient via the plain
+ * /messages endpoint, never via addMemberToMailgunList, so verifying an
+ * address or resetting a password never enrolls anyone in the newsletter.
+ */
+export async function sendVerificationEmail(
+  to: string,
+  verifyUrl: string
+): Promise<void> {
+  await sendEmail({
+    to,
+    subject: "Verify your email",
+    text: `Confirm your email address to finish setting up your account: ${verifyUrl}\n\nIf you didn't request this, you can ignore this email.`,
+    html: `<p>Confirm your email address to finish setting up your account:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+    bypassUnsubscribeSuppression: true,
+  });
+}
+
+export async function sendPasswordResetEmail(
+  to: string,
+  resetUrl: string
+): Promise<void> {
+  await sendEmail({
+    to,
+    subject: "Reset your password",
+    text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
+    html: `<p>Reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>`,
+    bypassUnsubscribeSuppression: true,
+  });
 }
 
 export { isEnabled as isMailgunEnabled };

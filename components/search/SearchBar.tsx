@@ -1,66 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useSearchHistory } from "@/lib/searchHistory/useSearchHistory";
 
-const HISTORY_KEY = "ssa_recent_searches_v1";
-const HISTORY_CHANGED_EVENT = "ssa-search-history-changed";
-const MAX_HISTORY = 8;
-
-let cachedRaw: string | null | undefined;
-let cachedHistory: string[] = [];
-
-function readHistory(): string[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (raw === cachedRaw) return cachedHistory;
-
-    cachedRaw = raw;
-    if (!raw) {
-      cachedHistory = [];
-    } else {
-      const parsed = JSON.parse(raw);
-      cachedHistory = Array.isArray(parsed)
-        ? parsed.filter((x) => typeof x === "string")
-        : [];
-    }
-    return cachedHistory;
-  } catch {
-    return [];
-  }
+interface SearchBarProps {
+  showSuggestions?: boolean;
+  className?: string;
 }
 
-function writeHistory(entries: string[]) {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY)));
-    window.dispatchEvent(new Event(HISTORY_CHANGED_EVENT));
-  } catch {
-    // localStorage unavailable (private browsing, etc.) — degrade silently
-  }
-}
-
-function subscribeToHistory(callback: () => void): () => void {
-  window.addEventListener(HISTORY_CHANGED_EVENT, callback);
-  window.addEventListener("storage", callback);
-  return () => {
-    window.removeEventListener(HISTORY_CHANGED_EVENT, callback);
-    window.removeEventListener("storage", callback);
-  };
-}
-
-function getServerHistorySnapshot(): string[] {
-  return [];
-}
-
-export function SearchBar({ showSuggestions = false }: { showSuggestions?: boolean }) {
+export function SearchBar({ showSuggestions = false, className = "max-w-md" }: SearchBarProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const history = useSyncExternalStore(
-    subscribeToHistory,
-    readHistory,
-    getServerHistorySnapshot
-  );
+  const { history, record } = useSearchHistory();
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,8 +38,7 @@ export function SearchBar({ showSuggestions = false }: { showSuggestions?: boole
     if (!trimmed) return;
 
     if (showSuggestions) {
-      const next = [trimmed, ...history.filter((h) => h.toLowerCase() !== trimmed.toLowerCase())];
-      writeHistory(next);
+      record(trimmed);
     }
     setIsOpen(false);
     setHighlightedIndex(-1);
@@ -115,7 +67,7 @@ export function SearchBar({ showSuggestions = false }: { showSuggestions?: boole
   }
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-md">
+    <div ref={containerRef} className={`relative w-full ${className}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();

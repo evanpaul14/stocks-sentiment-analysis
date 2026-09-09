@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Search, X } from "lucide-react";
+import { Menu, Search, User, X } from "lucide-react";
 import { SearchBar } from "@/components/search/SearchBar";
+import { buttonVariants } from "@/components/ui/button";
+import { useSession } from "@/lib/auth/useSession";
 
 const NAV_LINKS = [
   { href: "/watchlist", label: "Watchlist" },
@@ -19,6 +21,7 @@ export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const pathname = usePathname();
+  const { loggedIn } = useSession();
 
   // Adjust state during render rather than resetting it in an effect —
   // avoids an extra render pass on navigation (see React docs: "Adjusting
@@ -45,8 +48,11 @@ export function Header() {
         isScrolled ? "py-2" : "py-4"
       }`}
     >
-      <div className="mx-auto flex max-w-4xl items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2 font-serif text-lg tracking-tight text-foreground">
+      <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 sm:max-w-none sm:grid sm:grid-cols-[1fr_minmax(0,36rem)_1fr] sm:px-6 lg:px-10">
+        <Link
+          href="/"
+          className="flex items-center gap-2 font-serif text-lg tracking-tight text-foreground sm:justify-self-start"
+        >
           <Image
             src="/logo-mark.png"
             alt=""
@@ -58,7 +64,11 @@ export function Header() {
           Stock Sentiment
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm sm:flex">
+        <div className="hidden sm:block">
+          <SearchBar showSuggestions className="" />
+        </div>
+
+        <nav className="hidden items-center gap-6 text-sm sm:flex sm:justify-self-end">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
@@ -72,17 +82,27 @@ export function Header() {
               {link.label}
             </Link>
           ))}
-          <button
-            type="button"
-            aria-label={isSearchOpen ? "Close search" : "Open search"}
-            className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
-            onClick={() => {
-              setIsSearchOpen((open) => !open);
-              setIsMenuOpen(false);
-            }}
-          >
-            {isSearchOpen ? <X className="size-5" /> : <Search className="size-5" />}
-          </button>
+          {loggedIn ? (
+            <Link
+              href="/account"
+              aria-label="Account"
+              className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
+            >
+              <User className="size-5" />
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Sign in
+              </Link>
+              <Link href="/signup" className={buttonVariants({ variant: "default", size: "sm" })}>
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="flex items-center gap-4 sm:hidden">
@@ -112,7 +132,7 @@ export function Header() {
       </div>
 
       {isSearchOpen && (
-        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4">
+        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4 sm:hidden">
           <SearchBar showSuggestions />
         </div>
       )}
@@ -128,6 +148,29 @@ export function Header() {
               {link.label}
             </Link>
           ))}
+          {loggedIn ? (
+            <Link
+              href="/account"
+              className="rounded-lg px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Account
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
+                className={buttonVariants({ variant: "default", size: "sm", className: "mt-1 w-fit" })}
+              >
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
       )}
     </header>

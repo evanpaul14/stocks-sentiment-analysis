@@ -10,7 +10,7 @@ import { updateWatchlistPrices } from "@/lib/watchlist/storage";
 const REFRESH_INTERVAL_MS = 30_000;
 
 export default function WatchlistPage() {
-  const { entries, remove } = useWatchlist();
+  const { entries, remove, updatePrices, loggedIn } = useWatchlist();
   const symbolsRef = useRef<string[]>([]);
 
   useEffect(() => {
@@ -33,9 +33,12 @@ export default function WatchlistPage() {
           price: number | null;
           changePercent: number | null;
         }> = await response.json();
-        updateWatchlistPrices(
-          new Map(snapshots.map((s) => [s.symbol, s]))
-        );
+        const priceMap = new Map(snapshots.map((s) => [s.symbol, s]));
+        if (loggedIn) {
+          updatePrices(priceMap);
+        } else {
+          updateWatchlistPrices(priceMap);
+        }
       } catch {
         // silent: keep showing last known prices
       }
@@ -44,7 +47,7 @@ export default function WatchlistPage() {
     refreshPrices();
     const interval = setInterval(refreshPrices, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [loggedIn, updatePrices]);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">

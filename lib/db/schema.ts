@@ -120,3 +120,119 @@ export const jobRunLog = sqliteTable(
     uniqueIndex("job_run_log_job_date_idx").on(table.jobName, table.runDate),
   ]
 );
+
+/**
+ * Account identity. `email` is the only PII column by design — do not add
+ * name/avatar/IP columns here without revisiting that decision.
+ */
+export const user = sqliteTable(
+  "user",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    // Null for accounts that only ever signed in with Google.
+    passwordHash: text("password_hash"),
+    passwordSalt: text("password_salt"),
+    emailVerifiedAt: text("email_verified_at"),
+    // Google's opaque "sub" claim only — not the whole profile.
+    googleSub: text("google_sub"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    uniqueIndex("user_email_idx").on(table.email),
+    uniqueIndex("user_google_sub_idx").on(table.googleSub),
+  ]
+);
+
+/** Revocable, DB-backed login sessions. Only a hash of the cookie token is stored. */
+export const session = sqliteTable(
+  "session",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    lastSeenAt: text("last_seen_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("session_token_hash_idx").on(table.tokenHash),
+    index("session_user_idx").on(table.userId),
+  ]
+);
+
+/** Shared table for email-verification and password-reset one-time links. */
+export const authToken = sqliteTable(
+  "auth_token",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    purpose: text("purpose", {
+      enum: ["email_verify", "password_reset"],
+    }).notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    uniqueIndex("auth_token_hash_idx").on(table.tokenHash),
+    index("auth_token_user_purpose_idx").on(table.userId, table.purpose),
+  ]
+);
+
+/** Server-side watchlist for signed-in accounts, synced from/to localStorage on login. */
+export const watchlistItem = sqliteTable(
+  "watchlist_item",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    symbol: text("symbol").notNull(),
+    companyName: text("company_name").notNull(),
+    addedAt: text("added_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    uniqueIndex("watchlist_item_user_symbol_idx").on(
+      table.userId,
+      table.symbol
+    ),
+  ]
+);
+
+/** Server-side search history for signed-in accounts, synced from/to localStorage on login. */
+export const searchHistoryItem = sqliteTable(
+  "search_history_item",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    query: text("query").notNull(),
+    searchedAt: text("searched_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    index("search_history_item_user_date_idx").on(
+      table.userId,
+      table.searchedAt
+    ),
+  ]
+);

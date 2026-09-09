@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { runMarketSummaryJob } from "./jobs/marketSummary";
 import { runMag7SentimentJob } from "./jobs/mag7Backfill";
+import { runPruneAuthDataJob } from "./jobs/pruneAuthData";
 import { runOnceForDate } from "./lock";
 import { isNyseTradingDay } from "@/lib/integrations/nyseCalendar";
 import { currentEasternTime, todayInEastern } from "@/lib/utils/dates";
@@ -65,6 +66,15 @@ export function startScheduler(): void {
       { timezone: EASTERN_TZ }
     );
   }
+
+  cron.schedule(
+    "0 30 3 * * *",
+    async () => {
+      const today = todayInEastern();
+      await runOnceForDate("prune-auth-data", today, runPruneAuthDataJob);
+    },
+    { timezone: EASTERN_TZ }
+  );
 
   console.log("[cron] scheduler started");
 }
