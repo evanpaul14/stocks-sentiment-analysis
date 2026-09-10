@@ -8,6 +8,7 @@ import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/
 import { getSeoSentimentPageData, type IndexWeeklySnapshot } from "@/lib/blog/seoSentimentPageData";
 import { companySlug, displayTicker, isIndexCompany } from "@/lib/utils/tickers";
 import { toIsoDateTime } from "@/lib/utils/dates";
+import { summarizeOverlay } from "@/lib/sentiment/sentimentPriceOverlay";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
@@ -240,6 +241,14 @@ function SeoSentimentPageView({
         <p>{sections.intro}</p>
         <h2 className="text-lg font-medium">Recent Sentiment</h2>
         <p>{sections.sentimentSummary}</p>
+        <p className="text-xs">
+          <Link
+            href="/blog/how-we-classify-news-sentiment"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            How we classify news sentiment
+          </Link>
+        </p>
       </div>
 
       <section className="mt-6 rounded-xl border border-border bg-card p-4">
@@ -247,6 +256,9 @@ function SeoSentimentPageView({
           Sentiment vs. Price (90 days)
         </h2>
         <SentimentPriceOverlayChart data={overlay} />
+        <p className="mt-3 text-xs text-muted-foreground">
+          {summarizeOverlay(overlay, displayTicker(company))}
+        </p>
       </section>
 
       <div className="prose prose-invert mt-6 max-w-none text-sm leading-relaxed">
@@ -398,6 +410,14 @@ function IndexWeeklyRecapView({
         <p>{sections.intro}</p>
         <h2 className="text-lg font-medium">This Week&apos;s Sentiment</h2>
         <p>{sections.sentimentSummary}</p>
+        <p className="text-xs">
+          <Link
+            href="/blog/how-we-classify-news-sentiment"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            How we classify news sentiment
+          </Link>
+        </p>
       </div>
 
       <section className="mt-6 rounded-xl border border-border bg-card p-4">
@@ -405,6 +425,9 @@ function IndexWeeklyRecapView({
           Sentiment vs. Price (90 days)
         </h2>
         <SentimentPriceOverlayChart data={overlay} />
+        <p className="mt-3 text-xs text-muted-foreground">
+          {summarizeOverlay(overlay, displayTicker(company))}
+        </p>
       </section>
 
       <div className="prose prose-invert mt-6 max-w-none text-sm leading-relaxed">

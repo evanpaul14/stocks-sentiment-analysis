@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
 import { computeSentimentVerdict, getArticleSentiments } from "@/lib/stock/getArticleSentiments";
@@ -133,7 +134,15 @@ export default async function StockPage({ params }: StockPageProps) {
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-medium">News Sentiment</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-medium">News Sentiment</h2>
+          <Link
+            href="/blog/how-we-classify-news-sentiment"
+            className="shrink-0 text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            How we classify sentiment
+          </Link>
+        </div>
         <SentimentStream
           ticker={stockInfo.symbol}
           companyName={stockInfo.companyName}

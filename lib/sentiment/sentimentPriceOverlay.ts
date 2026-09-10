@@ -10,6 +10,53 @@ export interface SentimentPricePoint {
   price: number | null;
 }
 
+function formatDateLabel(dateKey: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(`${dateKey}T00:00:00Z`));
+}
+
+/**
+ * Plain-text description of the sentiment-vs-price overlay chart, which is
+ * otherwise canvas/SVG-only and has no text an AI crawler (or a screen
+ * reader) can extract. Meant to be rendered alongside the chart, not
+ * replace it.
+ */
+export function summarizeOverlay(overlay: SentimentPricePoint[], displayTicker: string): string {
+  const withPrice = overlay.filter((p) => p.price != null);
+  const withSentiment = overlay.filter((p) => p.averageSentiment != null);
+
+  if (withPrice.length < 2 && withSentiment.length < 2) {
+    return `Not enough sentiment or price history yet to summarize a trend for ${displayTicker}.`;
+  }
+
+  const parts: string[] = [];
+
+  if (withPrice.length >= 2) {
+    const first = withPrice[0];
+    const last = withPrice[withPrice.length - 1];
+    const changePercent = (((last.price ?? 0) - (first.price ?? 0)) / (first.price ?? 1)) * 100;
+    parts.push(
+      `From ${formatDateLabel(first.date)} to ${formatDateLabel(last.date)}, ${displayTicker} ${
+        changePercent >= 0 ? "rose" : "fell"
+      } ${Math.abs(changePercent).toFixed(2)}% (from $${(first.price ?? 0).toFixed(2)} to $${(last.price ?? 0).toFixed(2)}).`
+    );
+  }
+
+  if (withSentiment.length >= 2) {
+    const first = withSentiment[0];
+    const last = withSentiment[withSentiment.length - 1];
+    const label = (score: number) => (score > 0.2 ? "positive" : score < -0.2 ? "negative" : "neutral");
+    parts.push(
+      `News sentiment over the same window moved from ${label(first.averageSentiment ?? 0)} (${(first.averageSentiment ?? 0).toFixed(2)}) to ${label(last.averageSentiment ?? 0)} (${(last.averageSentiment ?? 0).toFixed(2)}) on a -1 to +1 scale.`
+    );
+  }
+
+  return parts.join(" ");
+}
+
 /** Last 90 days of daily-averaged sentiment, joined against 3-month price history. */
 export async function getSentimentPriceOverlay(ticker: string): Promise<SentimentPricePoint[]> {
   const sinceIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
