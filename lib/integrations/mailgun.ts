@@ -107,4 +107,24 @@ export async function sendMarketSummaryToRecipient(
   await sendEmail({ to: recipient, subject, text, html });
 }
 
+/** Forwards a /contact form submission to the site operator's inbox. */
+export async function sendContactMessage(options: {
+  name: string;
+  fromEmail: string;
+  message: string;
+}): Promise<void> {
+  const recipient = process.env.CONTACT_RECIPIENT_EMAIL;
+  if (!recipient) throw new MailgunNotConfiguredError();
+
+  const text = `From: ${options.name} <${options.fromEmail}>\n\n${options.message}`;
+  const html = `<p><strong>From:</strong> ${options.name} &lt;${options.fromEmail}&gt;</p><p>${options.message.replace(/\n/g, "<br>")}</p>`;
+
+  await sendEmail({
+    to: recipient,
+    subject: `Contact form: ${options.name}`,
+    text,
+    html,
+  });
+}
+
 export { isEnabled as isMailgunEnabled };

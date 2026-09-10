@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -40,7 +41,13 @@ export default function PrivacyPage() {
         </p>
 
         <h2 className="text-base font-medium text-foreground">Contact</h2>
-        <p>Questions about this policy can be sent to the site operator.</p>
+        <p>
+          Questions about this policy can be sent via the{" "}
+          <Link href="/contact" className="text-foreground underline">
+            contact form
+          </Link>
+          .
+        </p>
       </div>
     </main>
   );

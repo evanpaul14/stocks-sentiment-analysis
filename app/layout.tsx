@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { Header } from "@/components/layout/Header";
+import { Footer } from "@/components/layout/Footer";
 import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { organizationJsonLd, websiteJsonLd } from "@/lib/seo/structuredData";
@@ -60,7 +61,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />
         <Header />
-        {children}
+        <div className="flex-1">{children}</div>
+        <Footer />
         <AnalyticsProvider />
       </body>
     </html>
