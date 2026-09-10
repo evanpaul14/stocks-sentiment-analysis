@@ -1,6 +1,3 @@
-export const MAG7_TICKERS = ["AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "TSLA"];
-export const FAANG_TICKERS = ["META", "AMZN", "AAPL", "NFLX", "GOOGL"];
-
 export interface SeoSentimentCompany {
   ticker: string;
   companyName: string;
@@ -9,16 +6,20 @@ export interface SeoSentimentCompany {
   displayTicker?: string;
 }
 
-/** Static config for programmatic SEO sentiment pages (/blog/sentiment-of-<company>-stock). */
+// The old "mag7"/"faang" groups overlapped on 4 of 7 companies (AAPL, AMZN,
+// GOOGL, META were in both), so relatedCompanies() kept surfacing the same
+// handful of tickers for each other while NFLX/TSLA/NVDA rarely got linked
+// from anywhere. Replaced with two disjoint, still-coherent clusters so
+// every company has a clear, non-overlapping set of peers.
 export const SEO_SENTIMENT_COMPANIES: SeoSentimentCompany[] = [
-  { ticker: "AAPL", companyName: "Apple", groups: ["mag7", "faang"] },
-  { ticker: "MSFT", companyName: "Microsoft", groups: ["mag7"] },
-  { ticker: "AMZN", companyName: "Amazon", groups: ["mag7", "faang"] },
-  { ticker: "GOOGL", companyName: "Alphabet", groups: ["mag7", "faang"] },
-  { ticker: "META", companyName: "Meta", groups: ["mag7", "faang"] },
-  { ticker: "NVDA", companyName: "NVIDIA", groups: ["mag7"] },
-  { ticker: "TSLA", companyName: "Tesla", groups: ["mag7"] },
-  { ticker: "NFLX", companyName: "Netflix", groups: ["faang"] },
+  { ticker: "AAPL", companyName: "Apple", groups: ["cluster-hardware-ai"] },
+  { ticker: "MSFT", companyName: "Microsoft", groups: ["cluster-hardware-ai"] },
+  { ticker: "NVDA", companyName: "NVIDIA", groups: ["cluster-hardware-ai"] },
+  { ticker: "TSLA", companyName: "Tesla", groups: ["cluster-hardware-ai"] },
+  { ticker: "AMZN", companyName: "Amazon", groups: ["cluster-consumer-media"] },
+  { ticker: "GOOGL", companyName: "Alphabet", groups: ["cluster-consumer-media"] },
+  { ticker: "META", companyName: "Meta", groups: ["cluster-consumer-media"] },
+  { ticker: "NFLX", companyName: "Netflix", groups: ["cluster-consumer-media"] },
   { ticker: "^DJI", companyName: "Dow Jones Industrial Average", groups: ["index"] },
   { ticker: "^IXIC", companyName: "Nasdaq Composite", groups: ["index"] },
   { ticker: "^GSPC", companyName: "S&P 500", groups: ["index"], displayTicker: "SPX" },
