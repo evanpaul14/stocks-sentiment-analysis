@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/posts";
 import { getSeoSentimentPageData, type IndexWeeklySnapshot } from "@/lib/blog/seoSentimentPageData";
 import { companySlug, displayTicker, isIndexCompany } from "@/lib/utils/tickers";
+import { toIsoDateTime } from "@/lib/utils/dates";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
@@ -66,6 +68,7 @@ export async function generateMetadata({ params }: BlogSlugPageProps): Promise<M
         description: seoPage.sections.intro,
         type: "article",
         url: `/blog/${slug}`,
+        ...(seoPage.heroImageUrl ? { images: [seoPage.heroImageUrl] } : {}),
       },
       twitter: {
         card: "summary_large_image",
@@ -111,6 +114,7 @@ function BlogPostView({ slug }: { slug: string }) {
           datePublished: post.frontmatter.publishedAt,
           url: `${process.env.SITE_BASE_URL ?? ""}/blog/${slug}`,
           author: post.frontmatter.author,
+          image: post.frontmatter.image,
         })}
       />
       <JsonLd
@@ -175,8 +179,10 @@ function SeoSentimentPageView({
         data={articleJsonLd({
           headline: `What is the sentiment of ${company.companyName} (${displayTicker(company)}) Stock?`,
           description: sections.intro,
-          datePublished: data.generatedAt,
+          datePublished: toIsoDateTime(data.firstGeneratedAt),
+          dateModified: toIsoDateTime(data.generatedAt),
           url: `${baseUrl}/blog/${slug}`,
+          image: data.heroImageUrl ?? undefined,
         })}
       />
       <JsonLd
@@ -198,9 +204,28 @@ function SeoSentimentPageView({
           },
         ])}
       />
+      {data.heroImageUrl && (
+        <Image
+          src={data.heroImageUrl}
+          alt={`${company.companyName} stock market`}
+          width={800}
+          height={450}
+          className="mb-4 aspect-video w-full rounded-xl object-cover"
+          priority
+        />
+      )}
+
       <h1 className="text-2xl font-semibold">
         What is the sentiment of {company.companyName} ({displayTicker(company)}) Stock?
       </h1>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Last updated{" "}
+        {new Date(toIsoDateTime(data.generatedAt)).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })}
+      </p>
 
       <div className="prose prose-invert mt-4 max-w-none text-sm leading-relaxed">
         <p>{sections.intro}</p>
@@ -278,8 +303,10 @@ function IndexWeeklyRecapView({
         data={articleJsonLd({
           headline: title,
           description: sections.intro,
-          datePublished: data.generatedAt,
+          datePublished: toIsoDateTime(data.firstGeneratedAt),
+          dateModified: toIsoDateTime(data.generatedAt),
           url: `${baseUrl}/blog/${slug}`,
+          image: data.heroImageUrl ?? undefined,
         })}
       />
       <JsonLd
@@ -308,7 +335,26 @@ function IndexWeeklyRecapView({
           },
         ])}
       />
+      {data.heroImageUrl && (
+        <Image
+          src={data.heroImageUrl}
+          alt={`${company.companyName} performance`}
+          width={800}
+          height={450}
+          className="mb-4 aspect-video w-full rounded-xl object-cover"
+          priority
+        />
+      )}
+
       <h1 className="text-2xl font-semibold">{title}</h1>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Last updated{" "}
+        {new Date(toIsoDateTime(data.generatedAt)).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })}
+      </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-border p-3">

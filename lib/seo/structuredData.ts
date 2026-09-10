@@ -52,6 +52,7 @@ export function articleJsonLd(options: {
   headline: string;
   description: string;
   datePublished: string;
+  dateModified?: string;
   url: string;
   author?: string;
   image?: string;
@@ -62,8 +63,9 @@ export function articleJsonLd(options: {
     headline: options.headline,
     description: options.description,
     datePublished: options.datePublished,
+    dateModified: options.dateModified ?? options.datePublished,
     url: options.url,
     author: { "@type": "Organization", name: options.author ?? "Stock Sentiment Team" },
-    ...(options.image ? { image: options.image } : {}),
+    image: options.image ?? `${baseUrl()}/logo-icon-512.png`,
   };
 }

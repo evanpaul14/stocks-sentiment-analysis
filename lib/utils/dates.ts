@@ -1,5 +1,16 @@
 const EASTERN_TZ = "America/New_York";
 
+/**
+ * Normalizes a SQLite `CURRENT_TIMESTAMP` string ("2026-09-09 20:15:05", no
+ * "T"/offset — invalid ISO 8601) into a real ISO string for use in
+ * datePublished/dateModified structured data. Values that already look like
+ * ISO strings pass through unchanged.
+ */
+export function toIsoDateTime(raw: string): string {
+  if (raw.includes("T")) return raw;
+  return `${raw.replace(" ", "T")}Z`;
+}
+
 /** Today's civil date in America/New_York, as "YYYY-MM-DD". */
 export function todayInEastern(now: Date = new Date()): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {

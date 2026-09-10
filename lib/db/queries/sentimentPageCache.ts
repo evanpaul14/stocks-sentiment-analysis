@@ -22,9 +22,10 @@ export function isFresh(row: { expiresAt: string }) {
 }
 
 export function upsert(record: SentimentPageCacheRecord) {
+  const now = new Date().toISOString();
   return db
     .insert(sentimentPageCache)
-    .values(record)
+    .values({ ...record, generatedAt: now, firstGeneratedAt: now })
     .onConflictDoUpdate({
       target: sentimentPageCache.slug,
       set: {
@@ -33,7 +34,9 @@ export function upsert(record: SentimentPageCacheRecord) {
         priceJson: record.priceJson,
         sentimentJson: record.sentimentJson,
         expiresAt: record.expiresAt,
-        generatedAt: new Date().toISOString(),
+        generatedAt: now,
+        // firstGeneratedAt intentionally omitted — it's set once on insert
+        // and must stay stable across every subsequent 24h refresh.
       },
     })
     .returning()

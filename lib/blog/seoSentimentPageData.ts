@@ -35,7 +35,10 @@ export interface SeoSentimentPageData {
   indexWeekly: IndexWeeklySnapshot | null;
   heroImageUrl: string | null;
   related: SeoSentimentCompany[];
+  /** Rolls forward on every 24h cache refresh — use as Article `dateModified`. */
   generatedAt: string;
+  /** Stable since first generation — use as Article `datePublished`. */
+  firstGeneratedAt: string;
 }
 
 async function buildIndexWeeklySnapshot(ticker: string): Promise<IndexWeeklySnapshot> {
@@ -95,6 +98,7 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
     heroImageUrl: hero?.imageUrl ?? null,
     related: relatedCompanies(company),
     generatedAt: row.generatedAt,
+    firstGeneratedAt: row.firstGeneratedAt ?? row.generatedAt,
   };
 }
 
@@ -130,14 +134,22 @@ export const getSeoSentimentPageData = cache(async function getSeoSentimentPageD
 
   const cached = await sentimentPageCache.getBySlug(slug);
   if (cached && sentimentPageCache.isFresh(cached)) {
+    // DB-cache-backed (see getOrFetchUnsplashImage), so this is a cheap local
+    // lookup on a cache hit, not a re-fetch from Unsplash.
+    const hero = await getOrFetchUnsplashImage(
+      hashCacheKey(`seo:${company.ticker}`),
+      `${company.companyName} stock market`
+    );
+
     return {
       company,
       sections: JSON.parse(cached.sectionsJson),
       overlay: cached.priceJson ? JSON.parse(cached.priceJson) : [],
       indexWeekly: cached.sentimentJson ? JSON.parse(cached.sentimentJson) : null,
-      heroImageUrl: null,
+      heroImageUrl: hero?.imageUrl ?? null,
       related: relatedCompanies(company),
       generatedAt: cached.generatedAt,
+      firstGeneratedAt: cached.firstGeneratedAt ?? cached.generatedAt,
     };
   }
 

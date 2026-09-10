@@ -40,8 +40,20 @@ export function runMigrations(sqlite: Database.Database): void {
 
     // Migration bodies use IF NOT EXISTS throughout so a concurrent process
     // (e.g. Next.js build workers opening the same DB file at once) racing
-    // this is harmless rather than a fatal "already exists" error.
-    applyMigration();
+    // this is harmless rather than a fatal "already exists" error — except
+    // `ALTER TABLE ... ADD COLUMN`, which SQLite has no IF NOT EXISTS form
+    // for. That race surfaces as "duplicate column name" instead; it means
+    // another process already applied this exact migration, so the schema
+    // change is already in place and it's safe to just record it as applied.
+    try {
+      applyMigration();
+    } catch (error) {
+      if (error instanceof Error && /duplicate column name/i.test(error.message)) {
+        sqlite.prepare("INSERT OR IGNORE INTO _migrations (name) VALUES (?)").run(file);
+      } else {
+        throw error;
+      }
+    }
     console.log(`[db] applied migration ${file}`);
   }
 }

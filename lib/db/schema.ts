@@ -103,6 +103,11 @@ export const sentimentPageCache = sqliteTable("sentiment_page_cache", {
   generatedAt: text("generated_at")
     .notNull()
     .default(sql`(current_timestamp)`),
+  // Set once on first insert and never updated again — `generatedAt` above
+  // rolls forward on every 24h cache refresh, so it can't serve as a stable
+  // Article `datePublished`. Nullable because it's backfilled by migration
+  // 0009 rather than required at the schema level.
+  firstGeneratedAt: text("first_generated_at"),
   expiresAt: text("expires_at").notNull(),
 });
 
