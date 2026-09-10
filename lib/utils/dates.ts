@@ -35,3 +35,30 @@ export function formatDateLabel(dateKey: string): string {
     day: "numeric",
   }).format(date);
 }
+
+/** Weekday-inclusive date label, e.g. "Friday, July 17, 2026" — used in SEO titles to match how people search. */
+export function formatDateLabelWithWeekday(dateKey: string): string {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
+/** Label for the Monday of the current week (Eastern time), e.g. "August 10, 2026". Used on weekly recap pages. */
+export function formatWeekOfLabel(now: Date = new Date()): string {
+  const todayKey = todayInEastern(now);
+  const date = new Date(`${todayKey}T00:00:00Z`);
+  const day = date.getUTCDay(); // 0 = Sunday
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + diffToMonday);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}

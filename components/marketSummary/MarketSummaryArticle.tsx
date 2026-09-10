@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { JsonLd } from "@/lib/seo/JsonLd";
-import { articleJsonLd } from "@/lib/seo/structuredData";
+import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 
 interface IndexSnapshot {
   symbol: string;
@@ -37,6 +37,23 @@ export function MarketSummaryArticle({
     indexes = [];
   }
 
+  const dateLabel = new Date(createdAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const faqItems = indexes
+    .filter((index): index is IndexSnapshot & { changePercent: number } => index.changePercent != null)
+    .map((index) => ({
+      question: `What was the ${index.name}'s percent change on ${dateLabel}?`,
+      answer: `The ${index.name} closed at ${
+        index.price != null ? index.price.toFixed(2) : "an unavailable price"
+      }, a change of ${index.changePercent >= 0 ? "+" : ""}${index.changePercent.toFixed(2)}% for the day.`,
+    }));
+
+  const baseUrl = process.env.SITE_BASE_URL ?? "";
+
   return (
     <article>
       <JsonLd
@@ -44,18 +61,20 @@ export function MarketSummaryArticle({
           headline: title,
           description: body.slice(0, 200),
           datePublished: createdAt,
-          url: `${process.env.SITE_BASE_URL ?? ""}/market-summary/${slug}`,
+          url: `${baseUrl}/market-summary/${slug}`,
           image: imageUrl ?? undefined,
         })}
       />
+      <JsonLd
+        data={breadcrumbListJsonLd([
+          { name: "Home", url: `${baseUrl}/` },
+          { name: "Market Summary", url: `${baseUrl}/market-summary` },
+          { name: title, url: `${baseUrl}/market-summary/${slug}` },
+        ])}
+      />
+      {faqItems.length > 0 && <JsonLd data={faqPageJsonLd(faqItems)} />}
       <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {new Date(createdAt).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })}
-      </p>
+      <p className="mt-1 text-xs text-muted-foreground">{dateLabel}</p>
 
       {imageUrl && (
         <figure className="mt-4 w-full">

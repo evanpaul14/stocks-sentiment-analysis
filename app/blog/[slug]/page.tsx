@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/posts";
-import { getSeoSentimentPageData } from "@/lib/blog/seoSentimentPageData";
-import { companySlug, displayTicker } from "@/lib/utils/tickers";
+import { getSeoSentimentPageData, type IndexWeeklySnapshot } from "@/lib/blog/seoSentimentPageData";
+import { companySlug, displayTicker, isIndexCompany } from "@/lib/utils/tickers";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
@@ -53,7 +53,10 @@ export async function generateMetadata({ params }: BlogSlugPageProps): Promise<M
 
   const seoPage = await getSeoSentimentPageData(slug);
   if (seoPage) {
-    const title = `What is the sentiment of ${seoPage.company.companyName} (${displayTicker(seoPage.company)}) Stock?`;
+    const title =
+      isIndexCompany(seoPage.company) && seoPage.indexWeekly
+        ? `${seoPage.company.companyName} Performance This Week — Week of ${seoPage.indexWeekly.weekOfLabel}`
+        : `What is the sentiment of ${seoPage.company.companyName} (${displayTicker(seoPage.company)}) Stock?`;
     return {
       title,
       description: seoPage.sections.intro,
@@ -82,7 +85,13 @@ export default async function BlogSlugPage({ params }: BlogSlugPageProps) {
   if (post) return <BlogPostView slug={slug} />;
 
   const seoPage = await getSeoSentimentPageData(slug);
-  if (seoPage) return <SeoSentimentPageView data={seoPage} />;
+  if (seoPage) {
+    return isIndexCompany(seoPage.company) && seoPage.indexWeekly ? (
+      <IndexWeeklyRecapView data={seoPage} indexWeekly={seoPage.indexWeekly} />
+    ) : (
+      <SeoSentimentPageView data={seoPage} />
+    );
+  }
 
   notFound();
 }
@@ -225,6 +234,148 @@ function SeoSentimentPageView({
       {related.length > 0 && (
         <section className="mt-10 border-t border-border pt-6">
           <h2 className="mb-3 text-sm font-medium text-muted-foreground">Related companies</h2>
+          <ul className="flex flex-wrap gap-2">
+            {related.map((c) => (
+              <li key={c.ticker}>
+                <Link
+                  href={`/blog/${companySlug(c.companyName)}`}
+                  className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
+                >
+                  {c.companyName}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </main>
+  );
+}
+
+/**
+ * SEO-optimized weekly recap for the three market indices (^DJI, ^IXIC, ^GSPC). Replaces the
+ * generic "stock sentiment" framing — which reads oddly for an index and shares almost no
+ * keywords with how people actually search for index results — with a title/H1/FAQ built
+ * around "<index> performance week of <date>", matching real Search Console queries.
+ */
+function IndexWeeklyRecapView({
+  data,
+  indexWeekly,
+}: {
+  data: NonNullable<Awaited<ReturnType<typeof getSeoSentimentPageData>>>;
+  indexWeekly: IndexWeeklySnapshot;
+}) {
+  const { company, sections, overlay, related } = data;
+  const baseUrl = process.env.SITE_BASE_URL ?? "";
+  const slug = companySlug(company.companyName);
+  const title = `${company.companyName} Performance This Week — Week of ${indexWeekly.weekOfLabel}`;
+  const isWeekUp = (indexWeekly.weekChangePercent ?? 0) >= 0;
+  const isDayUp = (indexWeekly.dayChangePercent ?? 0) >= 0;
+
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-10">
+      <JsonLd
+        data={articleJsonLd({
+          headline: title,
+          description: sections.intro,
+          datePublished: data.generatedAt,
+          url: `${baseUrl}/blog/${slug}`,
+        })}
+      />
+      <JsonLd
+        data={breadcrumbListJsonLd([
+          { name: "Home", url: `${baseUrl}/` },
+          { name: "Blog", url: `${baseUrl}/blog` },
+          { name: `${company.companyName} Weekly Recap`, url: `${baseUrl}/blog/${slug}` },
+        ])}
+      />
+      <JsonLd
+        data={faqPageJsonLd([
+          {
+            question: `What was the ${company.companyName}'s performance for the week of ${indexWeekly.weekOfLabel}?`,
+            answer:
+              indexWeekly.weekChangePercent != null
+                ? `The ${company.companyName} ${isWeekUp ? "gained" : "lost"} ${Math.abs(
+                    indexWeekly.weekChangePercent
+                  ).toFixed(2)}% for the week of ${indexWeekly.weekOfLabel}${
+                    indexWeekly.price != null ? `, closing at ${indexWeekly.price.toFixed(2)}` : ""
+                  }.`
+                : sections.intro,
+          },
+          {
+            question: `What is the current sentiment around the ${company.companyName}?`,
+            answer: sections.sentimentSummary,
+          },
+        ])}
+      />
+      <h1 className="text-2xl font-semibold">{title}</h1>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">Latest close</p>
+          <p className="font-medium tabular-nums">
+            {indexWeekly.price != null ? indexWeekly.price.toFixed(2) : "—"}
+          </p>
+          {indexWeekly.dayChangePercent != null && (
+            <p
+              className={`text-xs tabular-nums ${
+                isDayUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+              }`}
+            >
+              {isDayUp ? "+" : ""}
+              {indexWeekly.dayChangePercent.toFixed(2)}% today
+            </p>
+          )}
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <p className="text-xs text-muted-foreground">Week of {indexWeekly.weekOfLabel}</p>
+          {indexWeekly.weekChangePercent != null ? (
+            <p
+              className={`font-medium tabular-nums ${
+                isWeekUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+              }`}
+            >
+              {isWeekUp ? "+" : ""}
+              {indexWeekly.weekChangePercent.toFixed(2)}%
+            </p>
+          ) : (
+            <p className="font-medium tabular-nums">—</p>
+          )}
+        </div>
+      </div>
+
+      <div className="prose prose-invert mt-4 max-w-none text-sm leading-relaxed">
+        <p>{sections.intro}</p>
+        <h2 className="text-lg font-medium">This Week&apos;s Sentiment</h2>
+        <p>{sections.sentimentSummary}</p>
+      </div>
+
+      <section className="mt-6 rounded-xl border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+          Sentiment vs. Price (90 days)
+        </h2>
+        <SentimentPriceOverlayChart data={overlay} />
+      </section>
+
+      <div className="prose prose-invert mt-6 max-w-none text-sm leading-relaxed">
+        <h2 className="text-lg font-medium">Outlook</h2>
+        <p>{sections.prediction}</p>
+      </div>
+
+      <p className="mt-4">
+        <Link href="/market-summary" className="text-sm hover:underline">
+          View the latest daily market wrap →
+        </Link>
+      </p>
+
+      <section className="mt-8 rounded-xl border border-border bg-card p-4">
+        <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
+        <EmailSubscribeForm />
+      </section>
+
+      {related.length > 0 && (
+        <section className="mt-10 border-t border-border pt-6">
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Other indices</h2>
           <ul className="flex flex-wrap gap-2">
             {related.map((c) => (
               <li key={c.ticker}>

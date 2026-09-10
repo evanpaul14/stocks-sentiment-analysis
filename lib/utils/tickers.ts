@@ -29,6 +29,11 @@ export function displayTicker(company: SeoSentimentCompany): string {
   return company.displayTicker ?? company.ticker.replace(/^\^/, "");
 }
 
+/** Whether this SEO company is a market index (^DJI, ^IXIC, ^GSPC) rather than a single stock. */
+export function isIndexCompany(company: SeoSentimentCompany): boolean {
+  return company.groups.includes("index");
+}
+
 function slugify(companyName: string): string {
   return companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }

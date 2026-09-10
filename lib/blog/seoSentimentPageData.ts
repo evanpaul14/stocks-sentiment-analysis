@@ -1,30 +1,75 @@
 import { cache } from "react";
 import * as sentimentPageCache from "@/lib/db/queries/sentimentPageCache";
 import { getSentimentPriceOverlay, type SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
-import { generateSeoPageSections, type SeoPageSections } from "@/lib/integrations/llm7/seoSentimentPage";
+import {
+  generateIndexWeeklyRecapSections,
+  generateSeoPageSections,
+  type SeoPageSections,
+} from "@/lib/integrations/llm7/seoSentimentPage";
+import { getMarketIndexSnapshots } from "@/lib/integrations/yahoo/indices";
 import { getOrFetchUnsplashImage, hashCacheKey } from "@/lib/integrations/unsplash";
+import { formatWeekOfLabel } from "@/lib/utils/dates";
 import {
   SEO_SENTIMENT_COMPANIES,
   companySlug,
   findSeoCompanyBySlug,
+  isIndexCompany,
   relatedCompanies,
   type SeoSentimentCompany,
 } from "@/lib/utils/tickers";
 
 const CACHE_TTL_MS = 24 * 60 * 60_000; // 24h — programmatic pages don't need to be minute-fresh
 
+/** Live index numbers backing a weekly recap page — only set for ^DJI/^IXIC/^GSPC. */
+export interface IndexWeeklySnapshot {
+  weekOfLabel: string;
+  price: number | null;
+  dayChangePercent: number | null;
+  weekChangePercent: number | null;
+}
+
 export interface SeoSentimentPageData {
   company: SeoSentimentCompany;
   sections: SeoPageSections;
   overlay: SentimentPricePoint[];
+  indexWeekly: IndexWeeklySnapshot | null;
   heroImageUrl: string | null;
   related: SeoSentimentCompany[];
   generatedAt: string;
 }
 
+async function buildIndexWeeklySnapshot(ticker: string): Promise<IndexWeeklySnapshot> {
+  const snapshots = await getMarketIndexSnapshots();
+  const snapshot = snapshots.find((s) => s.symbol === ticker) ?? null;
+  return {
+    weekOfLabel: formatWeekOfLabel(),
+    price: snapshot?.price ?? null,
+    dayChangePercent: snapshot?.changePercent ?? null,
+    weekChangePercent: snapshot?.weekChangePercent ?? null,
+  };
+}
+
 async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentimentPageData> {
   const overlay = await getSentimentPriceOverlay(company.ticker);
-  const sections = await generateSeoPageSections(company.companyName, company.ticker, overlay);
+
+  let indexWeekly: IndexWeeklySnapshot | null = null;
+  let sections: SeoPageSections;
+
+  if (isIndexCompany(company)) {
+    indexWeekly = await buildIndexWeeklySnapshot(company.ticker);
+    sections = await generateIndexWeeklyRecapSections({
+      companyName: company.companyName,
+      ticker: company.ticker,
+      weekOfLabel: indexWeekly.weekOfLabel,
+      price: indexWeekly.price,
+      dayChangePercent: indexWeekly.dayChangePercent,
+      weekChangePercent: indexWeekly.weekChangePercent,
+      overlay,
+    });
+  } else {
+    sections = await generateSeoPageSections(company.companyName, company.ticker, overlay);
+  }
+
   const hero = await getOrFetchUnsplashImage(
     hashCacheKey(`seo:${company.ticker}`),
     `${company.companyName} stock market`
@@ -36,7 +81,9 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
     ticker: company.ticker,
     sectionsJson: JSON.stringify(sections),
     priceJson: JSON.stringify(overlay),
-    sentimentJson: null,
+    // Repurposes the otherwise-unused sentimentJson column to persist the index weekly
+    // snapshot, so a cache hit doesn't need to re-fetch it.
+    sentimentJson: indexWeekly ? JSON.stringify(indexWeekly) : null,
     expiresAt: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
   });
 
@@ -44,6 +91,7 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
     company,
     sections,
     overlay,
+    indexWeekly,
     heroImageUrl: hero?.imageUrl ?? null,
     related: relatedCompanies(company),
     generatedAt: row.generatedAt,
@@ -86,6 +134,7 @@ export const getSeoSentimentPageData = cache(async function getSeoSentimentPageD
       company,
       sections: JSON.parse(cached.sectionsJson),
       overlay: cached.priceJson ? JSON.parse(cached.priceJson) : [],
+      indexWeekly: cached.sentimentJson ? JSON.parse(cached.sentimentJson) : null,
       heroImageUrl: null,
       related: relatedCompanies(company),
       generatedAt: cached.generatedAt,
