@@ -76,14 +76,14 @@ Two categories drag the score down hard: **Content/E-E-A-T** (34) and **GEO/AI r
 
 ### Medium
 
-11. No `llms.txt` — cheap win pointing AI crawlers at highest-value pages.
-12. No `lastmod` on any of the 90 sitemap URLs, despite daily-regenerating content having a real timestamp available.
-13. Sentiment-vs-price chart is canvas/SVG-only with no extractable text summary — not citable by AI engines.
-14. `mag7`/`faang` ticker tags overlap on 4/7 companies — risk of cannibalizing related-link relevance; cluster agent recommends splitting into non-overlapping Cluster A/B.
-15. Methodology post (`how-we-classify-news-sentiment.mdx`) is never linked from any ticker/index page — the single missing mandatory link in an otherwise sound hub-and-spoke structure.
-16. No Moz/Bing API keys configured — backlink profile is currently unmeasurable (domain isn't even in Common Crawl's graph yet).
-17. `x-powered-by: Next.js` header leaks framework fingerprint — set `poweredByHeader: false`.
-18. Homepage too thin to compete for the category query ("stock sentiment analysis tool") — no comparison/authority content at all.
+11. ~~No `llms.txt` — cheap win pointing AI crawlers at highest-value pages.~~ ✅ **DONE** — `app/llms.txt/route.ts` lists the methodology/about/privacy docs plus market-summary, trending, and the sitemap. Commit `33bdd63`.
+12. ~~No `lastmod` on any of the 90 sitemap URLs, despite daily-regenerating content having a real timestamp available.~~ ✅ **DONE** — editorial posts use `publishedAt`, programmatic sentiment pages use their cache's `generatedAt` (new bulk query), market-summary archive entries use their own `date`, live pages use current build time. Verified live: sitemap now has `<lastmod>` on every entry. Commit `d2514e2`.
+13. ~~Sentiment-vs-price chart is canvas/SVG-only with no extractable text summary — not citable by AI engines.~~ ✅ **DONE** — new `summarizeOverlay()` renders a plain-text price/sentiment trend sentence under the chart on both sentiment page views. Verified live: "From Jun 12 to Sep 9, AAPL rose 8.32%... News sentiment moved from neutral (0.10) to positive (0.40)." Commit `bd4abc1`. **Not done:** the same chart on `/stock/[symbol]` (`SentimentPriceOverlaySection`) is still entirely client-fetched with no SSR and no text summary — same class of bug as the original #1, but not fixed here; flagging as a follow-up.
+14. ~~`mag7`/`faang` ticker tags overlap on 4/7 companies — risk of cannibalizing related-link relevance; cluster agent recommends splitting into non-overlapping Cluster A/B.~~ ✅ **DONE** — replaced with two disjoint clusters (hardware/AI: AAPL, MSFT, NVDA, TSLA; consumer/media: AMZN, GOOGL, META, NFLX). Verified live: Apple's related companies are now Microsoft/NVIDIA/Tesla, no overlap with the consumer/media cluster. Commit `40eee93`.
+15. ~~Methodology post (`how-we-classify-news-sentiment.mdx`) is never linked from any ticker/index page — the single missing mandatory link in an otherwise sound hub-and-spoke structure.~~ ✅ **DONE** — linked from `/stock/[symbol]`'s News Sentiment section and both programmatic sentiment page views. Commit `bd4abc1`.
+16. No Moz/Bing API keys configured — backlink profile is currently unmeasurable (domain isn't even in Common Crawl's graph yet). **Not actionable by an agent** — requires signing up for API access and a business decision on budget; flagging for you rather than doing it.
+17. ~~`x-powered-by: Next.js` header leaks framework fingerprint — set `poweredByHeader: false`.~~ ✅ **DONE** — verified live: header no longer present on responses. Commit `33bdd63`.
+18. Homepage too thin to compete for the category query ("stock sentiment analysis tool") — no comparison/authority content at all. **Not started** — this is a content/positioning decision (what to say, how to differentiate vs. competitors), not a mechanical fix; worth a short discussion before writing it.
 
 ### Low
 
