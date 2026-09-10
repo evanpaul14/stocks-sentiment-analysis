@@ -17,6 +17,13 @@ export async function getBySlug(slug: string) {
   });
 }
 
+/** Slug + last-refresh timestamp for every cached page — used to set sitemap `lastmod`. */
+export async function listSlugsAndGeneratedAt() {
+  return db.query.sentimentPageCache.findMany({
+    columns: { slug: true, generatedAt: true },
+  });
+}
+
 export function isFresh(row: { expiresAt: string }) {
   return new Date(row.expiresAt).getTime() > Date.now();
 }
