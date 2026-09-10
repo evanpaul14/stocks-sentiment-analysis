@@ -82,6 +82,11 @@ export default async function StockPage({ params }: StockPageProps) {
         ])}
       />
       <header className="mb-6">
+        {verdict && (
+          <div className="mb-3">
+            <SentimentVerdictBadge verdict={verdict} />
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <CompanyLogo symbol={stockInfo.symbol} companyName={stockInfo.companyName} />
           <div>
@@ -89,11 +94,6 @@ export default async function StockPage({ params }: StockPageProps) {
             <h1 className="text-2xl font-semibold">{stockInfo.companyName}</h1>
           </div>
         </div>
-        {verdict && (
-          <div className="mt-3">
-            <SentimentVerdictBadge verdict={verdict} />
-          </div>
-        )}
         <div className="mt-2 flex items-center justify-between gap-3">
           <LivePrice
             symbol={stockInfo.symbol}

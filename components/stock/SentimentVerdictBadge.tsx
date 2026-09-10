@@ -17,9 +17,6 @@ export function SentimentVerdictBadge({ verdict }: { verdict: SentimentVerdict }
         style={{ backgroundColor: VERDICT_COLORS[verdict.label] }}
       />
       {verdict.label} News Sentiment
-      <span className="text-xs font-normal text-muted-foreground">
-        ({verdict.positive}↑ {verdict.negative}↓ {verdict.neutral}= of {verdict.total})
-      </span>
     </span>
   );
 }
