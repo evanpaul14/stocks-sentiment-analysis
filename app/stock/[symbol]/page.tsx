@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
-import { getArticleSentiments } from "@/lib/stock/getArticleSentiments";
+import { computeSentimentVerdict, getArticleSentiments } from "@/lib/stock/getArticleSentiments";
+import { SentimentVerdictBadge } from "@/components/stock/SentimentVerdictBadge";
 import { buildMovementInsight } from "@/lib/integrations/llm7/movementInsight";
 import { SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
 import { CompanyLogo } from "@/components/stock/CompanyLogo";
@@ -68,6 +69,8 @@ export default async function StockPage({ params }: StockPageProps) {
       : Promise.resolve(null),
   ]);
 
+  const verdict = computeSentimentVerdict(articleSentiments);
+
   const baseUrl = process.env.SITE_BASE_URL ?? "";
 
   return (
@@ -86,6 +89,11 @@ export default async function StockPage({ params }: StockPageProps) {
             <h1 className="text-2xl font-semibold">{stockInfo.companyName}</h1>
           </div>
         </div>
+        {verdict && (
+          <div className="mt-3">
+            <SentimentVerdictBadge verdict={verdict} />
+          </div>
+        )}
         <div className="mt-2 flex items-center justify-between gap-3">
           <LivePrice
             symbol={stockInfo.symbol}

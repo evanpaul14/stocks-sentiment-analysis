@@ -115,7 +115,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isSearchOpen ? "Close search" : "Open search"}
-            className="text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+            className="-m-3 p-3 text-muted-foreground transition-colors hover:text-foreground lg:hidden"
             onClick={() => {
               setIsSearchOpen((open) => !open);
               setIsMenuOpen(false);
@@ -126,7 +126,7 @@ export function Header() {
           <button
             type="button"
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-            className="text-muted-foreground transition-colors hover:text-foreground sm:hidden"
+            className="-m-3 p-3 text-muted-foreground transition-colors hover:text-foreground sm:hidden"
             onClick={() => {
               setIsMenuOpen((open) => !open);
               setIsSearchOpen(false);

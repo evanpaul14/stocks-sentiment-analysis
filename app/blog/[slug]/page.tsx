@@ -11,6 +11,7 @@ import { toIsoDateTime } from "@/lib/utils/dates";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { articleJsonLd, breadcrumbListJsonLd, faqPageJsonLd } from "@/lib/seo/structuredData";
 import { EmailSubscribeForm } from "@/components/marketSummary/EmailSubscribeForm";
+import { buttonVariants } from "@/components/ui/button";
 
 const SentimentPriceOverlayChart = dynamic(() =>
   import("@/components/blog/SentimentPriceOverlayChart").then(
@@ -227,6 +228,13 @@ function SeoSentimentPageView({
         })}
       </p>
 
+      <Link
+        href={`/stock/${company.ticker}`}
+        className={buttonVariants({ variant: "default", size: "sm", className: "mt-3 w-fit" })}
+      >
+        View live {displayTicker(company)} price and news →
+      </Link>
+
       <div className="prose prose-invert mt-4 max-w-none text-sm leading-relaxed">
         <p>{sections.intro}</p>
         <h2 className="text-lg font-medium">Recent Sentiment</h2>
@@ -244,12 +252,6 @@ function SeoSentimentPageView({
         <h2 className="text-lg font-medium">Outlook</h2>
         <p>{sections.prediction}</p>
       </div>
-
-      <p className="mt-4">
-        <Link href={`/stock/${company.ticker}`} className="text-sm hover:underline">
-          View live {displayTicker(company)} price and news →
-        </Link>
-      </p>
 
       <section className="mt-8 rounded-xl border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>

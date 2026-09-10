@@ -47,3 +47,38 @@ export async function getArticleSentiments(
     })
   );
 }
+
+export type SentimentVerdictLabel = "Bullish" | "Bearish" | "Neutral";
+
+export interface SentimentVerdict {
+  label: SentimentVerdictLabel;
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+}
+
+/**
+ * Rolls per-article sentiment into the single above-the-fold verdict every
+ * ranking competitor leads with (see seo_report.md #10) — positive/negative
+ * imbalance beyond +/-20% of analyzed articles tips the label; otherwise
+ * "Neutral". Returns null when nothing was successfully classified yet.
+ */
+export function computeSentimentVerdict(
+  results: ArticleSentimentResult[]
+): SentimentVerdict | null {
+  const counts = { positive: 0, negative: 0, neutral: 0 };
+  for (const { sentiment } of results) {
+    if (sentiment === "error") continue;
+    counts[sentiment]++;
+  }
+
+  const total = counts.positive + counts.negative + counts.neutral;
+  if (total === 0) return null;
+
+  const score = (counts.positive - counts.negative) / total;
+  const label: SentimentVerdictLabel =
+    score > 0.2 ? "Bullish" : score < -0.2 ? "Bearish" : "Neutral";
+
+  return { label, ...counts, total };
+}
