@@ -20,19 +20,33 @@ interface SentimentStreamProps {
   ticker: string;
   companyName: string;
   articles: NewsArticle[];
+  /**
+   * Sentiment already classified server-side (see `getArticleSentiments`),
+   * so the initial SSR HTML — what crawlers and AI bots see — already has
+   * real counts instead of "pending" placeholders.
+   */
+  initialResults?: ArticleSentiment[];
 }
 
-export function SentimentStream({ ticker, companyName, articles }: SentimentStreamProps) {
+export function SentimentStream({
+  ticker,
+  companyName,
+  articles,
+  initialResults,
+}: SentimentStreamProps) {
   const [results, setResults] = useState<ArticleSentiment[]>(
-    articles.map((article) => ({ article, sentiment: "pending" }))
+    initialResults ?? articles.map((article) => ({ article, sentiment: "pending" }))
   );
   useEffect(() => {
-    if (articles.length === 0) return;
+    const pendingIndexes = articles
+      .map((_, i) => i)
+      .filter((i) => results[i]?.sentiment === "pending" || results[i] === undefined);
+    if (pendingIndexes.length === 0) return;
 
     let cancelled = false;
 
     async function run() {
-      for (let i = 0; i < articles.length; i++) {
+      for (const i of pendingIndexes) {
         if (cancelled) return;
         const article = articles[i];
 

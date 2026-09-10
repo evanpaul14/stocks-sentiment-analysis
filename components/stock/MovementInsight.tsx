@@ -6,6 +6,12 @@ interface MovementInsightProps {
   symbol: string;
   companyName: string;
   changePercent: number | null;
+  /**
+   * Insight already generated server-side, so the initial SSR HTML —
+   * what crawlers and AI bots see — already contains the explanation
+   * sentence instead of a "loading" placeholder.
+   */
+  initialInsight?: InsightResult | null;
 }
 
 interface InsightResult {
@@ -20,16 +26,24 @@ type FetchState =
   | { status: "success"; insight: InsightResult }
   | { status: "error" };
 
-export function MovementInsight({ symbol, companyName, changePercent }: MovementInsightProps) {
+export function MovementInsight({
+  symbol,
+  companyName,
+  changePercent,
+  initialInsight,
+}: MovementInsightProps) {
   // A single discriminated status keeps loading/success/error mutually
   // exclusive, so a success can never leave a stale error flag set.
-  const [state, setState] = useState<FetchState>({ status: "loading" });
+  const [state, setState] = useState<FetchState>(
+    initialInsight ? { status: "success", insight: initialInsight } : { status: "loading" }
+  );
   const [retryCount, setRetryCount] = useState(0);
 
   const qualifies = changePercent != null && Math.abs(changePercent) >= THRESHOLD_PERCENT;
 
   useEffect(() => {
     if (!qualifies) return;
+    if (initialInsight && retryCount === 0) return;
 
     let cancelled = false;
     setState({ status: "loading" });

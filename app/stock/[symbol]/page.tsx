@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
+import { getArticleSentiments } from "@/lib/stock/getArticleSentiments";
+import { buildMovementInsight } from "@/lib/integrations/llm7/movementInsight";
 import { SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
 import { CompanyLogo } from "@/components/stock/CompanyLogo";
 import { LivePrice } from "@/components/stock/LivePrice";
@@ -54,6 +56,18 @@ export default async function StockPage({ params }: StockPageProps) {
 
   const { stockInfo, historicalData, articles } = data;
 
+  const [articleSentiments, movementInsight] = await Promise.all([
+    getArticleSentiments(stockInfo.symbol, stockInfo.companyName, articles),
+    stockInfo.regularMarketChangePercent != null &&
+    Math.abs(stockInfo.regularMarketChangePercent) >= 3
+      ? buildMovementInsight(
+          stockInfo.symbol,
+          stockInfo.companyName,
+          stockInfo.regularMarketChangePercent
+        )
+      : Promise.resolve(null),
+  ]);
+
   const baseUrl = process.env.SITE_BASE_URL ?? "";
 
   return (
@@ -95,6 +109,7 @@ export default async function StockPage({ params }: StockPageProps) {
         symbol={stockInfo.symbol}
         companyName={stockInfo.companyName}
         changePercent={stockInfo.regularMarketChangePercent}
+        initialInsight={movementInsight}
       />
 
       <section className="mb-8 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
@@ -115,6 +130,7 @@ export default async function StockPage({ params }: StockPageProps) {
           ticker={stockInfo.symbol}
           companyName={stockInfo.companyName}
           articles={articles}
+          initialResults={articleSentiments}
         />
       </section>
 
