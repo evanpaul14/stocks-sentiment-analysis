@@ -213,9 +213,9 @@ function SeoSentimentPageView({
         <Image
           src={data.heroImageUrl}
           alt={`${company.companyName} stock market`}
-          width={800}
-          height={450}
-          className="mt-4 aspect-video w-full rounded-xl object-cover"
+          width={480}
+          height={270}
+          className="mt-4 aspect-video w-full max-w-sm rounded-xl object-cover"
           priority
         />
       )}
@@ -344,9 +344,9 @@ function IndexWeeklyRecapView({
         <Image
           src={data.heroImageUrl}
           alt={`${company.companyName} performance`}
-          width={800}
-          height={450}
-          className="mt-4 aspect-video w-full rounded-xl object-cover"
+          width={480}
+          height={270}
+          className="mt-4 aspect-video w-full max-w-sm rounded-xl object-cover"
           priority
         />
       )}
