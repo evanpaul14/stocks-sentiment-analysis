@@ -205,21 +205,22 @@ function SeoSentimentPageView({
           },
         ])}
       />
+      <h1 className="text-2xl font-semibold">
+        What is the sentiment of {company.companyName} ({displayTicker(company)}) Stock?
+      </h1>
+
       {data.heroImageUrl && (
         <Image
           src={data.heroImageUrl}
           alt={`${company.companyName} stock market`}
           width={800}
           height={450}
-          className="mb-4 aspect-video w-full rounded-xl object-cover"
+          className="mt-4 aspect-video w-full rounded-xl object-cover"
           priority
         />
       )}
 
-      <h1 className="text-2xl font-semibold">
-        What is the sentiment of {company.companyName} ({displayTicker(company)}) Stock?
-      </h1>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-3 text-xs text-muted-foreground">
         Last updated{" "}
         {new Date(toIsoDateTime(data.generatedAt)).toLocaleDateString("en-US", {
           year: "numeric",
@@ -337,19 +338,20 @@ function IndexWeeklyRecapView({
           },
         ])}
       />
+      <h1 className="text-2xl font-semibold">{title}</h1>
+
       {data.heroImageUrl && (
         <Image
           src={data.heroImageUrl}
           alt={`${company.companyName} performance`}
           width={800}
           height={450}
-          className="mb-4 aspect-video w-full rounded-xl object-cover"
+          className="mt-4 aspect-video w-full rounded-xl object-cover"
           priority
         />
       )}
 
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-3 text-xs text-muted-foreground">
         Last updated{" "}
         {new Date(toIsoDateTime(data.generatedAt)).toLocaleDateString("en-US", {
           year: "numeric",
