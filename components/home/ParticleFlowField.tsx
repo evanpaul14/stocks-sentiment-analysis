@@ -5,12 +5,14 @@ import { useEffect, useRef } from "react";
 interface Particle {
   x: number;
   y: number;
+  px: number;
+  py: number;
   vx: number;
   vy: number;
   life: number;
 }
 
-const PARTICLE_COUNT = 90;
+const PARTICLE_COUNT = 160;
 
 /** Cheap pseudo-noise flow field (sin/cos composition) — avoids an extra
  * dependency for a visual effect that doesn't need true simplex noise. */
@@ -37,6 +39,24 @@ export function ParticleFlowField() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Canvas 2D fillStyle/strokeStyle can't resolve CSS custom properties
+    // (there's no cascade context for a canvas draw call) — passing
+    // "var(--color-chart-1)" directly silently no-ops and leaves the
+    // default black, invisible against this app's dark theme. Resolve the
+    // actual computed colors once via a throwaway element (handles the
+    // --color-chart-1 -> --chart-1 alias chain too).
+    function resolveColor(varExpr: string): string {
+      const probe = document.createElement("span");
+      probe.style.color = varExpr;
+      probe.style.display = "none";
+      document.body.appendChild(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      return resolved;
+    }
+    const bullColor = resolveColor("var(--color-chart-1)");
+    const bearColor = resolveColor("var(--color-chart-3)");
+
     let width = 0;
     let height = 0;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -61,13 +81,11 @@ export function ParticleFlowField() {
     }
     window.addEventListener("pointermove", handlePointerMove);
 
-    const particles: Particle[] = Array.from({ length: PARTICLE_COUNT }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: 0,
-      vy: 0,
-      life: Math.random() * 200,
-    }));
+    const particles: Particle[] = Array.from({ length: PARTICLE_COUNT }, () => {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      return { x, y, px: x, py: y, vx: 0, vy: 0, life: Math.random() * 200 };
+    });
 
     let animationFrame: number;
     let t = 0;
@@ -78,6 +96,9 @@ export function ParticleFlowField() {
       ctx.clearRect(0, 0, width, height);
 
       for (const p of particles) {
+        p.px = p.x;
+        p.py = p.y;
+
         const angle = flowAngle(p.x, p.y, t * 0.01);
         p.vx += Math.cos(angle) * 0.05;
         p.vy += Math.sin(angle) * 0.05;
@@ -100,15 +121,35 @@ export function ParticleFlowField() {
         if (p.life <= 0 || p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
           p.x = Math.random() * width;
           p.y = Math.random() * height;
+          p.px = p.x;
+          p.py = p.y;
           p.vx = 0;
           p.vy = 0;
           p.life = 150 + Math.random() * 150;
+          continue;
         }
 
+        // Bullish (moving up the screen) reads green, bearish reads red —
+        // ticks read as a scattered price feed rather than generic dust.
+        const bullish = p.vy < 0;
+        const speed = Math.min(Math.hypot(p.vx, p.vy), 3);
+        const color = bullish ? bullColor : bearColor;
+
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 1.4, 0, Math.PI * 2);
-        ctx.fillStyle = "color-mix(in oklch, var(--color-chart-2) 55%, transparent)";
+        ctx.moveTo(p.px, p.py);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.55 + speed * 0.12;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.9;
         ctx.fill();
+        ctx.globalAlpha = 1;
       }
 
       animationFrame = requestAnimationFrame(step);
@@ -126,7 +167,7 @@ export function ParticleFlowField() {
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-25"
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-60"
     />
   );
 }
