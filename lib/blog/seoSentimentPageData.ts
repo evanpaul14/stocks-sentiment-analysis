@@ -19,6 +19,24 @@ import {
 } from "@/lib/utils/tickers";
 
 const CACHE_TTL_MS = 24 * 60 * 60_000; // 24h — programmatic pages don't need to be minute-fresh
+const CACHE_JITTER_MS = 6 * 60 * 60_000; // spread expiries over a 6h window
+// Used instead of the full TTL when a regeneration attempt reused stale content (blocked by
+// the llm7 rate limit or a failed/thin response) — retry again soon rather than waiting a
+// full day to get real content back, while the rate limit still caps how often llm7 is hit.
+const RETRY_TTL_MS = 15 * 60_000;
+
+type CachedRow = NonNullable<Awaited<ReturnType<typeof sentimentPageCache.getBySlug>>>;
+
+/** Deterministic per-slug offset so the growing company list doesn't all expire in the same
+ * instant — a same-minute burst of cache misses (e.g. after a sitemap re-crawl) would blow
+ * through the shared llm7-seo-sentiment rate limit and dump extra pages onto fallback text. */
+function jitterForSlug(slug: string): number {
+  let hash = 0;
+  for (let i = 0; i < slug.length; i++) {
+    hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
+  }
+  return hash % CACHE_JITTER_MS;
+}
 
 /** Live index numbers backing a weekly recap page — only set for ^DJI/^IXIC/^GSPC. */
 export interface IndexWeeklySnapshot {
@@ -52,25 +70,43 @@ async function buildIndexWeeklySnapshot(ticker: string): Promise<IndexWeeklySnap
   };
 }
 
-async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentimentPageData> {
+/** `staleCached`, when given, is the just-expired cache row for this slug — its content is
+ * preferred over the generic template whenever regeneration is skipped, rate-limited, or fails,
+ * rather than replacing real (if slightly stale) copy with boilerplate. */
+async function generateFresh(
+  company: SeoSentimentCompany,
+  staleCached: CachedRow | null
+): Promise<SeoSentimentPageData> {
   const overlay = await getSentimentPriceOverlay(company.ticker);
+  const staleSections: SeoPageSections | null = staleCached
+    ? JSON.parse(staleCached.sectionsJson)
+    : null;
 
   let indexWeekly: IndexWeeklySnapshot | null = null;
   let sections: SeoPageSections;
+  let isFreshGeneration: boolean;
 
   if (isIndexCompany(company)) {
     indexWeekly = await buildIndexWeeklySnapshot(company.ticker);
-    sections = await generateIndexWeeklyRecapSections({
-      companyName: company.companyName,
-      ticker: company.ticker,
-      weekOfLabel: indexWeekly.weekOfLabel,
-      price: indexWeekly.price,
-      dayChangePercent: indexWeekly.dayChangePercent,
-      weekChangePercent: indexWeekly.weekChangePercent,
-      overlay,
-    });
+    ({ sections, isFreshGeneration } = await generateIndexWeeklyRecapSections(
+      {
+        companyName: company.companyName,
+        ticker: company.ticker,
+        weekOfLabel: indexWeekly.weekOfLabel,
+        price: indexWeekly.price,
+        dayChangePercent: indexWeekly.dayChangePercent,
+        weekChangePercent: indexWeekly.weekChangePercent,
+        overlay,
+      },
+      staleSections
+    ));
   } else {
-    sections = await generateSeoPageSections(company.companyName, company.ticker, overlay);
+    ({ sections, isFreshGeneration } = await generateSeoPageSections(
+      company.companyName,
+      company.ticker,
+      overlay,
+      staleSections
+    ));
   }
 
   const hero = await getOrFetchUnsplashImage(
@@ -79,6 +115,10 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
   );
 
   const slug = companySlug(company.companyName);
+  const expiresAt = new Date(
+    Date.now() + (isFreshGeneration ? CACHE_TTL_MS + jitterForSlug(slug) : RETRY_TTL_MS)
+  ).toISOString();
+
   const row = sentimentPageCache.upsert({
     slug,
     ticker: company.ticker,
@@ -87,7 +127,10 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
     // Repurposes the otherwise-unused sentimentJson column to persist the index weekly
     // snapshot, so a cache hit doesn't need to re-fetch it.
     sentimentJson: indexWeekly ? JSON.stringify(indexWeekly) : null,
-    expiresAt: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
+    expiresAt,
+    // Preserve the old generatedAt when reusing stale content so dateModified keeps
+    // reflecting the last time the copy actually changed, not the last retry attempt.
+    generatedAt: isFreshGeneration ? undefined : staleCached?.generatedAt,
   });
 
   return {
@@ -109,11 +152,11 @@ async function generateFresh(company: SeoSentimentCompany): Promise<SeoSentiment
 // firing `generateFresh` — which hits the paid llm7 API — at the same time.
 const inFlightGenerations = new Map<string, Promise<SeoSentimentPageData>>();
 
-function generateFreshDeduped(company: SeoSentimentCompany, slug: string) {
+function generateFreshDeduped(company: SeoSentimentCompany, slug: string, staleCached: CachedRow | null) {
   const pending = inFlightGenerations.get(slug);
   if (pending) return pending;
 
-  const promise = generateFresh(company).finally(() => {
+  const promise = generateFresh(company, staleCached).finally(() => {
     inFlightGenerations.delete(slug);
   });
   inFlightGenerations.set(slug, promise);
@@ -153,7 +196,7 @@ export const getSeoSentimentPageData = cache(async function getSeoSentimentPageD
     };
   }
 
-  return generateFreshDeduped(company, slug);
+  return generateFreshDeduped(company, slug, cached ?? null);
 });
 
 export function getAllSeoSentimentSlugs(): string[] {

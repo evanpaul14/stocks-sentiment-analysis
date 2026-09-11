@@ -9,6 +9,10 @@ export interface SentimentPageCacheRecord {
   priceJson: string | null;
   sentimentJson: string | null;
   expiresAt: string;
+  /** Set when re-persisting reused stale content (no genuine regeneration happened) so
+   * `dateModified`-facing metadata keeps reflecting the last time content actually changed,
+   * rather than advancing on every retry. Defaults to now, as before, when omitted. */
+  generatedAt?: string;
 }
 
 export async function getBySlug(slug: string) {
@@ -30,9 +34,10 @@ export function isFresh(row: { expiresAt: string }) {
 
 export function upsert(record: SentimentPageCacheRecord) {
   const now = new Date().toISOString();
+  const generatedAt = record.generatedAt ?? now;
   return db
     .insert(sentimentPageCache)
-    .values({ ...record, generatedAt: now, firstGeneratedAt: now })
+    .values({ ...record, generatedAt, firstGeneratedAt: now })
     .onConflictDoUpdate({
       target: sentimentPageCache.slug,
       set: {
@@ -41,7 +46,7 @@ export function upsert(record: SentimentPageCacheRecord) {
         priceJson: record.priceJson,
         sentimentJson: record.sentimentJson,
         expiresAt: record.expiresAt,
-        generatedAt: now,
+        generatedAt,
         // firstGeneratedAt intentionally omitted — it's set once on insert
         // and must stay stable across every subsequent 24h refresh.
       },

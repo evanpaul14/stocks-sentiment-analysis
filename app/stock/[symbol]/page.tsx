@@ -16,6 +16,7 @@ import { StockTwitsCard } from "@/components/stock/StockTwitsCard";
 import { SentimentPriceOverlaySection } from "@/components/stock/SentimentPriceOverlaySection";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { breadcrumbListJsonLd } from "@/lib/seo/structuredData";
+import { companySlug, findSeoCompanyByTicker } from "@/lib/utils/tickers";
 
 const PriceChart = dynamic(
   () => import("@/components/stock/PriceChart").then((m) => m.PriceChart),
@@ -71,6 +72,7 @@ export default async function StockPage({ params }: StockPageProps) {
   ]);
 
   const verdict = computeSentimentVerdict(articleSentiments);
+  const seoCompany = findSeoCompanyByTicker(stockInfo.symbol);
 
   const baseUrl = process.env.SITE_BASE_URL ?? "";
 
@@ -153,6 +155,17 @@ export default async function StockPage({ params }: StockPageProps) {
 
       <StockTwitsCard symbol={stockInfo.symbol} />
       <SentimentPriceOverlaySection symbol={stockInfo.symbol} />
+
+      {seoCompany && (
+        <p className="mt-6 text-sm">
+          <Link
+            href={`/blog/${companySlug(seoCompany.companyName)}`}
+            className="text-primary underline hover:no-underline"
+          >
+            Read the full {stockInfo.symbol} sentiment analysis →
+          </Link>
+        </p>
+      )}
     </main>
   );
 }

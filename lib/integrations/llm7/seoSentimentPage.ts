@@ -2,9 +2,12 @@ import { llm7Client, llm7Model } from "./client";
 import { getLimiter } from "@/lib/ratelimit/tokenBucket";
 import type { SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
 
-// Matches v1's Flask rate limit on the sentiment SEO page route
-// (`@limiter.limit("20 per minute")`), which gated the same llm7 call.
-const seoGenerationLimiter = getLimiter("llm7-seo-sentiment", 20, 60_000);
+// A 1-token bucket refilling once per 10 minutes enforces a hard minimum gap between
+// llm7 SEO generation calls (not just a burst cap) — with 23+ companies now sharing this
+// gate, cache-miss clusters (e.g. a sitemap re-crawl) would otherwise fire several calls
+// within seconds of each other. Anything arriving before the 10 minutes are up falls back
+// to the data-point-driven template instead of waiting, same as any other rate-limit miss.
+const seoGenerationLimiter = getLimiter("llm7-seo-sentiment", 1, 10 * 60_000);
 
 export interface SeoPageSections {
   intro: string;
@@ -156,18 +159,36 @@ function averageRecentSentiment(overlay: SentimentPricePoint[]): number {
   );
 }
 
-/** AI-generated intro/sentiment/prediction copy for a programmatic SEO sentiment page. */
+export interface GeneratedSections {
+  sections: SeoPageSections;
+  /** False whenever `sections` is reused stale content or the generic template rather than
+   * a genuine new llm7 response — callers use this to decide whether to extend the cache's
+   * full 24h TTL or retry again soon. */
+  isFreshGeneration: boolean;
+}
+
+/** AI-generated intro/sentiment/prediction copy for a programmatic SEO sentiment page.
+ * `staleSections`, when given, is the page's previous LLM-generated content — preferred over
+ * the generic data-point template whenever generation is skipped, rate-limited, or fails, since
+ * serving yesterday's real copy for a few more hours beats replacing it with boilerplate. */
 export async function generateSeoPageSections(
   companyName: string,
   ticker: string,
-  overlay: SentimentPricePoint[]
-): Promise<SeoPageSections> {
+  overlay: SentimentPricePoint[],
+  staleSections?: SeoPageSections | null
+): Promise<GeneratedSections> {
   const dp = buildDataPoints(overlay);
+  const fallback = (): GeneratedSections => ({
+    sections: staleSections ?? fallbackSections(companyName, ticker, dp),
+    isFreshGeneration: false,
+  });
 
-  if (!llm7Client) return fallbackSections(companyName, ticker, dp);
+  if (!llm7Client) return fallback();
   if (!seoGenerationLimiter.consume("global")) {
-    console.warn(`[llm7] SEO sentiment generation rate-limited, using fallback for ${ticker}`);
-    return fallbackSections(companyName, ticker, dp);
+    console.warn(
+      `[llm7] SEO sentiment generation rate-limited, using ${staleSections ? "stale cache" : "fallback"} for ${ticker}`
+    );
+    return fallback();
   }
 
   const prompt = `Company: ${companyName} (${ticker})
@@ -202,18 +223,18 @@ Respond with ONLY the JSON object, no markdown fences.`;
 
     const raw = response.choices[0]?.message?.content?.trim() ?? "";
     const sections = extractSections(raw);
-    if (!sections) return fallbackSections(companyName, ticker, dp);
+    if (!sections) return fallback();
 
     if (wordCount(sections) < MIN_ACCEPTABLE_WORDS) {
       console.warn(
-        `[llm7] SEO sentiment page for ${ticker} came back too thin (${wordCount(sections)} words), using fallback`
+        `[llm7] SEO sentiment page for ${ticker} came back too thin (${wordCount(sections)} words), using ${staleSections ? "stale cache" : "fallback"}`
       );
-      return fallbackSections(companyName, ticker, dp);
+      return fallback();
     }
-    return sections;
+    return { sections, isFreshGeneration: true };
   } catch (error) {
     console.error(`[llm7] SEO sentiment page generation failed for ${ticker}`, error);
-    return fallbackSections(companyName, ticker, dp);
+    return fallback();
   }
 }
 
@@ -239,14 +260,24 @@ function fallbackIndexWeeklyRecapSections(input: IndexWeeklyRecapInput): SeoPage
   };
 }
 
-/** AI-generated intro/recap/outlook copy for an index's weekly recap SEO page. */
+/** AI-generated intro/recap/outlook copy for an index's weekly recap SEO page. `staleSections`,
+ * when given, is preferred over the generic template for the same reason as
+ * `generateSeoPageSections` above. */
 export async function generateIndexWeeklyRecapSections(
-  input: IndexWeeklyRecapInput
-): Promise<SeoPageSections> {
-  if (!llm7Client) return fallbackIndexWeeklyRecapSections(input);
+  input: IndexWeeklyRecapInput,
+  staleSections?: SeoPageSections | null
+): Promise<GeneratedSections> {
+  const fallback = (): GeneratedSections => ({
+    sections: staleSections ?? fallbackIndexWeeklyRecapSections(input),
+    isFreshGeneration: false,
+  });
+
+  if (!llm7Client) return fallback();
   if (!seoGenerationLimiter.consume("global")) {
-    console.warn(`[llm7] Index weekly recap generation rate-limited, using fallback for ${input.ticker}`);
-    return fallbackIndexWeeklyRecapSections(input);
+    console.warn(
+      `[llm7] Index weekly recap generation rate-limited, using ${staleSections ? "stale cache" : "fallback"} for ${input.ticker}`
+    );
+    return fallback();
   }
 
   const recentAvg = averageRecentSentiment(input.overlay);
@@ -284,9 +315,11 @@ Respond with ONLY the JSON object, no markdown fences.`;
     });
 
     const raw = response.choices[0]?.message?.content?.trim() ?? "";
-    return extractSections(raw) ?? fallbackIndexWeeklyRecapSections(input);
+    const sections = extractSections(raw);
+    if (!sections) return fallback();
+    return { sections, isFreshGeneration: true };
   } catch (error) {
     console.error(`[llm7] Index weekly recap generation failed for ${input.ticker}`, error);
-    return fallbackIndexWeeklyRecapSections(input);
+    return fallback();
   }
 }

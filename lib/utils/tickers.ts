@@ -20,6 +20,18 @@ export const SEO_SENTIMENT_COMPANIES: SeoSentimentCompany[] = [
   { ticker: "GOOGL", companyName: "Alphabet", groups: ["cluster-consumer-media"] },
   { ticker: "META", companyName: "Meta", groups: ["cluster-consumer-media"] },
   { ticker: "NFLX", companyName: "Netflix", groups: ["cluster-consumer-media"] },
+  { ticker: "JPM", companyName: "JPMorgan Chase", groups: ["cluster-finance"] },
+  { ticker: "BAC", companyName: "Bank of America", groups: ["cluster-finance"] },
+  { ticker: "V", companyName: "Visa", groups: ["cluster-finance"] },
+  { ticker: "MA", companyName: "Mastercard", groups: ["cluster-finance"] },
+  { ticker: "UNH", companyName: "UnitedHealth Group", groups: ["cluster-healthcare-retail"] },
+  { ticker: "LLY", companyName: "Eli Lilly", groups: ["cluster-healthcare-retail"] },
+  { ticker: "JNJ", companyName: "Johnson & Johnson", groups: ["cluster-healthcare-retail"] },
+  { ticker: "WMT", companyName: "Walmart", groups: ["cluster-healthcare-retail"] },
+  { ticker: "AMD", companyName: "AMD", groups: ["cluster-chips-software"] },
+  { ticker: "INTC", companyName: "Intel", groups: ["cluster-chips-software"] },
+  { ticker: "CRM", companyName: "Salesforce", groups: ["cluster-chips-software"] },
+  { ticker: "ORCL", companyName: "Oracle", groups: ["cluster-chips-software"] },
   { ticker: "^DJI", companyName: "Dow Jones Industrial Average", groups: ["index"] },
   { ticker: "^IXIC", companyName: "Nasdaq Composite", groups: ["index"] },
   { ticker: "^GSPC", companyName: "S&P 500", groups: ["index"], displayTicker: "SPX" },
@@ -45,6 +57,15 @@ export function companySlug(companyName: string): string {
 
 export function findSeoCompanyBySlug(slug: string): SeoSentimentCompany | undefined {
   return SEO_SENTIMENT_COMPANIES.find((c) => companySlug(c.companyName) === slug);
+}
+
+/** Looks up a company by its live-quote ticker (e.g. from `/stock/[symbol]`), matching
+ * either the lookup symbol or its display ticker, case-insensitively. */
+export function findSeoCompanyByTicker(symbol: string): SeoSentimentCompany | undefined {
+  const upper = symbol.toUpperCase();
+  return SEO_SENTIMENT_COMPANIES.find(
+    (c) => c.ticker.toUpperCase() === upper || displayTicker(c).toUpperCase() === upper
+  );
 }
 
 export function relatedCompanies(company: SeoSentimentCompany, limit = 4): SeoSentimentCompany[] {
