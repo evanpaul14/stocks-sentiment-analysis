@@ -87,8 +87,13 @@ export function ParticleFlowField() {
       return { x, y, px: x, py: y, vx: 0, vy: 0, life: Math.random() * 200 };
     });
 
-    let animationFrame: number;
+    let animationFrame: number | null = null;
     let t = 0;
+    // Only animate while the canvas is scrolled into view and the tab is
+    // active — this runs forever otherwise, burning CPU/GPU for a purely
+    // decorative background nobody is looking at.
+    let isVisible = true;
+    let isPageVisible = document.visibilityState === "visible";
 
     function step() {
       if (!ctx) return;
@@ -154,10 +159,45 @@ export function ParticleFlowField() {
 
       animationFrame = requestAnimationFrame(step);
     }
-    animationFrame = requestAnimationFrame(step);
+
+    function start() {
+      if (animationFrame !== null) return;
+      animationFrame = requestAnimationFrame(step);
+    }
+    function stop() {
+      if (animationFrame === null) return;
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+    function syncRunning() {
+      if (isVisible && isPageVisible) {
+        start();
+      } else {
+        stop();
+      }
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = entry.isIntersecting;
+        syncRunning();
+      },
+      { threshold: 0 }
+    );
+    observer.observe(canvas);
+
+    function handleVisibilityChange() {
+      isPageVisible = document.visibilityState === "visible";
+      syncRunning();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    syncRunning();
 
     return () => {
-      cancelAnimationFrame(animationFrame);
+      stop();
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", handlePointerMove);
     };
