@@ -52,14 +52,19 @@ interface SendEmailOptions {
   subject: string;
   text: string;
   html: string;
+  /** Bypass the account-wide unsubscribe suppression list — for transactional mail that isn't part of a mailing list. */
+  skipUnsubscribe?: boolean;
 }
 
-async function sendEmail({ to, subject, text, html }: SendEmailOptions): Promise<void> {
+async function sendEmail({ to, subject, text, html, skipUnsubscribe }: SendEmailOptions): Promise<void> {
   if (!isEnabled()) throw new MailgunNotConfiguredError();
 
   const fromAddress =
     process.env.MAILGUN_FROM_EMAIL ??
     `Stock Sentiment App <postmaster@${process.env.MAILGUN_DOMAIN}>`;
+
+  const params = new URLSearchParams({ from: fromAddress, to, subject, text, html });
+  if (skipUnsubscribe) params.set("o:skip-unsubscribe", "true");
 
   const response = await fetch(
     `${API_BASE}/${process.env.MAILGUN_DOMAIN}/messages`,
@@ -69,7 +74,7 @@ async function sendEmail({ to, subject, text, html }: SendEmailOptions): Promise
         Authorization: authHeader(),
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ from: fromAddress, to, subject, text, html }),
+      body: params,
       signal: AbortSignal.timeout(10_000),
     }
   );
@@ -124,6 +129,7 @@ export async function sendContactMessage(options: {
     subject: `Contact form: ${options.name}`,
     text,
     html,
+    skipUnsubscribe: true,
   });
 }
 
