@@ -19,7 +19,9 @@ external API shapes were carried over; none of the original code was reused.
 - AI-generated stock movement insight (why a stock moved, in plain language)
 - Sentiment-vs-price overlay chart per stock (90-day rolling view)
 - Programmatic SEO pages for the Magnificent 7 + Netflix (`/blog/sentiment-of-<company>-stock`)
-- Watchlist and search history — client-side only, `localStorage`, no accounts
+- Accounts (Supabase Auth — email/password + Google sign-in); watchlist and search history are
+  DB-backed for signed-in users and fall back to `localStorage` for anonymous visitors, merged
+  into the account on login
 - Blog (MDX files, no CMS)
 - Rate-limited API routes, in-memory (single-process deployment)
 
@@ -52,7 +54,7 @@ Open http://localhost:3000.
 | --- | --- |
 | `/` | Home — stock search, popular stocks, trending preview. |
 | `/stock/<symbol>` | Stock detail: price chart, stats, news sentiment, StockTwits, sentiment/price overlay. |
-| `/watchlist` | Watchlist view (`localStorage`-backed). |
+| `/watchlist` | Watchlist view (DB-backed when signed in, `localStorage`-backed otherwise). |
 | `/trending` | Trending dashboards landing page. |
 | `/trending/<source>` | Trending dashboard for a specific source (`stocktwits`, `reddit`). |
 | `/market-summary` | Market summary landing page. |
@@ -60,6 +62,10 @@ Open http://localhost:3000.
 | `/market-summary/<slug>` | A specific market summary article. |
 | `/blog` | Blog listing. |
 | `/blog/<slug>` | Blog post, or a programmatic SEO sentiment page for a covered company. |
+| `/login` | Sign in (email/password or Google). |
+| `/signup` | Create an account. |
+| `/reset-password` | Password reset flow. |
+| `/account` | Signed-in account management (delete account, etc.). |
 | `/privacy` | Privacy policy page. |
 
 ### JSON APIs
@@ -83,6 +89,11 @@ Open http://localhost:3000.
 | GET | `/api/market-summary/<slug>` | No | A specific market summary by slug. |
 | POST | `/api/market-summary/subscribe` | No | Subscribe to market summary email updates (Mailgun). |
 | POST | `/api/market-summary/generate` | **Yes** — `ADMIN_API_TOKEN` bearer token | Force-regenerate the market summary. |
+| GET/POST | `/api/watchlist` | **Yes** — Supabase session | List / add a watchlist entry for the signed-in user. |
+| DELETE | `/api/watchlist/<symbol>` | **Yes** — Supabase session | Remove a watchlist entry. |
+| GET/POST | `/api/search-history` | **Yes** — Supabase session | List / record search history for the signed-in user. |
+| POST | `/api/account/merge-local-data` | **Yes** — Supabase session | One-time merge of a device's `localStorage` watchlist/search history into the account. |
+| DELETE | `/api/account` | **Yes** — Supabase session | Delete the caller's account and their local watchlist/search-history rows. |
 
 ### Static / SEO
 
@@ -98,9 +109,13 @@ Open http://localhost:3000.
   Self-migrates on first connection open.
 - **In-memory rate limiting and caching** — fine for a single Node process; would need a shared
   store (Redis) to scale horizontally.
-- **No accounts system.** Watchlist and search history are `localStorage`-only. The one
-  privileged action (`POST /api/market-summary/generate`) is protected by a single static bearer
-  token, not a login system.
+- **Accounts via Supabase Auth** (email/password + Google sign-in) — identity lives entirely in
+  Supabase, not this app's own SQLite tables. Watchlist and search history are DB-backed
+  (keyed by the Supabase user id) for signed-in users, still `localStorage`-only for anonymous
+  visitors, and merged into the account once on login. Account deletion uses the Supabase
+  service-role key (the regular client SDK can't delete users). Separately, the one privileged
+  *admin* action (`POST /api/market-summary/generate`) is protected by a single static bearer
+  token — unrelated to user accounts.
 - **Blog is MDX files in `content/blog/`, not a CMS.** Publishing = adding a file + redeploying.
 - Pages that read SQLite or call live external APIs render dynamically (`force-dynamic`), not via
   ISR — static prerendering these at build time caused a real multi-process SQLite lock race.
@@ -120,7 +135,8 @@ lib/
   cron/                  node-cron scheduler + the two scheduled jobs
   cache/                 In-memory TTL cache for hot short-lived data
   ratelimit/              In-memory per-IP token bucket
-  auth/                  Single admin bearer-token check (no accounts system)
+  auth/                  Supabase session helpers + the admin bearer-token check
+  supabase/              Supabase client factories (browser, server, admin/service-role)
   seo/                   Structured data (JSON-LD), CSP nonce helper, sitemap key file writer
 content/blog/*.mdx       Blog posts — see "Publishing a blog post" below
 components/              UI, organized by feature area
@@ -157,6 +173,9 @@ See `.env.example` for the full list with comments. Everything is optional excep
 - `UNSPLASH_ACCESS_KEY` — article thumbnail images
 - `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` — market summary email subscription
 - `ADMIN_API_TOKEN` — protects `POST /api/market-summary/generate`
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase Auth (accounts, watchlist,
+  search history)
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only; used for account deletion, never exposed client-side
 - `INDEXNOW_KEY` — IndexNow push-to-index verification
 - `SITE_BASE_URL`, `DATABASE_FILENAME` — site/infra config
 - `ENABLE_MARKET_SUMMARY`, `ENABLE_MAG7_SENTIMENT` — feature toggles for the cron jobs

@@ -28,9 +28,17 @@ because there are no tests to target.
 - **In-memory rate limiting and caching** (`lib/ratelimit`, `lib/cache`) — acceptable because this
   runs as one Node process, not horizontally scaled. If that ever changes, these need a shared
   store (Redis) first.
-- **No accounts system.** Watchlist and search history are `localStorage`-only. The one
-  privileged action (`POST /api/market-summary/generate`) is protected by a single static
-  `ADMIN_API_TOKEN` bearer token, not a login system.
+- **Accounts are Supabase Auth** (email/password + Google sign-in; `lib/supabase/*`,
+  `lib/auth/currentUser.ts`, `app/login`, `app/signup`, `app/account`). Identity lives entirely
+  in Supabase — this app's own SQLite `user`/`session`/`auth_token` tables were dropped in
+  migration `0008_supabase_auth.sql` in favor of it. Watchlist and search history are DB-backed
+  (`watchlist_item`/`search_history_item`, keyed by the Supabase UUID) for signed-in users, and
+  still `localStorage`-only for anonymous visitors; `POST /api/account/merge-local-data` does a
+  one-time, idempotent merge of local data into the account on login. Account deletion
+  (`DELETE /api/account`) requires `SUPABASE_SERVICE_ROLE_KEY` — the regular client SDK can't
+  delete Supabase users, only the admin client can. Separately, the one privileged *admin*
+  action (`POST /api/market-summary/generate`) is still just a single static `ADMIN_API_TOKEN`
+  bearer token, unrelated to user accounts — don't conflate the two auth mechanisms.
 - **Blog is MDX files in `content/blog/`, not a CMS.** Publishing = adding a file + redeploying.
 - **Pages that read SQLite or call live external APIs use `export const dynamic =
   "force-dynamic"`**, not ISR (`revalidate`). Static prerendering these at build time caused a

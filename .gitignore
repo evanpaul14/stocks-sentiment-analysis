@@ -31,6 +31,7 @@ yarn-error.log*
 
 # local claude runtime state
 .claude/scheduled_tasks.lock
+.impeccable/
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)

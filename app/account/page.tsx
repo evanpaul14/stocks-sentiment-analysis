@@ -17,6 +17,10 @@ export default function AccountPage() {
   const [user, setUser] = useState<AccountInfo | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "unauthenticated">("loading");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [subscription, setSubscription] = useState<
+    "loading" | "subscribed" | "unsubscribed" | "unavailable"
+  >("loading");
+  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +45,47 @@ export default function AccountPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (status !== "loaded") return;
+    let cancelled = false;
+    fetch("/api/account/market-summary-subscription")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        setSubscription(
+          data && typeof data.subscribed === "boolean"
+            ? data.subscribed
+              ? "subscribed"
+              : "unsubscribed"
+            : "unavailable"
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSubscription("unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
+
+  async function handleToggleSubscription() {
+    if (subscription !== "subscribed" && subscription !== "unsubscribed") return;
+    const nextSubscribed = subscription === "unsubscribed";
+    setSubscriptionSaving(true);
+    try {
+      const response = await fetch("/api/account/market-summary-subscription", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscribed: nextSubscribed }),
+      });
+      if (response.ok) {
+        setSubscription(nextSubscribed ? "subscribed" : "unsubscribed");
+      }
+    } finally {
+      setSubscriptionSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
@@ -93,6 +138,30 @@ export default function AccountPage() {
           </dd>
         </div>
       </dl>
+
+      {subscription !== "unavailable" && (
+        <div className="mb-8 flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">Market summary emails</p>
+            <p className="text-xs text-muted-foreground">
+              Daily wrap-up of what moved the market, sent to {user.email}.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={subscription === "loading" || subscriptionSaving}
+            onClick={handleToggleSubscription}
+          >
+            {subscription === "loading"
+              ? "Loading…"
+              : subscription === "subscribed"
+                ? "Unsubscribe"
+                : "Subscribe"}
+          </Button>
+        </div>
+      )}
 
       <div className="space-y-3">
         <Button type="button" variant="outline" className="w-full" onClick={handleSignOut}>

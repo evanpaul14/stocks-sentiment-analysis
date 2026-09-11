@@ -21,23 +21,30 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email);
 }
 
+const listAddress = () =>
+  process.env.MAILGUN_MARKET_LIST_ADDRESS ??
+  `marketsummary@${process.env.MAILGUN_DOMAIN}`;
+
 /** Adds (or upserts) a subscriber to the market-summary mailing list. */
-export async function addMemberToMailgunList(email: string): Promise<void> {
+export async function addMemberToMailgunList(
+  email: string,
+  subscribed: boolean = true
+): Promise<void> {
   if (!isEnabled()) throw new MailgunNotConfiguredError();
 
-  const listAddress =
-    process.env.MAILGUN_MARKET_LIST_ADDRESS ??
-    `marketsummary@${process.env.MAILGUN_DOMAIN}`;
-
   const response = await fetch(
-    `${API_BASE}/lists/${encodeURIComponent(listAddress)}/members`,
+    `${API_BASE}/lists/${encodeURIComponent(listAddress())}/members`,
     {
       method: "POST",
       headers: {
         Authorization: authHeader(),
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ address: email, subscribed: "yes", upsert: "yes" }),
+      body: new URLSearchParams({
+        address: email,
+        subscribed: subscribed ? "yes" : "no",
+        upsert: "yes",
+      }),
       signal: AbortSignal.timeout(10_000),
     }
   );
@@ -45,6 +52,29 @@ export async function addMemberToMailgunList(email: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Mailgun list subscribe failed: ${response.status}`);
   }
+}
+
+/** Looks up a subscriber's current membership on the market-summary list, if any. */
+export async function getMailgunListMember(
+  email: string
+): Promise<{ subscribed: boolean } | null> {
+  if (!isEnabled()) throw new MailgunNotConfiguredError();
+
+  const response = await fetch(
+    `${API_BASE}/lists/${encodeURIComponent(listAddress())}/members/${encodeURIComponent(email)}`,
+    {
+      headers: { Authorization: authHeader() },
+      signal: AbortSignal.timeout(10_000),
+    }
+  );
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Mailgun member lookup failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return { subscribed: Boolean(data.member?.subscribed) };
 }
 
 interface SendEmailOptions {
@@ -83,10 +113,6 @@ async function sendEmail({ to, subject, text, html, skipUnsubscribe }: SendEmail
     throw new Error(`Mailgun send failed: ${response.status}`);
   }
 }
-
-const listAddress = () =>
-  process.env.MAILGUN_MARKET_LIST_ADDRESS ??
-  `marketsummary@${process.env.MAILGUN_DOMAIN}`;
 
 /** Broadcasts the daily market summary to the whole mailing list. */
 export async function dispatchMarketSummaryEmail(
