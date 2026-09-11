@@ -5,6 +5,7 @@ export function organizationJsonLd() {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "Stock Sentiment",
+    alternateName: "StockSentimentApp",
     url: baseUrl(),
   };
 }
@@ -14,6 +15,7 @@ export function websiteJsonLd() {
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: "Stock Sentiment",
+    alternateName: "StockSentimentApp",
     url: baseUrl(),
     potentialAction: {
       "@type": "SearchAction",
