@@ -10,10 +10,14 @@ export async function proxy(request: NextRequest) {
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: https:`,
     `font-src 'self' data:`,
+    // Turnstile's challenge renders in an iframe from Cloudflare's domain —
+    // without this it silently falls back to default-src 'self' and the
+    // widget never appears (the script loads fine, only the iframe is blocked).
+    `frame-src https://challenges.cloudflare.com`,
     // Supabase's client SDK talks to the project's own domain (auth, token
     // refresh) — CSP's connect-src is same-origin-only by default, so it
     // has to be explicitly allowed here or every Supabase call is blocked.
-    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}`,
+    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""} https://challenges.cloudflare.com`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
