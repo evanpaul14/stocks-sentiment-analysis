@@ -23,12 +23,20 @@ export function EmailSubscribeForm() {
   }
 
   if (status === "done") {
-    return <p className="text-sm text-[var(--color-chart-1)]">You&apos;re subscribed — check your inbox.</p>;
+    return (
+      <p role="status" className="text-sm text-[var(--color-chart-1)]">
+        You&apos;re subscribed — check your inbox.
+      </p>
+    );
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex gap-2">
+      <label htmlFor="market-summary-email" className="sr-only">
+        Email
+      </label>
       <input
+        id="market-summary-email"
         type="email"
         required
         value={email}
@@ -39,9 +47,11 @@ export function EmailSubscribeForm() {
       <Button type="submit" disabled={status === "loading"}>
         {status === "loading" ? "Subscribing…" : "Subscribe"}
       </Button>
-      {status === "error" && (
-        <p className="text-xs text-destructive">Something went wrong — try again.</p>
-      )}
+      <div role="alert" aria-live="assertive">
+        {status === "error" && (
+          <p className="text-xs text-destructive">Something went wrong — try again.</p>
+        )}
+      </div>
     </form>
   );
 }

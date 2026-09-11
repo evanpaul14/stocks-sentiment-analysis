@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,6 +22,10 @@ export function Header() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const pathname = usePathname();
   const { loggedIn } = useSession();
+  const mobileNavRef = useRef<HTMLElement>(null);
+  const mobileSearchRef = useRef<HTMLDivElement>(null);
+  const searchOpenButtonRef = useRef<HTMLButtonElement>(null);
+  const menuOpenButtonRef = useRef<HTMLButtonElement>(null);
 
   // Adjust state during render rather than resetting it in an effect —
   // avoids an extra render pass on navigation (see React docs: "Adjusting
@@ -47,6 +51,35 @@ export function Header() {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen && !isMenuOpen) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (isSearchOpen) {
+        setIsSearchOpen(false);
+        searchOpenButtonRef.current?.focus();
+      }
+      if (isMenuOpen) {
+        setIsMenuOpen(false);
+        menuOpenButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isSearchOpen, isMenuOpen]);
+
+  useEffect(() => {
+    if (isMenuOpen) {
+      mobileNavRef.current?.querySelector("a")?.focus();
+    }
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      mobileSearchRef.current?.querySelector("input")?.focus();
+    }
+  }, [isSearchOpen]);
 
   return (
     <header
@@ -113,8 +146,10 @@ export function Header() {
           </nav>
 
           <button
+            ref={searchOpenButtonRef}
             type="button"
             aria-label={isSearchOpen ? "Close search" : "Open search"}
+            aria-expanded={isSearchOpen}
             className="-m-3 p-3 text-muted-foreground transition-colors hover:text-foreground lg:hidden"
             onClick={() => {
               setIsSearchOpen((open) => !open);
@@ -124,8 +159,10 @@ export function Header() {
             {isSearchOpen ? <X className="size-5" /> : <Search className="size-5" />}
           </button>
           <button
+            ref={menuOpenButtonRef}
             type="button"
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={isMenuOpen}
             className="-m-3 p-3 text-muted-foreground transition-colors hover:text-foreground sm:hidden"
             onClick={() => {
               setIsMenuOpen((open) => !open);
@@ -138,13 +175,19 @@ export function Header() {
       </div>
 
       {isSearchOpen && (
-        <div className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4 lg:hidden">
+        <div
+          ref={mobileSearchRef}
+          className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl justify-center px-4 lg:hidden"
+        >
           <SearchBar showSuggestions />
         </div>
       )}
 
       {isMenuOpen && (
-        <nav className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl flex-col gap-1 px-4 sm:hidden">
+        <nav
+          ref={mobileNavRef}
+          className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl flex-col gap-1 px-4 sm:hidden"
+        >
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}

@@ -54,7 +54,7 @@ function RequestResetForm() {
 
   if (status === "done") {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p role="status" className="text-sm text-muted-foreground">
         If an account exists for <strong>{email}</strong>, we sent a password reset link.
       </p>
     );
@@ -62,7 +62,11 @@ function RequestResetForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      <label htmlFor="reset-email" className="sr-only">
+        Email
+      </label>
       <input
+        id="reset-email"
         type="email"
         required
         autoComplete="email"
@@ -98,7 +102,7 @@ function NewPasswordForm() {
 
   if (status === "done") {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p role="status" className="text-sm text-muted-foreground">
         Password updated.{" "}
         <button type="button" onClick={() => router.push("/account")} className="underline">
           Go to your account
@@ -111,7 +115,11 @@ function NewPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-2">
+        <label htmlFor="new-password" className="sr-only">
+          New password
+        </label>
         <input
+          id="new-password"
           type="password"
           required
           autoComplete="new-password"
@@ -129,9 +137,11 @@ function NewPasswordForm() {
       >
         {status === "loading" ? "Updating…" : "Update password"}
       </Button>
-      {status === "error" && (
-        <p className="text-xs text-destructive">Invalid or expired link — request a new one.</p>
-      )}
+      <div role="alert" aria-live="assertive">
+        {status === "error" && (
+          <p className="text-xs text-destructive">Invalid or expired link — request a new one.</p>
+        )}
+      </div>
     </form>
   );
 }

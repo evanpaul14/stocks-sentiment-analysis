@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useSearchHistory } from "@/lib/searchHistory/useSearchHistory";
@@ -17,6 +17,10 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const instanceId = useId();
+  const inputId = `stock-search-input-${instanceId}`;
+  const listboxId = `stock-search-suggestions-${instanceId}`;
+  const optionId = (index: number) => `stock-search-option-${instanceId}-${index}`;
 
   useEffect(() => {
     if (!showSuggestions) return;
@@ -75,7 +79,11 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
         }}
         className="flex gap-2"
       >
+        <label htmlFor={inputId} className="sr-only">
+          Search a ticker or company
+        </label>
         <input
+          id={inputId}
           type="text"
           value={query}
           onChange={(e) => {
@@ -90,16 +98,30 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
           placeholder="Search a ticker or company (e.g. AAPL, Apple)"
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
           autoComplete="off"
+          role={showSuggestions ? "combobox" : undefined}
+          aria-expanded={showSuggestions ? isOpen && filteredHistory.length > 0 : undefined}
+          aria-controls={showSuggestions ? listboxId : undefined}
+          aria-autocomplete={showSuggestions ? "list" : undefined}
+          aria-activedescendant={
+            showSuggestions && highlightedIndex >= 0 ? optionId(highlightedIndex) : undefined
+          }
         />
         <Button type="submit">Search</Button>
       </form>
 
       {showSuggestions && isOpen && filteredHistory.length > 0 && (
-        <ul className="animate-fade-in-down absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+        <ul
+          id={listboxId}
+          role="listbox"
+          className="animate-fade-in-down absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+        >
           {filteredHistory.map((entry, index) => (
-            <li key={entry}>
+            <li key={entry} role="presentation">
               <button
                 type="button"
+                id={optionId(index)}
+                role="option"
+                aria-selected={index === highlightedIndex}
                 className={`block w-full px-3 py-2 text-left text-sm transition-colors duration-100 ${
                   index === highlightedIndex ? "bg-muted" : "hover:bg-muted"
                 }`}

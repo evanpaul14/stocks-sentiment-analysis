@@ -61,7 +61,7 @@ export function ContactForm() {
 
   if (status === "done") {
     return (
-      <p className="text-sm text-[var(--color-chart-1)]">
+      <p role="status" className="text-sm text-[var(--color-chart-1)]">
         Message sent — thanks for reaching out.
       </p>
     );
@@ -123,9 +123,11 @@ export function ContactForm() {
       >
         {status === "loading" ? "Sending…" : "Send message"}
       </Button>
-      {status === "error" && (
-        <p className="text-xs text-destructive">Something went wrong — try again.</p>
-      )}
+      <div role="alert" aria-live="assertive">
+        {status === "error" && (
+          <p className="text-xs text-destructive">Something went wrong — try again.</p>
+        )}
+      </div>
     </form>
   );
 }

@@ -48,7 +48,7 @@ export default function SignupPage() {
     return (
       <main className="mx-auto max-w-sm px-4 py-10">
         <h1 className="mb-2 text-2xl font-semibold">Check your email</h1>
-        <p className="text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           If <strong>{email}</strong> isn&apos;t already registered, we sent a confirmation
           link. Click it to finish setting up your account.
         </p>
@@ -76,7 +76,11 @@ export default function SignupPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
+        <label htmlFor="signup-email" className="sr-only">
+          Email
+        </label>
         <input
+          id="signup-email"
           type="email"
           required
           autoComplete="email"
@@ -86,7 +90,11 @@ export default function SignupPage() {
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
         <div className="space-y-2">
+          <label htmlFor="signup-password" className="sr-only">
+            Password
+          </label>
           <input
+            id="signup-password"
             type="password"
             required
             autoComplete="new-password"
@@ -105,9 +113,11 @@ export default function SignupPage() {
           {status === "loading" ? "Creating account…" : "Sign up"}
         </Button>
 
-        {status === "error" && (
-          <p className="text-xs text-destructive">Something went wrong — try again.</p>
-        )}
+        <div role="alert" aria-live="assertive">
+          {status === "error" && (
+            <p className="text-xs text-destructive">Something went wrong — try again.</p>
+          )}
+        </div>
       </form>
 
       <p className="mt-4 text-sm text-muted-foreground">

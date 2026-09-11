@@ -62,7 +62,11 @@ export default function LoginPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
+        <label htmlFor="login-email" className="sr-only">
+          Email
+        </label>
         <input
+          id="login-email"
           type="email"
           required
           autoComplete="email"
@@ -71,7 +75,11 @@ export default function LoginPage() {
           placeholder="you@example.com"
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
+        <label htmlFor="login-password" className="sr-only">
+          Password
+        </label>
         <input
+          id="login-password"
           type="password"
           required
           autoComplete="current-password"
@@ -84,14 +92,16 @@ export default function LoginPage() {
           {status === "loading" ? "Signing in…" : "Sign in"}
         </Button>
 
-        {status === "error" && (
-          <p className="text-xs text-destructive">Invalid email or password.</p>
-        )}
-        {status === "unverified" && (
-          <p className="text-xs text-destructive">
-            Verify your email before signing in — check your inbox for the link.
-          </p>
-        )}
+        <div role="alert" aria-live="assertive">
+          {status === "error" && (
+            <p className="text-xs text-destructive">Invalid email or password.</p>
+          )}
+          {status === "unverified" && (
+            <p className="text-xs text-destructive">
+              Verify your email before signing in — check your inbox for the link.
+            </p>
+          )}
+        </div>
       </form>
 
       <p className="mt-4 text-sm text-muted-foreground">

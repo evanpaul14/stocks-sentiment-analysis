@@ -31,6 +31,9 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
   }
 
   return (
+    // alt="" is safe only because every call site renders the company name as
+    // adjacent text (see app/stock/[symbol]/page.tsx) — if this is ever used
+    // standalone, pass alt={companyName} instead.
     <Image
       src={`https://logos.stocktwits-cdn.com/${encodeURIComponent(symbol.toUpperCase())}.png`}
       alt=""
