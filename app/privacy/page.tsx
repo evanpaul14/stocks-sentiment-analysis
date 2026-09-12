@@ -114,10 +114,15 @@ export default function PrivacyPage() {
 
         <h2 className="text-base font-medium text-foreground">Analytics</h2>
         <p>
-          We employ Umami, a self-hosted, cookie-free analytics tool, to understand aggregate
-          usage of the Service (for example, which pages are most frequently visited). Umami does
-          not use cookies or persistent identifiers and does not track users across other
-          websites; accordingly, no individual visitor profile is created.
+          We employ Umami, a cookie-free analytics tool, to understand aggregate usage of the
+          Service (for example, which pages are most frequently visited). Analytics are provided
+          through Umami Cloud, a hosted service operated by Umami Software, Inc., which acts as a
+          processor on our behalf; aggregate page-view data is accordingly transmitted to and
+          stored on that provider&rsquo;s infrastructure rather than on our own servers. We have
+          selected that provider&rsquo;s European Union region, and such data is therefore stored
+          on infrastructure located within the EU. Umami does not use cookies or persistent
+          identifiers, does not retain visitor IP addresses, and does not track users across
+          other websites; accordingly, no individual visitor profile is created.
         </p>
 
         <h2 className="text-base font-medium text-foreground">Third-party data sources</h2>
