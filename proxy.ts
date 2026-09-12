@@ -4,6 +4,22 @@ import { createClient } from "@/lib/supabase/server";
 export async function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 
+  // Derived from UMAMI_SCRIPT_URL so the CSP can never drift out of sync with
+  // wherever analytics actually points (cloud vs. self-hosted). Empty string
+  // when analytics is unconfigured, which collapses to no extra source.
+  const analyticsOrigin = (() => {
+    const url = process.env.UMAMI_SCRIPT_URL;
+    if (!url) return "";
+    try {
+      // A first-party proxied path is already covered by 'self'; naming the
+      // origin again in that case is redundant but harmless, so don't
+      // special-case it.
+      return new URL(url).origin;
+    } catch {
+      return "";
+    }
+  })();
+
   const csp = [
     `default-src 'self'`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
@@ -17,7 +33,10 @@ export async function proxy(request: NextRequest) {
     // Supabase's client SDK talks to the project's own domain (auth, token
     // refresh) — CSP's connect-src is same-origin-only by default, so it
     // has to be explicitly allowed here or every Supabase call is blocked.
-    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""} https://challenges.cloudflare.com`,
+    // Umami is the same story: the script tag loads fine under script-src,
+    // but its pageview beacon to /api/send is a connect-src request, so
+    // leaving the analytics origin out here silently drops every pageview.
+    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""} https://challenges.cloudflare.com ${analyticsOrigin}`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
