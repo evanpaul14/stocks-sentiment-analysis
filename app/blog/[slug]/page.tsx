@@ -6,7 +6,13 @@ import Image from "next/image";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getAllBlogPosts, getAllBlogSlugs, getBlogPostBySlug } from "@/lib/blog/posts";
 import { getSeoSentimentPageData, type IndexWeeklySnapshot } from "@/lib/blog/seoSentimentPageData";
-import { companySlug, displayTicker, isIndexCompany } from "@/lib/utils/tickers";
+import { buildDataPoints, type SeoDataPoints } from "@/lib/integrations/llm7/seoSentimentPage";
+import {
+  companySlug,
+  displayTicker,
+  isIndexCompany,
+  type SeoSentimentCompany,
+} from "@/lib/utils/tickers";
 import { toIsoDateTime } from "@/lib/utils/dates";
 import { summarizeOverlay } from "@/lib/sentiment/sentimentPriceOverlay";
 import { JsonLd } from "@/lib/seo/JsonLd";
@@ -57,17 +63,25 @@ export async function generateMetadata({ params }: BlogSlugPageProps): Promise<M
 
   const seoPage = await getSeoSentimentPageData(slug);
   if (seoPage) {
-    const title =
-      isIndexCompany(seoPage.company) && seoPage.indexWeekly
-        ? `${seoPage.company.companyName} Performance This Week — Week of ${seoPage.indexWeekly.weekOfLabel}`
-        : `What is the sentiment of ${seoPage.company.companyName} (${displayTicker(seoPage.company)}) Stock?`;
+    const isIndex = isIndexCompany(seoPage.company) && seoPage.indexWeekly;
+    const title = isIndex
+      ? `${seoPage.company.companyName} Performance This Week — Week of ${seoPage.indexWeekly!.weekOfLabel}`
+      : `${seoPage.company.companyName} (${displayTicker(seoPage.company)}) Stock Sentiment Analysis`;
+    // The full intro paragraph made a fine H1-adjacent lede but a bad <meta description> — it
+    // ran ~600 characters of generic company boilerplate that Google truncated, and didn't
+    // contain any of the terms people actually searched (e.g. "aapl stock sentiment
+    // analysis"). Build a short, number-driven description instead, same numbers the fallback
+    // copy already cites, so it's never inconsistent with the page itself.
+    const description = isIndex
+      ? buildIndexMetaDescription(seoPage.company, seoPage.indexWeekly!)
+      : buildStockMetaDescription(seoPage.company, buildDataPoints(seoPage.overlay));
     return {
       title,
-      description: seoPage.sections.intro,
+      description,
       alternates: { canonical: `/blog/${slug}` },
       openGraph: {
         title,
-        description: seoPage.sections.intro,
+        description,
         type: "article",
         url: `/blog/${slug}`,
         ...(seoPage.heroImageUrl ? { images: [seoPage.heroImageUrl] } : {}),
@@ -75,12 +89,34 @@ export async function generateMetadata({ params }: BlogSlugPageProps): Promise<M
       twitter: {
         card: "summary_large_image",
         title,
-        description: seoPage.sections.intro,
+        description,
       },
     };
   }
 
   return {};
+}
+
+function buildStockMetaDescription(company: SeoSentimentCompany, dp: SeoDataPoints): string {
+  const ticker = displayTicker(company);
+  const bullishPct =
+    dp.daysOfData > 0 ? Math.round((dp.positiveDayCount / dp.daysOfData) * 100) : null;
+  const bullishPart = bullishPct != null ? `${bullishPct}% of days net-positive` : "Daily sentiment";
+  return `${ticker} stock sentiment: ${bullishPart} across ${dp.totalArticles} news articles over the past ${dp.daysOfData} days. See the daily sentiment vs. price trend for ${company.companyName}.`;
+}
+
+function buildIndexMetaDescription(
+  company: SeoSentimentCompany,
+  indexWeekly: IndexWeeklySnapshot
+): string {
+  if (indexWeekly.weekChangePercent == null) {
+    return `${company.companyName} performance and news sentiment for the week of ${indexWeekly.weekOfLabel}.`;
+  }
+  const isWeekUp = indexWeekly.weekChangePercent >= 0;
+  const priceText = indexWeekly.price != null ? `, closing at ${indexWeekly.price.toFixed(2)}` : "";
+  return `The ${company.companyName} ${isWeekUp ? "gained" : "lost"} ${Math.abs(
+    indexWeekly.weekChangePercent
+  ).toFixed(2)}% for the week of ${indexWeekly.weekOfLabel}${priceText}. See the full weekly performance and sentiment recap.`;
 }
 
 export default async function BlogSlugPage({ params }: BlogSlugPageProps) {

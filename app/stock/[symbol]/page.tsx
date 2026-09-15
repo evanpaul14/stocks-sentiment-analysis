@@ -32,8 +32,12 @@ export async function generateMetadata({ params }: StockPageProps): Promise<Meta
   const canonical = `/stock/${symbol.toUpperCase()}`;
   try {
     const { stockInfo } = await getStockPageData(symbol);
-    const title = `${stockInfo.companyName} (${stockInfo.symbol}) Stock Price & Sentiment`;
-    const description = `Live price, historical chart, and AI-powered news sentiment analysis for ${stockInfo.companyName} (${stockInfo.symbol}).`;
+    // Ticker + "stock price" queries (e.g. "tsla stock price") are dominated by Yahoo/Google
+    // Finance and aren't winnable here — but ticker + "sentiment" queries are this app's
+    // niche, so lead the <title>/description with sentiment. This only affects search-result
+    // metadata; the on-page heading below is unchanged.
+    const title = `${stockInfo.companyName} (${stockInfo.symbol}) Stock Sentiment & Price`;
+    const description = `AI-powered news sentiment analysis for ${stockInfo.companyName} (${stockInfo.symbol}), plus live price and historical chart.`;
     return {
       title,
       description,

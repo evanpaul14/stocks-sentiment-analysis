@@ -17,8 +17,10 @@ export interface SeoPageSections {
 
 /** Concrete, ticker-specific facts pulled straight from the overlay data — no LLM
  * required to compute these, so both the prompt and the no-LLM fallback can cite
- * real numbers instead of generic boilerplate. */
-interface SeoDataPoints {
+ * real numbers instead of generic boilerplate. Also exported for use in metadata
+ * (title/description), which wants the same real numbers rather than truncating
+ * the full-length intro/sentimentSummary copy. */
+export interface SeoDataPoints {
   totalArticles: number;
   daysOfData: number;
   recentAvgSentiment: number;
@@ -30,7 +32,7 @@ interface SeoDataPoints {
   priceRangeHigh: number | null;
 }
 
-function buildDataPoints(overlay: SentimentPricePoint[]): SeoDataPoints {
+export function buildDataPoints(overlay: SentimentPricePoint[]): SeoDataPoints {
   const totalArticles = overlay.reduce((sum, p) => sum + p.articleCount, 0);
   const withSentiment = overlay.filter((p) => p.averageSentiment != null);
   const recent14 = withSentiment.slice(-14);

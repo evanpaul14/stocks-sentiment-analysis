@@ -47,8 +47,16 @@ export function isIndexCompany(company: SeoSentimentCompany): boolean {
   return company.groups.includes("index");
 }
 
+// Ampersands are dropped rather than turned into a "-" separator, so "S&P 500" slugs to
+// "sp-500" instead of "s-p-500" — the latter split the "sp" token across a hyphen, which
+// didn't match how anyone actually searches for it. Doesn't affect names like "Johnson &
+// Johnson", where the surrounding spaces already collapse into a single separator either way.
 function slugify(companyName: string): string {
-  return companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return companyName
+    .toLowerCase()
+    .replace(/&/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 export function companySlug(companyName: string): string {

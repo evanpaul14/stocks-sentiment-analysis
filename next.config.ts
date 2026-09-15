@@ -13,6 +13,18 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
     ],
   },
+  async redirects() {
+    return [
+      // companySlug("S&P 500") moved from "sentiment-of-s-p-500-stock" to
+      // "sentiment-of-sp-500-stock" (see slugify() in lib/utils/tickers.ts) — this page
+      // already ranks for real search queries, so redirect rather than let it 404.
+      {
+        source: "/blog/sentiment-of-s-p-500-stock",
+        destination: "/blog/sentiment-of-sp-500-stock",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
