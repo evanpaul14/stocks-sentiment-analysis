@@ -7,14 +7,24 @@ export async function proxy(request: NextRequest) {
   // Derived from UMAMI_SCRIPT_URL so the CSP can never drift out of sync with
   // wherever analytics actually points (cloud vs. self-hosted). Empty string
   // when analytics is unconfigured, which collapses to no extra source.
-  const analyticsOrigin = (() => {
+  //
+  // Umami Cloud spreads itself across hosts — the script comes from
+  // cloud.umami.is but events post to gateway.umami.is — so allow the whole
+  // umami.is domain rather than chasing individual subdomains as they change.
+  // (`*.umami.is` doesn't match the bare apex, hence both.) Self-hosted
+  // installs just get their own single origin.
+  const analyticsOrigins = (() => {
     const url = process.env.UMAMI_SCRIPT_URL;
     if (!url) return "";
     try {
+      const { origin, hostname } = new URL(url);
+      if (hostname === "umami.is" || hostname.endsWith(".umami.is")) {
+        return "https://umami.is https://*.umami.is";
+      }
       // A first-party proxied path is already covered by 'self'; naming the
       // origin again in that case is redundant but harmless, so don't
       // special-case it.
-      return new URL(url).origin;
+      return origin;
     } catch {
       return "";
     }
@@ -36,7 +46,7 @@ export async function proxy(request: NextRequest) {
     // Umami is the same story: the script tag loads fine under script-src,
     // but its pageview beacon to /api/send is a connect-src request, so
     // leaving the analytics origin out here silently drops every pageview.
-    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""} https://challenges.cloudflare.com ${analyticsOrigin}`,
+    `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""} https://challenges.cloudflare.com ${analyticsOrigins}`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
