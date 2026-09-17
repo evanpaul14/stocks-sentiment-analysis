@@ -9,9 +9,9 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -23,7 +23,7 @@ jobs:
       # a few seconds for the common case.
       - name: Restore node_modules cache
         id: node-modules-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -40,7 +40,7 @@ jobs:
       # changes that already invalidate the cache above.
       - name: Restore prod-only node_modules cache
         id: prod-node-modules-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: prod-modules/node_modules
           key: node-modules-prod-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -52,7 +52,7 @@ jobs:
           npm ci --omit=dev --prefix prod-modules
 
       - if: steps.prod-node-modules-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: prod-modules/node_modules
           key: ${{ steps.prod-node-modules-cache.outputs.cache-primary-key }}
@@ -76,7 +76,7 @@ jobs:
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: node_modules
           key: ${{ steps.node-modules-cache.outputs.cache-primary-key }}
