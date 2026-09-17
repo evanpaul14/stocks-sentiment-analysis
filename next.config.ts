@@ -3,6 +3,15 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // The one stylesheet <link> Next emits is render-blocking, and on a
+    // single VPS behind Caddy that extra round trip cost ~230ms of LCP for
+    // first-time visitors — which is most of the traffic here, since it
+    // arrives from search. Tailwind's atomic output is small enough (~10KB)
+    // that shipping it inside the HTML beats a separately cached file.
+    // Production-only; dev still uses <link> tags.
+    inlineCss: true,
+  },
   turbopack: {
     root: path.resolve(__dirname),
   },
