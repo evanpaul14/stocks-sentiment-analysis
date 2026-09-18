@@ -8,10 +8,18 @@ export interface RateLimitOptions {
   windowMs: number;
 }
 
+/**
+ * Caddy appends the connecting peer's address to any existing
+ * X-Forwarded-For rather than replacing it, so the *last* entry is the one
+ * our trusted reverse proxy actually observed — the client can freely set
+ * earlier entries (or the whole header) to whatever it wants, so those
+ * can't be trusted for rate-limit keying.
+ */
 function getClientIp(request: NextRequest): string {
   const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) return forwardedFor.split(",")[0].trim();
-  return "unknown";
+  if (!forwardedFor) return "unknown";
+  const parts = forwardedFor.split(",").map((part) => part.trim());
+  return parts[parts.length - 1] || "unknown";
 }
 
 /**

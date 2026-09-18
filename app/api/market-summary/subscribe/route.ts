@@ -7,14 +7,15 @@ import {
   sendMarketSummaryToRecipient,
 } from "@/lib/integrations/mailgun";
 import * as marketSummary from "@/lib/db/queries/marketWrap";
+import { escapeHtml } from "@/lib/utils/html";
 
 function buildEmailHtml(title: string, body: string): string {
   const paragraphs = body
     .split("\n")
     .filter(Boolean)
-    .map((p) => `<p>${p}</p>`)
+    .map((p) => `<p>${escapeHtml(p)}</p>`)
     .join("\n");
-  return `<html><body><h1>${title}</h1>${paragraphs}</body></html>`;
+  return `<html><body><h1>${escapeHtml(title)}</h1>${paragraphs}</body></html>`;
 }
 
 async function handler(request: NextRequest) {

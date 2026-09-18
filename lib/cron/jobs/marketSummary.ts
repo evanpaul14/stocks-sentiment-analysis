@@ -11,6 +11,7 @@ import {
 import { formatDateLabel, formatDateLabelWithWeekday, todayInEastern } from "@/lib/utils/dates";
 import * as marketSummary from "@/lib/db/queries/marketWrap";
 import * as sendLog from "@/lib/db/queries/marketWrapSendLog";
+import { escapeHtml } from "@/lib/utils/html";
 
 const MARKET_SUMMARY_MAX_HEADLINES = Number(
   process.env.MARKET_SUMMARY_MAX_HEADLINES ?? 8
@@ -85,15 +86,16 @@ export async function ensureMarketSummaryForDate(dateKey: string) {
 }
 
 function buildEmailHtml(title: string, body: string, imageUrl?: string | null): string {
+  const escapedTitle = escapeHtml(title);
   const paragraphs = body
     .split("\n")
     .filter(Boolean)
-    .map((p) => `<p>${p}</p>`)
+    .map((p) => `<p>${escapeHtml(p)}</p>`)
     .join("\n");
   const imageHtml = imageUrl
-    ? `<p><img src="${imageUrl}" alt="${title}" style="max-width:320px;width:100%;border-radius:12px;display:block;" /></p>`
+    ? `<p><img src="${escapeHtml(imageUrl)}" alt="${escapedTitle}" style="max-width:320px;width:100%;border-radius:12px;display:block;" /></p>`
     : "";
-  return `<html><body><h1>${title}</h1>${imageHtml}${paragraphs}<p><a href="%unsubscribe_url%">Unsubscribe</a></p></body></html>`;
+  return `<html><body><h1>${escapedTitle}</h1>${imageHtml}${paragraphs}<p><a href="%unsubscribe_url%">Unsubscribe</a></p></body></html>`;
 }
 
 export async function ensureMarketSummaryEmailSent(

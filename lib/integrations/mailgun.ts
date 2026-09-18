@@ -1,3 +1,5 @@
+import { escapeHtml } from "@/lib/utils/html";
+
 const API_BASE = "https://api.mailgun.net/v3";
 
 function isEnabled(): boolean {
@@ -148,7 +150,7 @@ export async function sendContactMessage(options: {
   if (!recipient) throw new MailgunNotConfiguredError();
 
   const text = `From: ${options.name} <${options.fromEmail}>\n\n${options.message}`;
-  const html = `<p><strong>From:</strong> ${options.name} &lt;${options.fromEmail}&gt;</p><p>${options.message.replace(/\n/g, "<br>")}</p>`;
+  const html = `<p><strong>From:</strong> ${escapeHtml(options.name)} &lt;${escapeHtml(options.fromEmail)}&gt;</p><p>${escapeHtml(options.message).replace(/\n/g, "<br>")}</p>`;
 
   await sendEmail({
     to: recipient,
