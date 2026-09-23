@@ -20,6 +20,10 @@ npm run db:migrate      # apply pending SQLite migrations (also runs automatical
 There is no test suite (the original Flask app had none either). There's no single-test command
 because there are no tests to target.
 
+Do not start the dev server (`npm run dev`) or invoke Playwright unless the user explicitly asks
+you to. If a UI change needs visual verification, ask the user to check it or ask permission first
+— don't launch the dev server or take screenshots on your own initiative.
+
 ## Key architectural decisions (don't relitigate these without cause)
 
 - **SQLite via better-sqlite3 + Drizzle**, not Postgres — single-VPS deployment, no external DB.

@@ -63,7 +63,7 @@ export default function SignupPage() {
       <button
         type="button"
         onClick={handleGoogle}
-        className="mb-4 flex w-full items-center justify-center gap-3 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors duration-150 hover:bg-muted/50"
+        className="mb-4 flex w-full items-center justify-center gap-3 rounded-none border border-border px-3 py-2 text-sm font-medium transition-colors duration-150 hover:bg-muted/50"
       >
         <GoogleIcon className="size-4.5" />
         Continue with Google
@@ -87,7 +87,7 @@ export default function SignupPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+          className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
         <div className="space-y-2">
           <label htmlFor="signup-password" className="sr-only">
@@ -101,7 +101,7 @@ export default function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
           />
           <PasswordRequirementsList password={password} />
         </div>

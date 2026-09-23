@@ -60,7 +60,7 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
             key={range.period}
             type="button"
             onClick={() => handleRangeChange(range.period)}
-            className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+            className={`rounded-none px-2 py-1 text-xs font-medium transition-colors ${
               period === range.period
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted"

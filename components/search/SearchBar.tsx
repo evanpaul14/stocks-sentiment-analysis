@@ -97,7 +97,7 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
             onFocus={() => showSuggestions && setIsOpen(true)}
             onKeyDown={handleKeyDown}
             placeholder="Search a ticker or company (e.g. AAPL, Apple)"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="h-8 w-full rounded-none border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
             autoComplete="off"
             role={showSuggestions ? "combobox" : undefined}
             aria-expanded={showSuggestions ? isOpen && filteredHistory.length > 0 : undefined}
@@ -112,7 +112,7 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
             <ul
               id={listboxId}
               role="listbox"
-              className="animate-fade-in-down absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+              className="animate-fade-in-down absolute z-10 mt-1 w-full overflow-hidden rounded-none border border-border bg-popover shadow-lg"
             >
               {filteredHistory.map((entry, index) => (
                 <li key={entry} role="presentation">

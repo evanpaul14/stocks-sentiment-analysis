@@ -23,7 +23,7 @@ export default function BlogIndexPage() {
             <li key={company.ticker}>
               <Link
                 href={`/blog/${companySlug(company.companyName)}`}
-                className="block rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
+                className="block rounded-none border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
               >
                 {company.companyName} ({displayTicker(company)})
               </Link>

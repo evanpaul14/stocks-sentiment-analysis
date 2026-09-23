@@ -20,7 +20,7 @@ import { companySlug, findSeoCompanyByTicker } from "@/lib/utils/tickers";
 
 const PriceChart = dynamic(
   () => import("@/components/stock/PriceChart").then((m) => m.PriceChart),
-  { loading: () => <div className="h-64 w-full animate-pulse rounded-lg bg-muted" /> }
+  { loading: () => <div className="h-64 w-full animate-pulse rounded-none bg-muted" /> }
 );
 
 interface StockPageProps {
@@ -116,7 +116,7 @@ export default async function StockPage({ params }: StockPageProps) {
         </div>
       </header>
 
-      <section className="mb-8 rounded-xl border border-border bg-card p-4">
+      <section className="mb-8 rounded-none border border-border bg-card p-4">
         <PriceChart symbol={stockInfo.symbol} data={historicalData} />
       </section>
 
@@ -176,7 +176,7 @@ export default async function StockPage({ params }: StockPageProps) {
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-none border border-border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
     </div>

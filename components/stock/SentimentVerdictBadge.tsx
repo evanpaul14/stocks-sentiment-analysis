@@ -9,11 +9,11 @@ const VERDICT_COLORS: Record<SentimentVerdict["label"], string> = {
 export function SentimentVerdictBadge({ verdict }: { verdict: SentimentVerdict }) {
   return (
     <span
-      className="inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium"
+      className="inline-flex w-fit items-center gap-1.5 rounded-none border px-3 py-1 text-sm font-medium"
       style={{ color: VERDICT_COLORS[verdict.label], borderColor: VERDICT_COLORS[verdict.label] }}
     >
       <span
-        className="size-2 rounded-full"
+        className="size-2 rounded-none"
         style={{ backgroundColor: VERDICT_COLORS[verdict.label] }}
       />
       {verdict.label} News Sentiment

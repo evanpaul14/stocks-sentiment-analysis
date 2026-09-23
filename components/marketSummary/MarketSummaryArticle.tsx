@@ -83,7 +83,7 @@ export function MarketSummaryArticle({
             alt={title}
             width={1280}
             height={720}
-            className="aspect-video w-full rounded-xl border border-border object-cover"
+            className="aspect-video w-full rounded-none border border-border object-cover"
           />
           {imagePhotographerName && (
             <figcaption className="mt-1 text-right text-xs text-muted-foreground">
@@ -111,7 +111,7 @@ export function MarketSummaryArticle({
           {indexes.map((index) => {
             const isUp = (index.changePercent ?? 0) >= 0;
             return (
-              <div key={index.symbol} className="rounded-lg border border-border p-3">
+              <div key={index.symbol} className="rounded-none border border-border p-3">
                 <p className="text-xs text-muted-foreground">{index.name}</p>
                 <p className="font-medium tabular-nums">
                   {index.price != null ? index.price.toFixed(2) : "—"}

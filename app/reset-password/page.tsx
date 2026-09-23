@@ -73,7 +73,7 @@ function RequestResetForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"
-        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+        className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
       />
       <Button type="submit" disabled={status === "loading"} className="w-full">
         {status === "loading" ? "Sending…" : "Send reset link"}
@@ -126,7 +126,7 @@ function NewPasswordForm() {
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="New password"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+          className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
         <PasswordRequirementsList password={newPassword} />
       </div>

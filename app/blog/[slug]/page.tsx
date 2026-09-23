@@ -179,7 +179,7 @@ function BlogPostView({ slug }: { slug: string }) {
         </div>
       </article>
 
-      <section className="mt-10 rounded-xl border border-border bg-card p-4">
+      <section className="mt-10 rounded-none border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
         <EmailSubscribeForm />
       </section>
@@ -252,7 +252,7 @@ function SeoSentimentPageView({
           alt={`${company.companyName} stock market`}
           width={480}
           height={270}
-          className="mt-4 aspect-video w-full max-w-sm rounded-xl object-cover"
+          className="mt-4 aspect-video w-full max-w-sm rounded-none object-cover"
           priority
         />
       )}
@@ -287,7 +287,7 @@ function SeoSentimentPageView({
         </p>
       </div>
 
-      <section className="mt-6 rounded-xl border border-border bg-card p-4">
+      <section className="mt-6 rounded-none border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">
           Sentiment vs. Price (90 days)
         </h2>
@@ -302,7 +302,7 @@ function SeoSentimentPageView({
         <p>{sections.prediction}</p>
       </div>
 
-      <section className="mt-8 rounded-xl border border-border bg-card p-4">
+      <section className="mt-8 rounded-none border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
         <EmailSubscribeForm />
       </section>
@@ -315,7 +315,7 @@ function SeoSentimentPageView({
               <li key={c.ticker}>
                 <Link
                   href={`/blog/${companySlug(c.companyName)}`}
-                  className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
+                  className="rounded-none border border-border px-3 py-1 text-xs hover:bg-muted"
                 >
                   {c.companyName}
                 </Link>
@@ -394,7 +394,7 @@ function IndexWeeklyRecapView({
           alt={`${company.companyName} performance`}
           width={480}
           height={270}
-          className="mt-4 aspect-video w-full max-w-sm rounded-xl object-cover"
+          className="mt-4 aspect-video w-full max-w-sm rounded-none object-cover"
           priority
         />
       )}
@@ -409,7 +409,7 @@ function IndexWeeklyRecapView({
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-border p-3">
+        <div className="rounded-none border border-border p-3">
           <p className="text-xs text-muted-foreground">Latest close</p>
           <p className="font-medium tabular-nums">
             {indexWeekly.price != null ? indexWeekly.price.toFixed(2) : "—"}
@@ -425,7 +425,7 @@ function IndexWeeklyRecapView({
             </p>
           )}
         </div>
-        <div className="rounded-lg border border-border p-3">
+        <div className="rounded-none border border-border p-3">
           <p className="text-xs text-muted-foreground">Week of {indexWeekly.weekOfLabel}</p>
           {indexWeekly.weekChangePercent != null ? (
             <p
@@ -456,7 +456,7 @@ function IndexWeeklyRecapView({
         </p>
       </div>
 
-      <section className="mt-6 rounded-xl border border-border bg-card p-4">
+      <section className="mt-6 rounded-none border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">
           Sentiment vs. Price (90 days)
         </h2>
@@ -477,7 +477,7 @@ function IndexWeeklyRecapView({
         </Link>
       </p>
 
-      <section className="mt-8 rounded-xl border border-border bg-card p-4">
+      <section className="mt-8 rounded-none border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-medium">Get the daily market wrap by email</h2>
         <EmailSubscribeForm />
       </section>
@@ -490,7 +490,7 @@ function IndexWeeklyRecapView({
               <li key={c.ticker}>
                 <Link
                   href={`/blog/${companySlug(c.companyName)}`}
-                  className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
+                  className="rounded-none border border-border px-3 py-1 text-xs hover:bg-muted"
                 >
                   {c.companyName}
                 </Link>

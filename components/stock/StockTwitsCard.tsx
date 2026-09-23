@@ -39,7 +39,7 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
 
   if (loading) {
     return (
-      <section className="mb-8 rounded-xl border border-border bg-card p-4">
+      <section className="mb-8 rounded-none border border-border bg-card p-4">
         <p className="text-sm text-muted-foreground">Loading StockTwits sentiment…</p>
       </section>
     );
@@ -50,11 +50,11 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
   const { sentiment, feed } = data;
 
   return (
-    <section className="mb-8 rounded-xl border border-border bg-card p-4">
+    <section className="mb-8 rounded-none border border-border bg-card p-4">
       <h2 className="mb-3 text-sm font-medium text-muted-foreground">StockTwits Sentiment</h2>
 
       <div className="mb-4">
-        <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className="flex h-2 w-full overflow-hidden rounded-none bg-muted">
           <div
             className="h-full bg-[var(--color-chart-1)]"
             style={{ width: `${sentiment.bullishPercent}%` }}
@@ -74,7 +74,7 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
 
       <ul className="max-h-80 space-y-2 overflow-y-auto">
         {feed.slice(0, 15).map((message) => (
-          <li key={message.id} className="rounded-lg border border-border p-2 text-sm">
+          <li key={message.id} className="rounded-none border border-border p-2 text-sm">
             <div className="flex items-center justify-between">
               <a
                 href={message.profileUrl}

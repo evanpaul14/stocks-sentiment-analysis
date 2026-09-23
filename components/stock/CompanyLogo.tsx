@@ -21,7 +21,7 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
   if (failed) {
     return (
       <div
-        className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-sm font-medium text-muted-foreground"
+        className="flex shrink-0 items-center justify-center rounded-none border border-border bg-muted text-sm font-medium text-muted-foreground"
         style={{ width: size, height: size }}
         aria-hidden="true"
       >
@@ -39,7 +39,7 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
       alt=""
       width={size}
       height={size}
-      className="shrink-0 rounded-lg border border-border bg-card object-contain"
+      className="shrink-0 rounded-none border border-border bg-card object-contain"
       style={{ width: size, height: size }}
       onError={() => setFailed(true)}
     />

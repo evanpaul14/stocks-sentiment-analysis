@@ -34,7 +34,7 @@ export function SentimentPriceOverlaySection({ symbol }: { symbol: string }) {
   if (!hasEnoughData) return null;
 
   return (
-    <section className="mb-8 rounded-xl border border-border bg-card p-4">
+    <section className="mb-8 rounded-none border border-border bg-card p-4">
       <h2 className="mb-3 text-sm font-medium text-muted-foreground">
         Sentiment vs. Price (90 days)
       </h2>

@@ -42,7 +42,7 @@ export function EmailSubscribeForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"
-        className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+        className="flex-1 rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
       />
       <Button type="submit" disabled={status === "loading"}>
         {status === "loading" ? "Subscribing…" : "Subscribe"}

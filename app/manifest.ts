@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Real-time stock prices, historical charts, and AI-powered news sentiment analysis.",
     start_url: "/",
     display: "standalone",
-    background_color: "#211d19",
-    theme_color: "#211d19",
+    background_color: "#0b0a09",
+    theme_color: "#0b0a09",
     icons: [
       { src: "/logo-icon-512.png", sizes: "512x512", type: "image/png" },
     ],

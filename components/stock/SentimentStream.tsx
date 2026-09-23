@@ -117,13 +117,13 @@ export function SentimentStream({
           {chartData.length > 0 ? (
             <SentimentPieChart chartData={chartData} />
           ) : (
-            <div className="flex h-full items-center justify-center rounded-full border border-border text-xs text-muted-foreground">
+            <div className="flex h-full items-center justify-center rounded-none border border-border text-xs text-muted-foreground">
               —
             </div>
           )}
         </div>
         <div className="flex-1 space-y-1">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-2 w-full overflow-hidden rounded-none bg-muted">
             <div
               className="h-full bg-primary transition-all"
               style={{ width: `${progressPercent}%` }}
@@ -144,7 +144,7 @@ export function SentimentStream({
         {results.map(({ article, sentiment }) => (
           <li
             key={article.link}
-            className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 text-sm"
+            className="flex items-start justify-between gap-3 rounded-none border border-border p-3 text-sm"
           >
             <div className="min-w-0">
               <a
@@ -174,7 +174,7 @@ function SentimentBadge({ sentiment }: { sentiment: ArticleSentiment["sentiment"
   }
   return (
     <span
-      className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize"
+      className="shrink-0 rounded-none px-2 py-0.5 text-xs font-medium capitalize"
       style={{
         color: SENTIMENT_COLORS[sentiment],
         border: `1px solid ${SENTIMENT_COLORS[sentiment]}`,

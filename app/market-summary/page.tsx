@@ -40,7 +40,7 @@ export default async function MarketSummaryPage() {
         <p className="text-sm text-muted-foreground">No market summary available yet.</p>
       )}
 
-      <section className="mt-8 rounded-xl border border-border bg-card p-4">
+      <section className="mt-8 rounded-none border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-medium">Get the daily wrap by email</h2>
         <EmailSubscribeForm />
       </section>

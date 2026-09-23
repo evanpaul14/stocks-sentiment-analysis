@@ -140,7 +140,7 @@ export default function AccountPage() {
       </dl>
 
       {subscription !== "unavailable" && (
-        <div className="mb-8 flex items-center justify-between gap-4 rounded-lg border p-3">
+        <div className="mb-8 flex items-center justify-between gap-4 rounded-none border p-3">
           <div>
             <p className="text-sm font-medium">Market summary emails</p>
             <p className="text-xs text-muted-foreground">
@@ -178,7 +178,7 @@ export default function AccountPage() {
             Delete account
           </Button>
         ) : (
-          <div className="rounded-lg border border-destructive/30 p-3">
+          <div className="rounded-none border border-destructive/30 p-3">
             <p className="mb-3 text-xs text-muted-foreground">
               This permanently deletes your account, watchlist, and search history. This
               can&apos;t be undone.

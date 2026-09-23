@@ -21,12 +21,12 @@ export function PanelSwitcher() {
   }, [panel]);
 
   return (
-    <div className="w-full max-w-md rounded-xl border border-border bg-card/60 p-4 backdrop-blur">
-      <div className="mb-3 flex gap-1 rounded-lg bg-muted p-1 text-sm">
+    <div className="w-full max-w-md rounded-none border border-border bg-card/60 p-4 backdrop-blur">
+      <div className="mb-3 flex gap-1 rounded-none bg-muted p-1 text-sm">
         <button
           type="button"
           onClick={() => setPanel("trending")}
-          className={`flex-1 rounded-md py-1.5 transition-all duration-200 ${
+          className={`flex-1 rounded-none py-1.5 transition-all duration-200 ${
             panel === "trending" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -35,7 +35,7 @@ export function PanelSwitcher() {
         <button
           type="button"
           onClick={() => setPanel("watchlist")}
-          className={`flex-1 rounded-md py-1.5 transition-all duration-200 ${
+          className={`flex-1 rounded-none py-1.5 transition-all duration-200 ${
             panel === "watchlist" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -92,7 +92,7 @@ function TeaserRow({
     <li>
       <Link
         href={`/stock/${symbol}`}
-        className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-muted"
+        className="flex items-center justify-between gap-3 rounded-none px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-muted"
       >
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
           <span className="font-medium text-foreground">{symbol}</span> {label}
