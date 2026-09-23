@@ -25,6 +25,24 @@ function stripLeadingPreamble(text: string): string {
   return lines.join("\n").trim();
 }
 
+/** max_tokens can cut the response off mid-sentence. If the text doesn't end
+ * with sentence-ending punctuation, drop back to the end of the last full
+ * sentence rather than shipping a fragment. */
+function trimTrailingIncompleteSentence(text: string): string {
+  if (/[.!?]["')]?\s*$/.test(text)) return text;
+
+  const lastSentenceEnd = Math.max(
+    text.lastIndexOf(". "),
+    text.lastIndexOf("! "),
+    text.lastIndexOf("? "),
+    text.lastIndexOf(".\n"),
+    text.lastIndexOf("!\n"),
+    text.lastIndexOf("?\n")
+  );
+  if (lastSentenceEnd === -1) return text;
+  return text.slice(0, lastSentenceEnd + 1).trim();
+}
+
 function fallbackMarketSummaryText(
   dateLabel: string,
   indexes: IndexSnapshot[],
@@ -86,7 +104,7 @@ export async function generateMarketSummaryText(
     });
     const content = response.choices[0]?.message?.content?.trim();
     if (!content) return fallbackMarketSummaryText(dateLabel, indexes, headlines);
-    return stripLeadingPreamble(content);
+    return trimTrailingIncompleteSentence(stripLeadingPreamble(content));
   } catch (error) {
     console.error("[llm7] market summary generation failed", error);
     return fallbackMarketSummaryText(dateLabel, indexes, headlines);
