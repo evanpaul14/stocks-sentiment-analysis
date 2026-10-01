@@ -1,4 +1,4 @@
-import { llm7Client, llm7Model } from "./client";
+import { generateText, llmAvailable } from "./generate";
 import { fetchFinnhubCompanyNews, type Headline } from "@/lib/integrations/news/finnhub";
 import { getNewsArticles } from "@/lib/integrations/news/googleNews";
 import { TtlCache } from "@/lib/cache/memory";
@@ -57,7 +57,7 @@ async function summarizeWithLlm7(
   changePercent: number,
   headlines: Headline[]
 ): Promise<string | null> {
-  if (!llm7Client || headlines.length === 0) return null;
+  if (!llmAvailable() || headlines.length === 0) return null;
 
   const direction = changePercent >= 0 ? "up" : "down";
   const bullets = headlines
@@ -76,25 +76,18 @@ ${bullets}
 
 Write a 2-3 sentence, no-speculation explanation of the move. Refer to the company by its ticker (${symbol}), not its full name. Do not reference "the headlines" or "the article" directly, and do not speculate beyond what the headlines state. If the headlines do not explain the move, clearly state that. Do not specifically mention the stock price or percentage change in the summary. Do not include a headline or summary section indicator, just give the summary.`;
 
-  try {
-    const response = await llm7Client.chat.completions.create({
-      model: llm7Model,
-      temperature: 0.3,
-      max_tokens: 220,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a sharp markets reporter who explains price action using headlines.",
-        },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    return response.choices[0]?.message?.content?.trim() ?? null;
-  } catch (error) {
-    console.error(`[llm7] movement insight failed for ${symbol}`, error);
-    return null;
-  }
+  return generateText({
+    label: `movement insight for ${symbol}`,
+    temperature: 0.3,
+    maxTokens: 220,
+    messages: [
+      {
+        role: "system",
+        content: "You are a sharp markets reporter who explains price action using headlines.",
+      },
+      { role: "user", content: userPrompt },
+    ],
+  });
 }
 
 /**

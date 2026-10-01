@@ -168,7 +168,7 @@ See `.env.example` for the full list with comments. Everything is optional excep
 
 - `GOOGLE_API_KEY` — required; Gemini sentiment classification
 - `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — fallback sentiment classifier
-- `LLM7_API_KEY` — movement insight + market summary text generation
+- `LLM7_API_KEY` — movement insight + market summary + SEO page text generation (falls back to Cloudflare Workers AI, via `CLOUDFLARE_TEXT_MODEL` / `CLOUDFLARE_LONG_TEXT_MODEL`, if LLM7 errors)
 - `FINNHUB_API_KEY`, `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY` — market data / news
 - `UNSPLASH_ACCESS_KEY` — article thumbnail images
 - `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` — market summary email subscription

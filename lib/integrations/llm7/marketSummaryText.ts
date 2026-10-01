@@ -1,4 +1,4 @@
-import { llm7Client, llm7Model } from "./client";
+import { generateText, llmAvailable } from "./generate";
 import type { IndexSnapshot } from "@/lib/integrations/yahoo/indices";
 import type { NewsArticle } from "@/lib/integrations/news/googleNews";
 
@@ -63,7 +63,7 @@ export async function generateMarketSummaryText(
   indexes: IndexSnapshot[],
   headlines: NewsArticle[]
 ): Promise<string> {
-  if (!llm7Client) return fallbackMarketSummaryText(dateLabel, indexes, headlines);
+  if (!llmAvailable()) return fallbackMarketSummaryText(dateLabel, indexes, headlines);
 
   const indexLines = indexes.map(formatIndexLine).join("\n") || "No index data available.";
   const headlineLines =
@@ -88,25 +88,19 @@ export async function generateMarketSummaryText(
     "- Do not speculate or invent facts not supported by the headlines\n" +
     "- No headers, labels, or preamble — output the summary only\n";
 
-  try {
-    const response = await llm7Client.chat.completions.create({
-      model: llm7Model,
-      temperature: 0.3,
-      max_tokens: 350,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a financial markets writer producing a concise end-of-day briefing.",
-        },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    const content = response.choices[0]?.message?.content?.trim();
-    if (!content) return fallbackMarketSummaryText(dateLabel, indexes, headlines);
-    return trimTrailingIncompleteSentence(stripLeadingPreamble(content));
-  } catch (error) {
-    console.error("[llm7] market summary generation failed", error);
-    return fallbackMarketSummaryText(dateLabel, indexes, headlines);
-  }
+  const content = await generateText({
+    label: "market summary generation",
+    long: true,
+    temperature: 0.3,
+    maxTokens: 350,
+    messages: [
+      {
+        role: "system",
+        content: "You are a financial markets writer producing a concise end-of-day briefing.",
+      },
+      { role: "user", content: userPrompt },
+    ],
+  });
+  if (!content) return fallbackMarketSummaryText(dateLabel, indexes, headlines);
+  return trimTrailingIncompleteSentence(stripLeadingPreamble(content));
 }

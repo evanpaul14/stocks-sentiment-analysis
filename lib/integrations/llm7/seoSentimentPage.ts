@@ -1,4 +1,4 @@
-import { llm7Client, llm7Model } from "./client";
+import { generateText, llmAvailable } from "./generate";
 import { getLimiter } from "@/lib/ratelimit/tokenBucket";
 import type { SentimentPricePoint } from "@/lib/sentiment/sentimentPriceOverlay";
 
@@ -185,7 +185,7 @@ export async function generateSeoPageSections(
     isFreshGeneration: false,
   });
 
-  if (!llm7Client) return fallback();
+  if (!llmAvailable()) return fallback();
   if (!seoGenerationLimiter.consume("global")) {
     console.warn(
       `[llm7] SEO sentiment generation rate-limited, using ${staleSections ? "stale cache" : "fallback"} for ${ticker}`
@@ -209,35 +209,29 @@ Do not invent specific facts not provided in the data points above — no produc
 
 Respond with ONLY the JSON object, no markdown fences.`;
 
-  try {
-    const response = await llm7Client.chat.completions.create({
-      model: llm7Model,
-      temperature: 0.4,
-      max_tokens: 1400,
-      messages: [
-        {
-          role: "system",
-          content: "You are a financial content writer producing factual, balanced stock analysis copy.",
-        },
-        { role: "user", content: prompt },
-      ],
-    });
+  const raw = await generateText({
+    label: `SEO sentiment page generation for ${ticker}`,
+    long: true,
+    temperature: 0.4,
+    maxTokens: 1400,
+    messages: [
+      {
+        role: "system",
+        content: "You are a financial content writer producing factual, balanced stock analysis copy.",
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+  const sections = raw ? extractSections(raw) : null;
+  if (!sections) return fallback();
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
-    const sections = extractSections(raw);
-    if (!sections) return fallback();
-
-    if (wordCount(sections) < MIN_ACCEPTABLE_WORDS) {
-      console.warn(
-        `[llm7] SEO sentiment page for ${ticker} came back too thin (${wordCount(sections)} words), using ${staleSections ? "stale cache" : "fallback"}`
-      );
-      return fallback();
-    }
-    return { sections, isFreshGeneration: true };
-  } catch (error) {
-    console.error(`[llm7] SEO sentiment page generation failed for ${ticker}`, error);
+  if (wordCount(sections) < MIN_ACCEPTABLE_WORDS) {
+    console.warn(
+      `[llm7] SEO sentiment page for ${ticker} came back too thin (${wordCount(sections)} words), using ${staleSections ? "stale cache" : "fallback"}`
+    );
     return fallback();
   }
+  return { sections, isFreshGeneration: true };
 }
 
 export interface IndexWeeklyRecapInput {
@@ -274,7 +268,7 @@ export async function generateIndexWeeklyRecapSections(
     isFreshGeneration: false,
   });
 
-  if (!llm7Client) return fallback();
+  if (!llmAvailable()) return fallback();
   if (!seoGenerationLimiter.consume("global")) {
     console.warn(
       `[llm7] Index weekly recap generation rate-limited, using ${staleSections ? "stale cache" : "fallback"} for ${input.ticker}`
@@ -302,26 +296,20 @@ Write three short sections for an SEO page recapping ${input.companyName}'s perf
 
 Respond with ONLY the JSON object, no markdown fences.`;
 
-  try {
-    const response = await llm7Client.chat.completions.create({
-      model: llm7Model,
-      temperature: 0.4,
-      max_tokens: 700,
-      messages: [
-        {
-          role: "system",
-          content: "You are a financial content writer producing factual, balanced market index recap copy.",
-        },
-        { role: "user", content: prompt },
-      ],
-    });
-
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
-    const sections = extractSections(raw);
-    if (!sections) return fallback();
-    return { sections, isFreshGeneration: true };
-  } catch (error) {
-    console.error(`[llm7] Index weekly recap generation failed for ${input.ticker}`, error);
-    return fallback();
-  }
+  const raw = await generateText({
+    label: `index weekly recap generation for ${input.ticker}`,
+    long: true,
+    temperature: 0.4,
+    maxTokens: 700,
+    messages: [
+      {
+        role: "system",
+        content: "You are a financial content writer producing factual, balanced market index recap copy.",
+      },
+      { role: "user", content: prompt },
+    ],
+  });
+  const sections = raw ? extractSections(raw) : null;
+  if (!sections) return fallback();
+  return { sections, isFreshGeneration: true };
 }
