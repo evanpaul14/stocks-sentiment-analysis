@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
@@ -14,6 +15,11 @@ import { WatchlistToggleButton } from "@/components/watchlist/WatchlistToggleBut
 import { MovementInsight } from "@/components/stock/MovementInsight";
 import { StockTwitsCard } from "@/components/stock/StockTwitsCard";
 import { SentimentPriceOverlaySection } from "@/components/stock/SentimentPriceOverlaySection";
+import { SearchLimitPrompt } from "@/components/stock/SearchLimitPrompt";
+import { getCurrentUser } from "@/lib/auth/currentUser";
+import { recordAnonSearch, type AnonSearchStatus } from "@/lib/ratelimit/anonSearchLimit";
+import { isVerifiedCrawler } from "@/lib/ratelimit/verifiedCrawler";
+import { getClientIp } from "@/lib/ratelimit/withRateLimit";
 import { JsonLd } from "@/lib/seo/JsonLd";
 import { breadcrumbListJsonLd } from "@/lib/seo/structuredData";
 import { companySlug, findSeoCompanyByTicker } from "@/lib/utils/tickers";
@@ -62,6 +68,23 @@ export default async function StockPage({ params }: StockPageProps) {
   }
 
   const { stockInfo, historicalData, articles } = data;
+
+  const searchStatus = await getAnonSearchStatus(stockInfo.symbol);
+  if (searchStatus?.limited) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10">
+        <SearchLimitPrompt {...searchStatus}>
+          <header className="mb-6 flex items-center gap-3">
+            <CompanyLogo symbol={stockInfo.symbol} companyName={stockInfo.companyName} />
+            <div>
+              <p className="text-sm text-muted-foreground">{stockInfo.symbol}</p>
+              <h1 className="text-2xl font-semibold">{stockInfo.companyName}</h1>
+            </div>
+          </header>
+        </SearchLimitPrompt>
+      </main>
+    );
+  }
 
   const [articleSentiments, movementInsight] = await Promise.all([
     getArticleSentiments(stockInfo.symbol, stockInfo.companyName, articles),
@@ -170,8 +193,20 @@ export default async function StockPage({ params }: StockPageProps) {
           </Link>
         </p>
       )}
+      {searchStatus && <SearchLimitPrompt {...searchStatus} />}
     </main>
   );
+}
+
+/** Counts this lookup against the visitor's IP; null for signed-in users and verified crawlers (unmetered). */
+async function getAnonSearchStatus(symbol: string): Promise<AnonSearchStatus | null> {
+  const requestHeaders = await headers();
+  const ip = getClientIp({ headers: requestHeaders });
+  // No trustworthy IP (e.g. local dev without the proxy) — don't lump everyone into one bucket.
+  if (ip === "unknown") return null;
+  if (await isVerifiedCrawler(ip, requestHeaders.get("user-agent"))) return null;
+  if (await getCurrentUser({ headers: requestHeaders })) return null;
+  return recordAnonSearch(ip, symbol);
 }
 
 function StatTile({ label, value }: { label: string; value: string }) {

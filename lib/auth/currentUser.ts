@@ -1,15 +1,14 @@
-import type { NextRequest } from "next/server";
 import { createReadOnlyClient } from "@/lib/supabase/server";
 
 /** Resolves the Supabase user id for the current request's session, if any. */
-export async function getCurrentUserId(request: NextRequest): Promise<string | null> {
+export async function getCurrentUserId(request: { headers: Headers }): Promise<string | null> {
   const user = await getCurrentUser(request);
   return user?.id ?? null;
 }
 
 /** Resolves the Supabase user id + email for the current request's session, if any. */
 export async function getCurrentUser(
-  request: NextRequest
+  request: { headers: Headers }
 ): Promise<{ id: string; email: string | null } | null> {
   const supabase = createReadOnlyClient(request);
   const {

@@ -15,7 +15,7 @@ export interface RateLimitOptions {
  * earlier entries (or the whole header) to whatever it wants, so those
  * can't be trusted for rate-limit keying.
  */
-function getClientIp(request: NextRequest): string {
+export function getClientIp(request: { headers: Headers }): string {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (!forwardedFor) return "unknown";
   const parts = forwardedFor.split(",").map((part) => part.trim());

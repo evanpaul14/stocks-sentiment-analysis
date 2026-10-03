@@ -26,7 +26,7 @@ export function createClient(request: NextRequest, response: NextResponse) {
 }
 
 /** Read-only client — for routes that only need to know who's calling; session refresh happens in proxy.ts. */
-export function createReadOnlyClient(request: NextRequest) {
+export function createReadOnlyClient(request: { headers: Headers }) {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
