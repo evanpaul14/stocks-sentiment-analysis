@@ -78,7 +78,7 @@ export default function WatchlistPage() {
                 <div className="text-right text-sm tabular-nums">
                   <p>{entry.lastPrice != null ? `$${entry.lastPrice.toFixed(2)}` : "—"}</p>
                   {entry.lastChangePercent != null && (
-                    <p className={isUp ? "text-[var(--color-chart-1)]" : "text-destructive"}>
+                    <p className={isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"}>
                       {isUp ? "+" : ""}
                       {entry.lastChangePercent.toFixed(2)}%
                     </p>

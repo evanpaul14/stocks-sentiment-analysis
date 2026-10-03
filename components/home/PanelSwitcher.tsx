@@ -22,11 +22,12 @@ export function PanelSwitcher() {
 
   return (
     <div className="w-full max-w-md rounded-none border border-border bg-card/60 p-4 backdrop-blur">
-      <div className="mb-3 flex gap-1 rounded-none bg-muted p-1 text-sm">
+      <div role="group" aria-label="Home panel" className="mb-3 flex gap-1 rounded-none bg-muted p-1 text-sm">
         <button
           type="button"
           onClick={() => setPanel("trending")}
-          className={`flex-1 rounded-none py-1.5 transition-all duration-200 ${
+          aria-pressed={panel === "trending"}
+          className={`flex-1 rounded-none py-1.5 pointer-coarse:py-3 transition-all duration-200 ${
             panel === "trending" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -35,7 +36,8 @@ export function PanelSwitcher() {
         <button
           type="button"
           onClick={() => setPanel("watchlist")}
-          className={`flex-1 rounded-none py-1.5 transition-all duration-200 ${
+          aria-pressed={panel === "watchlist"}
+          className={`flex-1 rounded-none py-1.5 pointer-coarse:py-3 transition-all duration-200 ${
             panel === "watchlist" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -102,7 +104,7 @@ function TeaserRow({
             <>
               <span>${price.toFixed(2)}</span>{" "}
               {changePercent != null && (
-                <span className={isUp ? "text-[var(--color-chart-1)]" : "text-destructive"}>
+                <span className={isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"}>
                   {isUp ? "+" : ""}
                   {changePercent.toFixed(2)}%
                 </span>

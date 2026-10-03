@@ -35,7 +35,7 @@ export function SentimentPriceOverlayChart({ data }: SentimentPriceOverlayChartP
               contentStyle={{
                 background: "var(--color-popover)",
                 border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
+                borderRadius: 0,
                 color: "var(--color-popover-foreground)",
                 fontSize: 12,
               }}

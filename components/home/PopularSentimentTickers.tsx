@@ -98,7 +98,7 @@ export function PopularSentimentTickers() {
                   <span className="tabular-nums">${info.price.toFixed(2)}</span>{" "}
                   {info.changePercent != null && (
                     <span
-                      className={`tabular-nums ${isUp ? "text-[var(--color-chart-1)]" : "text-destructive"}`}
+                      className={`tabular-nums ${isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"}`}
                     >
                       {isUp ? "+" : ""}
                       {info.changePercent.toFixed(2)}%

@@ -73,7 +73,7 @@ export default function LoginPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
-          className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+          className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
         <label htmlFor="login-password" className="sr-only">
           Password
@@ -86,7 +86,7 @@ export default function LoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+          className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
         <Button type="submit" disabled={status === "loading"} className="w-full">
           {status === "loading" ? "Signing in…" : "Sign in"}
@@ -94,10 +94,10 @@ export default function LoginPage() {
 
         <div role="alert" aria-live="assertive">
           {status === "error" && (
-            <p className="text-xs text-destructive">Invalid email or password.</p>
+            <p className="text-xs text-destructive-text">Invalid email or password.</p>
           )}
           {status === "unverified" && (
-            <p className="text-xs text-destructive">
+            <p className="text-xs text-destructive-text">
               Verify your email before signing in — check your inbox for the link.
             </p>
           )}

@@ -81,13 +81,13 @@ export function SearchLimitPrompt({ used, limit, limited, children }: SearchLimi
           <Link
             href="/signup"
             data-umami-event={limited ? "search-limit-signup" : "search-intro-signup"}
-            className="inline-flex h-8 items-center justify-center bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+            className="inline-flex h-8 pointer-coarse:h-11 items-center justify-center bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
           >
             Sign up free
           </Link>
           <Link
             href="/login"
-            className="inline-flex h-8 items-center justify-center border border-border bg-background px-3 text-sm font-medium hover:bg-muted"
+            className="inline-flex h-8 pointer-coarse:h-11 items-center justify-center border border-border bg-background px-3 text-sm font-medium hover:bg-muted"
           >
             Log in
           </Link>
@@ -110,13 +110,13 @@ function LockedNotice() {
       <div className="mt-4 flex gap-2">
         <Link
           href="/signup"
-          className="inline-flex h-8 items-center bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+          className="inline-flex h-8 pointer-coarse:h-11 items-center bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
         >
           Sign up free
         </Link>
         <Link
           href="/login"
-          className="inline-flex h-8 items-center border border-border bg-background px-3 text-sm font-medium hover:bg-muted"
+          className="inline-flex h-8 pointer-coarse:h-11 items-center border border-border bg-background px-3 text-sm font-medium hover:bg-muted"
         >
           Log in
         </Link>

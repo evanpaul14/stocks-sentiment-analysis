@@ -119,7 +119,7 @@ export function MarketSummaryArticle({
                 {index.changePercent != null && (
                   <p
                     className={`text-xs tabular-nums ${
-                      isUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+                      isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"
                     }`}
                   >
                     {isUp ? "+" : ""}

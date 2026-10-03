@@ -46,7 +46,7 @@ function PriceCell({ price, changePercent }: { price: number | null; changePerce
     <div className="text-right tabular-nums">
       <p>{price != null ? `$${price.toFixed(2)}` : "—"}</p>
       {changePercent != null && (
-        <p className={`text-xs ${isUp ? "text-[var(--color-chart-1)]" : "text-destructive"}`}>
+        <p className={`text-xs ${isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"}`}>
           {isUp ? "+" : ""}
           {changePercent.toFixed(2)}%
         </p>

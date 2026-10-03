@@ -68,7 +68,7 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
           <span className="text-[var(--color-chart-1)]">
             Bullish {sentiment.bullishPercent}%
           </span>
-          <span className="text-destructive">Bearish {sentiment.bearishPercent}%</span>
+          <span className="text-destructive-text">Bearish {sentiment.bearishPercent}%</span>
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
                   className={`text-xs capitalize ${
                     message.sentiment === "bullish"
                       ? "text-[var(--color-chart-1)]"
-                      : "text-destructive"
+                      : "text-destructive-text"
                   }`}
                 >
                   {message.sentiment}

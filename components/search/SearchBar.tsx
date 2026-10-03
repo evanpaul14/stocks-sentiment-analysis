@@ -97,7 +97,7 @@ export function SearchBar({ showSuggestions = false, className = "max-w-md" }: S
             onFocus={() => showSuggestions && setIsOpen(true)}
             onKeyDown={handleKeyDown}
             placeholder="Search a ticker or company (e.g. AAPL, Apple)"
-            className="h-8 w-full rounded-none border border-border bg-background px-3 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="h-8 w-full rounded-none border border-field bg-background px-3 text-sm pointer-coarse:h-11 pointer-coarse:text-base outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/50"
             autoComplete="off"
             role={showSuggestions ? "combobox" : undefined}
             aria-expanded={showSuggestions ? isOpen && filteredHistory.length > 0 : undefined}

@@ -27,13 +27,16 @@
   --destructive: oklch(0.58 0.12 35);
   --border: oklch(0.93 0.01 75 / 10%);
   --input: oklch(0.93 0.01 75 / 12%);
+  /* Text-field boundary: ~3:1 against the page (WCAG 1.4.11); hairlines stay 10%. */
+  --field: oklch(0.93 0.01 75 / 45%);
+  /* Rust lightened for small text on dark and card surfaces (>=4.5:1). */
+  --destructive-text: oklch(0.7 0.11 35);
   --ring: oklch(0.78 0.13 85 / 50%);
   --chart-1: oklch(0.62 0.1 165);
   --chart-2: oklch(0.78 0.13 85);
   --chart-3: oklch(0.58 0.12 35);
   --chart-4: oklch(0.58 0.02 75);
   --chart-5: oklch(0.42 0.015 75);
-  --radius: 0.75rem;
   --sidebar: oklch(0.205 0.007 75);
   --sidebar-foreground: oklch(0.93 0.01 75);
   --sidebar-primary: oklch(0.78 0.13 85);
@@ -62,16 +65,14 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field: var(--field);
+  --color-destructive-text: var(--destructive-text);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -82,7 +83,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-body);
   --font-serif: var(--font-display);
-  --font-mono: var(--font-data);
 }
 
 @keyframes ticker-tape {

@@ -52,7 +52,7 @@ export function SentimentEngineSection() {
         {FEATURES.map(({ icon: Icon, title, description, detail }) => (
           <Card key={title} className="text-left">
             <CardContent className="flex flex-col gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <div className="flex size-9 items-center justify-center rounded-none bg-primary/10 text-primary">
                 <Icon className="size-4.5" aria-hidden="true" />
               </div>
               <h3 className="font-medium">{title}</h3>

@@ -85,7 +85,7 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
                 contentStyle={{
                   background: "var(--color-popover)",
                   border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
+                  borderRadius: 0,
                   color: "var(--color-popover-foreground)",
                   fontSize: 12,
                 }}

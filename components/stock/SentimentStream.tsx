@@ -123,18 +123,25 @@ export function SentimentStream({
           )}
         </div>
         <div className="flex-1 space-y-1">
-          <div className="h-2 w-full overflow-hidden rounded-none bg-muted">
+          <div
+            role="progressbar"
+            aria-label="Articles analyzed"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+            className="h-2 w-full overflow-hidden rounded-none bg-muted"
+          >
             <div
               className="h-full bg-primary transition-all"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p role="status" className="text-xs text-muted-foreground">
             Analyzed {analyzed.length} of {articles.length} articles
           </p>
           <div className="flex gap-3 text-xs">
             <span className="text-[var(--color-chart-1)]">Positive {counts.positive}</span>
-            <span className="text-destructive">Negative {counts.negative}</span>
+            <span className="text-destructive-text">Negative {counts.negative}</span>
             <span className="text-muted-foreground">Neutral {counts.neutral}</span>
           </div>
         </div>
@@ -170,7 +177,7 @@ function SentimentBadge({ sentiment }: { sentiment: ArticleSentiment["sentiment"
     return <span className="shrink-0 text-xs text-muted-foreground">…</span>;
   }
   if (sentiment === "error") {
-    return <span className="shrink-0 text-xs text-destructive">error</span>;
+    return <span className="shrink-0 text-xs text-destructive-text">error</span>;
   }
   return (
     <span
