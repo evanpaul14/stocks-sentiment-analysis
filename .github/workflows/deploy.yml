@@ -65,6 +65,19 @@ jobs:
       # are packaged below.
       - run: npm run db:migrate
 
+      # Persist Next's build cache (.next/cache: SWC/Turbopack output, image
+      # cache) across runs so unchanged modules aren't recompiled. The key
+      # includes a hash of the source so each commit saves a fresh entry;
+      # restore-keys falls back to the most recent cache for the same lockfile.
+      - name: Restore Next.js build cache
+        uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('app/**', 'components/**', 'lib/**', 'content/**', 'public/**', 'next.config.*', 'drizzle/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
       # NEXT_PUBLIC_* vars are inlined into the client JS bundle at build
       # time (not read at runtime), so they must be present here in CI —
       # setting them on the VPS's .env alone does nothing for the bundle,
