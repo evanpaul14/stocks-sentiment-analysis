@@ -75,6 +75,20 @@ export function Header() {
     }
   }, [isMenuOpen]);
 
+  // Lets other components (e.g. the empty watchlist) ask the header to open
+  // search: focus the desktop input if it's visible, else open the mobile bar.
+  useEffect(() => {
+    function handleOpenSearch() {
+      const desktopInput = Array.from(
+        document.querySelectorAll<HTMLInputElement>("header input")
+      ).find((el) => el.offsetParent !== null);
+      if (desktopInput) desktopInput.focus();
+      else setIsSearchOpen(true);
+    }
+    window.addEventListener("open-search", handleOpenSearch);
+    return () => window.removeEventListener("open-search", handleOpenSearch);
+  }, []);
+
   useEffect(() => {
     if (isSearchOpen) {
       mobileSearchRef.current?.querySelector("input")?.focus();

@@ -54,9 +54,17 @@ export default function WatchlistPage() {
       <h1 className="mb-6 text-2xl font-semibold">Watchlist</h1>
 
       {entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Your watchlist is empty. Search a stock and add it from its page.
-        </p>
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-muted-foreground">
+            Your watchlist is empty. Search a stock and add it from its page.
+          </p>
+          <Button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("open-search"))}
+          >
+            Add to watchlist
+          </Button>
+        </div>
       ) : (
         <ul className="space-y-2">
           {entries.map((entry) => {
