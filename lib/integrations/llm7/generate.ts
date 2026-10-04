@@ -3,6 +3,7 @@ import { llm7Client, llm7Model } from "./client";
 const DEFAULT_CLOUDFLARE_TEXT_MODEL = "@cf/meta/llama-3.2-3b-instruct";
 const DEFAULT_CLOUDFLARE_LONG_TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 const DEFAULT_CLOUDFLARE_TEXT_TIMEOUT_SECONDS = 30;
+const DEFAULT_LLM7_TIMEOUT_SECONDS = 20;
 
 export interface ChatMessage {
   role: "system" | "user";
@@ -17,6 +18,13 @@ export interface GenerateTextOptions {
   label: string;
   /** Longer outputs use the larger Cloudflare fallback model. */
   long?: boolean;
+  /**
+   * How long to wait on LLM7 before failing over to Cloudflare. Latency-sensitive
+   * callers (user-facing pages) pass a small value; batch jobs use the default.
+   */
+  llm7TimeoutMs?: number;
+  /** Overrides how long to wait on the Cloudflare fallback. */
+  cloudflareTimeoutMs?: number;
 }
 
 function cloudflareEnabled(): boolean {
@@ -33,8 +41,9 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
     ? (process.env.CLOUDFLARE_LONG_TEXT_MODEL ?? DEFAULT_CLOUDFLARE_LONG_TEXT_MODEL)
     : (process.env.CLOUDFLARE_TEXT_MODEL ?? DEFAULT_CLOUDFLARE_TEXT_MODEL);
   const timeoutMs =
+    opts.cloudflareTimeoutMs ??
     Number(process.env.CLOUDFLARE_TEXT_TIMEOUT_SECONDS ?? DEFAULT_CLOUDFLARE_TEXT_TIMEOUT_SECONDS) *
-    1000;
+      1000;
   const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`;
 
   const controller = new AbortController();
@@ -76,12 +85,20 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
 export async function generateText(opts: GenerateTextOptions): Promise<string | null> {
   if (llm7Client) {
     try {
-      const response = await llm7Client.chat.completions.create({
-        model: llm7Model,
-        temperature: opts.temperature,
-        max_tokens: opts.maxTokens,
-        messages: opts.messages,
-      });
+      // maxRetries: 0 — the SDK's default retries would stack on top of the
+      // timeout before we ever reach the Cloudflare fallback.
+      const response = await llm7Client.chat.completions.create(
+        {
+          model: llm7Model,
+          temperature: opts.temperature,
+          max_tokens: opts.maxTokens,
+          messages: opts.messages,
+        },
+        {
+          timeout: opts.llm7TimeoutMs ?? DEFAULT_LLM7_TIMEOUT_SECONDS * 1000,
+          maxRetries: 0,
+        }
+      );
       const content = response.choices[0]?.message?.content?.trim();
       if (content) return content;
       console.error(`[llm7] ${opts.label} returned empty content`);

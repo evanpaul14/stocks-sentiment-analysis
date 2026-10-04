@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
 import { computeSentimentVerdict, getArticleSentiments } from "@/lib/stock/getArticleSentiments";
 import { SentimentVerdictBadge } from "@/components/stock/SentimentVerdictBadge";
-import { buildMovementInsight } from "@/lib/integrations/llm7/movementInsight";
+import { peekMovementInsight } from "@/lib/integrations/llm7/movementInsight";
 import { SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
 import { CompanyLogo } from "@/components/stock/CompanyLogo";
 import { LivePrice } from "@/components/stock/LivePrice";
@@ -86,17 +86,14 @@ export default async function StockPage({ params }: StockPageProps) {
     );
   }
 
-  const [articleSentiments, movementInsight] = await Promise.all([
-    getArticleSentiments(stockInfo.symbol, stockInfo.companyName, articles),
-    stockInfo.regularMarketChangePercent != null &&
-    Math.abs(stockInfo.regularMarketChangePercent) >= 3
-      ? buildMovementInsight(
-          stockInfo.symbol,
-          stockInfo.companyName,
-          stockInfo.regularMarketChangePercent
-        )
-      : Promise.resolve(null),
-  ]);
+  const articleSentiments = await getArticleSentiments(
+    stockInfo.symbol,
+    stockInfo.companyName,
+    articles
+  );
+  // Don't block the page on the LLM: use the insight only if it's already cached
+  // (so SSR/crawlers still see it); otherwise the client component lazy-loads it.
+  const movementInsight = peekMovementInsight(stockInfo.symbol) ?? null;
 
   const verdict = computeSentimentVerdict(articleSentiments);
   const seoCompany = findSeoCompanyByTicker(stockInfo.symbol);

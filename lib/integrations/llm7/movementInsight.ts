@@ -80,6 +80,8 @@ Write a 2-3 sentence, no-speculation explanation of the move. Refer to the compa
     label: `movement insight for ${symbol}`,
     temperature: 0.3,
     maxTokens: 220,
+    llm7TimeoutMs: 6_000,
+    cloudflareTimeoutMs: 10_000,
     messages: [
       {
         role: "system",
@@ -88,6 +90,11 @@ Write a 2-3 sentence, no-speculation explanation of the move. Refer to the compa
       { role: "user", content: userPrompt },
     ],
   });
+}
+
+/** Returns the cached insight without computing one; undefined on a miss. */
+export function peekMovementInsight(symbol: string): MovementInsight | null | undefined {
+  return insightCache.get(symbol.toUpperCase());
 }
 
 /**
