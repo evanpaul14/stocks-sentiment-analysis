@@ -1,0 +1,55 @@
+name: Weekly audit fix
+
+on:
+  schedule:
+    - cron: "0 11 * * 1" # Mondays 11:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit-fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Non-breaking fixes only (no --force). The result goes up as a PR rather
+      # than a push to master, since every push to master deploys to prod.
+      - run: npm audit fix
+
+      - id: changes
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.changes.outputs.changed == 'true'
+        run: npm run build
+
+      - if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="chore/audit-fix-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add package.json package-lock.json
+          git commit -m "Update dependencies to resolve security advisories"
+          git push origin "$branch"
+          gh pr create \
+            --base master \
+            --head "$branch" \
+            --title "Weekly npm audit fix" \
+            --body "Automated \`npm audit fix\` (non-breaking). The production build passed. Merging deploys to prod."
