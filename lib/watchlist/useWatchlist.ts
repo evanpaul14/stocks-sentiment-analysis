@@ -7,6 +7,7 @@ import {
   readWatchlist,
   removeFromWatchlist,
   subscribeToWatchlist,
+  updateWatchlistPrices,
   type WatchlistEntry,
 } from "./storage";
 
@@ -117,6 +118,31 @@ export function useWatchlist() {
     },
     [loggedIn]
   );
+
+  // Fetch prices whenever the set of symbols changes (initial load, newly added
+  // stock), so every consumer — home panel included — shows prices without
+  // waiting for the watchlist page's 30s poll.
+  const symbolsKey = entries.map((e) => e.symbol).join(",");
+  useEffect(() => {
+    if (!symbolsKey) return;
+    let cancelled = false;
+    fetch("/api/trending/prices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: symbolsKey.split(",") }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((snapshots: Array<{ symbol: string; price: number | null; changePercent: number | null }> | null) => {
+        if (cancelled || !snapshots) return;
+        const priceMap = new Map(snapshots.map((s) => [s.symbol, s]));
+        if (loggedIn) updatePrices(priceMap);
+        else updateWatchlistPrices(priceMap);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [symbolsKey, loggedIn, updatePrices]);
 
   return { entries, add, remove, has, updatePrices, loggedIn, isLoading: sessionLoading };
 }
