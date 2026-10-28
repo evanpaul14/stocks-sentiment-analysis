@@ -3,6 +3,9 @@ name: Deploy
 on:
   push:
     branches: [master]
+    # Workflow-only changes don't alter the app, so don't redeploy for them.
+    paths-ignore:
+      - ".github/workflows/**"
   workflow_dispatch: {}
 
 jobs:
