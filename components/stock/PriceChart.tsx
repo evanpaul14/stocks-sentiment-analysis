@@ -25,16 +25,27 @@ const RANGES: { label: string; period: string }[] = [
   { label: "5Y", period: "5y" },
 ];
 
+function formatChange(amount: number, percent: number): string {
+  const sign = amount >= 0 ? "+" : "−";
+  return `${sign}$${Math.abs(amount).toFixed(2)} (${sign}${Math.abs(percent).toFixed(2)}%)`;
+}
+
 export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
   const [period, setPeriod] = useState("1d");
   const [data, setData] = useState(initialData);
   const [isPending, startTransition] = useTransition();
 
-  const isUp = useMemo(() => {
-    if (data.length < 2) return true;
-    return data[data.length - 1].price >= data[0].price;
-  }, [data]);
+  const change = useMemo(() => {
+    if (data.length < 2) return null;
+    // The Day range is covered by the headline quote (vs previous close).
+    if (period === "1d") return null;
+    const first = data[0].price;
+    const last = data[data.length - 1].price;
+    if (!first) return null;
+    return { amount: last - first, percent: ((last - first) / first) * 100 };
+  }, [data, period]);
 
+  const isUp = (change?.amount ?? 0) >= 0;
   const color = isUp ? "var(--color-chart-1)" : "var(--color-destructive)";
 
   function handleRangeChange(nextPeriod: string) {
@@ -54,7 +65,15 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
 
   return (
     <div>
-      <div className="mb-2 flex justify-end gap-1">
+      <div className="mb-2 flex items-center justify-between gap-1">
+        <div className={`flex flex-wrap items-baseline gap-x-4 text-sm font-medium tabular-nums ${isPending ? "opacity-60" : ""}`}>
+          {change && (
+            <span style={{ color: change.amount >= 0 ? "var(--color-chart-1)" : "var(--color-destructive)" }}>
+              {formatChange(change.amount, change.percent)}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-1">
         {RANGES.map((range) => (
           <button
             key={range.period}
@@ -69,6 +88,7 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
             {range.label}
           </button>
         ))}
+        </div>
       </div>
 
       {data.length === 0 ? (

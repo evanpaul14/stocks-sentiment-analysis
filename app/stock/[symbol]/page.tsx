@@ -126,6 +126,8 @@ export default async function StockPage({ params }: StockPageProps) {
             symbol={stockInfo.symbol}
             initialPrice={stockInfo.currentPrice}
             initialChangePercent={stockInfo.regularMarketChangePercent}
+            postMarketChange={stockInfo.postMarketChange}
+            postMarketChangePercent={stockInfo.postMarketChangePercent}
           />
           <WatchlistToggleButton
             symbol={stockInfo.symbol}
@@ -137,7 +139,10 @@ export default async function StockPage({ params }: StockPageProps) {
       </header>
 
       <section className="mb-8 rounded-none border border-border bg-card p-4">
-        <PriceChart symbol={stockInfo.symbol} data={historicalData} />
+        <PriceChart
+          symbol={stockInfo.symbol}
+          data={historicalData}
+        />
       </section>
 
       <MovementInsight
