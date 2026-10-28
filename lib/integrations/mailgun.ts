@@ -145,16 +145,19 @@ export async function sendContactMessage(options: {
   name: string;
   fromEmail: string;
   message: string;
+  /** Message contains profanity (but no slurs); prefix the subject and add a notice. */
+  flaggedProfanity?: boolean;
 }): Promise<void> {
   const recipient = process.env.CONTACT_RECIPIENT_EMAIL;
   if (!recipient) throw new MailgunNotConfiguredError();
 
-  const text = `From: ${options.name} <${options.fromEmail}>\n\n${options.message}`;
-  const html = `<p><strong>From:</strong> ${escapeHtml(options.name)} &lt;${escapeHtml(options.fromEmail)}&gt;</p><p>${escapeHtml(options.message).replace(/\n/g, "<br>")}</p>`;
+  const notice = "⚠️ Flagged: this message contains profanity.";
+  const text = `${options.flaggedProfanity ? `${notice}\n\n` : ""}From: ${options.name} <${options.fromEmail}>\n\n${options.message}`;
+  const html = `${options.flaggedProfanity ? `<p><strong>${notice}</strong></p>` : ""}<p><strong>From:</strong> ${escapeHtml(options.name)} &lt;${escapeHtml(options.fromEmail)}&gt;</p><p>${escapeHtml(options.message).replace(/\n/g, "<br>")}</p>`;
 
   await sendEmail({
     to: recipient,
-    subject: `Contact form: ${options.name}`,
+    subject: `${options.flaggedProfanity ? "[PROFANITY] " : ""}Contact form: ${options.name}`,
     text,
     html,
     skipUnsubscribe: true,

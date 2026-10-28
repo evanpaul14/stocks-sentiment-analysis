@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { withRateLimit } from "@/lib/ratelimit/withRateLimit";
 import { isMailgunEnabled, isValidEmail, sendContactMessage } from "@/lib/integrations/mailgun";
 import { verifyTurnstileToken } from "@/lib/integrations/turnstile";
+import { classifyObscenity } from "@/lib/moderation/obscenity";
 
 const MAX_MESSAGE_LENGTH = 5000;
 
@@ -26,13 +27,27 @@ async function handler(request: NextRequest) {
     return NextResponse.json({ error: "Message is too long" }, { status: 400 });
   }
 
+  // Slurs, hate speech and sexual terms are rejected; other profanity is delivered but flagged in the email.
+  const obscenity = classifyObscenity(`${name}\n${message}`);
+  if (obscenity === "blocked") {
+    return NextResponse.json(
+      { error: "Your message contains language we can't accept" },
+      { status: 400 }
+    );
+  }
+
   const remoteIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (!(await verifyTurnstileToken(turnstileToken, remoteIp))) {
     return NextResponse.json({ error: "Verification failed — please try again" }, { status: 400 });
   }
 
   try {
-    await sendContactMessage({ name, fromEmail: email, message });
+    await sendContactMessage({
+      name,
+      fromEmail: email,
+      message,
+      flaggedProfanity: obscenity === "profanity",
+    });
     return NextResponse.json({ sent: true });
   } catch (error) {
     console.error("[api/contact] failed", error);
