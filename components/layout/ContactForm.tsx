@@ -23,6 +23,7 @@ export function ContactForm() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const widgetContainerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | undefined>(undefined);
@@ -43,6 +44,7 @@ export function ContactForm() {
     if (TURNSTILE_SITE_KEY && !turnstileToken) return;
 
     setStatus("loading");
+    setErrorMessage("");
     try {
       const response = await fetch("/api/contact", {
         method: "POST",
@@ -50,6 +52,11 @@ export function ContactForm() {
         body: JSON.stringify({ name, email, message, turnstileToken }),
       });
       setStatus(response.ok ? "done" : "error");
+      if (response.status === 400) {
+        // Validation / content-filter rejections carry a user-facing reason.
+        const data = await response.json().catch(() => null);
+        if (typeof data?.error === "string") setErrorMessage(data.error);
+      }
       if (!response.ok && window.turnstile && widgetIdRef.current) {
         window.turnstile.reset(widgetIdRef.current);
         setTurnstileToken("");
@@ -125,7 +132,7 @@ export function ContactForm() {
       </Button>
       <div role="alert" aria-live="assertive">
         {status === "error" && (
-          <p className="text-xs text-destructive-text">Something went wrong — try again.</p>
+          <p className="text-xs text-destructive-text">{errorMessage || "Something went wrong — try again."}</p>
         )}
       </div>
     </form>
