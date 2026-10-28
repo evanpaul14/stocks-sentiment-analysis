@@ -24,7 +24,10 @@ jobs:
 
       # Non-breaking fixes only (no --force). The result goes up as a PR rather
       # than a push to master, since every push to master deploys to prod.
-      - run: npm audit fix
+      # `npm audit fix` exits 1 when advisories remain that need --force, even
+      # after applying every fix it can. Don't let that skip the build/PR steps
+      # below; the fixes it did apply are still worth opening a PR for.
+      - run: npm audit fix || echo "npm audit fix exited non-zero (unfixable advisories remain)"
 
       - id: changes
         run: |
