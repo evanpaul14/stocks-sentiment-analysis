@@ -1,5 +1,5 @@
 import type { NewsArticle } from "@/lib/integrations/news/googleNews";
-import { classifySentiment } from "@/lib/integrations/sentiment/classify";
+import { classifySentimentBatch } from "@/lib/integrations/sentiment/classify";
 import type { SentimentLabel } from "@/lib/integrations/sentiment/classify";
 import * as sentimentHistory from "@/lib/db/queries/sentimentHistory";
 
@@ -19,22 +19,42 @@ export async function getArticleSentiments(
   companyName: string,
   articles: NewsArticle[]
 ): Promise<ArticleSentimentResult[]> {
+  const cached = await Promise.all(
+    articles.map((article) =>
+      sentimentHistory.findExisting(ticker, article.link || null)
+    )
+  );
+
+  const pending = articles.filter((_, i) => !cached[i]);
+  const classified =
+    pending.length > 0
+      ? await classifySentimentBatch(
+          companyName,
+          pending.map((article) => ({
+            title: article.title,
+            description: article.description ?? "",
+          }))
+        )
+      : [];
+
+  let nextPending = 0;
   return Promise.all(
-    articles.map(async (article): Promise<ArticleSentimentResult> => {
-      const link = article.link || null;
-      const existing = await sentimentHistory.findExisting(ticker, link);
+    articles.map(async (article, i): Promise<ArticleSentimentResult> => {
+      const existing = cached[i];
       if (existing) return { article, sentiment: existing.sentiment };
 
+      const result = classified[nextPending++];
+      if (result.status === "rejected") {
+        console.error(`[getArticleSentiments] classification failed for ${ticker}`, result.reason);
+        return { article, sentiment: "error" };
+      }
+
       try {
-        const sentiment = await classifySentiment(
-          companyName,
-          article.title,
-          article.description ?? ""
-        );
+        const sentiment = result.value;
         const row = await sentimentHistory.insert({
           ticker,
           articleTitle: article.title,
-          articleLink: link,
+          articleLink: article.link || null,
           articleSource: article.source ?? null,
           articlePublishedAt: article.publishedAt ?? null,
           sentiment,

@@ -4,6 +4,15 @@ const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_MODEL = "jev-latest";
 const DEFAULT_TIMEOUT_SECONDS = 3;
 
+const SENTIMENT_CRITERIA = {
+  positive:
+    "Good news for the stock: beats, upgrades, growth, buy recommendations, milestones",
+  negative:
+    "Bad news for the stock: drops, downgrades, sell recommendations, warnings, misses",
+  neutral:
+    "Routine or factual with no clear price impact, such as insider or fund holding changes, or mixed signals",
+};
+
 function isEnabled(): boolean {
   return Boolean(process.env.TYPESAFE_API_KEY);
 }
@@ -46,14 +55,7 @@ export async function classifyWithJev(
             type: "choice",
             instructions:
               "What is the sentiment of this article toward the price outlook of `company`?",
-            criteria: {
-              positive:
-                "Good news for the stock: beats, upgrades, growth, buy recommendations, milestones",
-              negative:
-                "Bad news for the stock: drops, downgrades, sell recommendations, warnings, misses",
-              neutral:
-                "Routine or factual with no clear price impact, such as insider or fund holding changes, or mixed signals",
-            },
+            criteria: SENTIMENT_CRITERIA,
           },
         },
       }),
@@ -74,6 +76,84 @@ export async function classifyWithJev(
       : null;
   } catch (error) {
     console.warn("[jev] sentiment request errored, falling back to Cloudflare", error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export interface JevArticle {
+  title: string;
+  description?: string;
+}
+
+/**
+ * Classifies several articles about one company in a single Jev request: the
+ * company and articles go in `state` once, with one choice question per article.
+ * Returns one entry per input article (null where Jev gave no usable answer),
+ * or null for the whole batch on any request failure, so the caller can fall
+ * back to the per-article Cloudflare/Gemini path. Questions are answered
+ * independently, so a missing answer only affects its own article.
+ */
+export async function classifyBatchWithJev(
+  companyName: string,
+  articles: JevArticle[]
+): Promise<(SentimentLabel | null)[] | null> {
+  if (!isEnabled() || articles.length === 0) return null;
+
+  const timeoutMs =
+    Number(process.env.TYPESAFE_TIMEOUT_SECONDS ?? DEFAULT_TIMEOUT_SECONDS) *
+    1000;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  const state: Record<string, unknown> = { company: companyName, articles: {} };
+  const questions: Record<string, unknown> = {};
+  articles.forEach((article, i) => {
+    const id = `article_${i}`;
+    (state.articles as Record<string, unknown>)[id] = {
+      title: article.title,
+      ...(article.description ? { description: article.description } : {}),
+    };
+    questions[id] = {
+      type: "choice",
+      instructions: `What is the sentiment of \`articles.${id}\` toward the price outlook of \`company\`?`,
+      criteria: SENTIMENT_CRITERIA,
+    };
+  });
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.TYPESAFE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.TYPESAFE_MODEL ?? DEFAULT_MODEL,
+        state,
+        questions,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.warn(
+        `[jev] batch sentiment request failed with ${response.status}, falling back to per-article classification`
+      );
+      return null;
+    }
+
+    const data = await response.json();
+    return articles.map((_, i) => {
+      const choice = data?.answers?.[`article_${i}`]?.choice;
+      return choice === "positive" || choice === "negative" || choice === "neutral"
+        ? choice
+        : null;
+    });
+  } catch (error) {
+    console.warn("[jev] batch sentiment request errored, falling back to per-article classification", error);
     return null;
   } finally {
     clearTimeout(timeout);

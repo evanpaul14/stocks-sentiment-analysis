@@ -1,5 +1,5 @@
 import { getNewsArticles } from "@/lib/integrations/news/googleNews";
-import { classifySentiment } from "@/lib/integrations/sentiment/classify";
+import { classifySentimentBatch } from "@/lib/integrations/sentiment/classify";
 import * as sentimentHistory from "@/lib/db/queries/sentimentHistory";
 import { SEO_SENTIMENT_COMPANIES } from "@/lib/utils/tickers";
 
@@ -14,18 +14,30 @@ export async function runMag7SentimentJob() {
       // Search by company name, not raw ticker — index tickers like "^GSPC" make a poor
       // Google News query, while "S&P 500" reliably surfaces relevant coverage.
       const articles = await getNewsArticles(companyName, 10);
+      const pending = [];
       for (const article of articles) {
         const existing = await sentimentHistory.findExisting(ticker, article.link);
-        if (existing) continue;
+        if (!existing) pending.push(article);
+      }
+      if (pending.length === 0) continue;
 
-        const sentiment = await classifySentiment(companyName, article.title, article.description);
+      const results = await classifySentimentBatch(
+        companyName,
+        pending.map((article) => ({ title: article.title, description: article.description }))
+      );
+      for (const [i, article] of pending.entries()) {
+        const result = results[i];
+        if (result.status === "rejected") {
+          console.error(`[mag7-backfill] classification failed for ${ticker}`, result.reason);
+          continue;
+        }
         await sentimentHistory.insert({
           ticker,
           articleTitle: article.title,
           articleLink: article.link,
           articleSource: article.source,
           articlePublishedAt: article.publishedAt,
-          sentiment,
+          sentiment: result.value,
         });
       }
     } catch (error) {
