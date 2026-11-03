@@ -4,12 +4,12 @@ import { getClientIp } from "@/lib/ratelimit/withRateLimit";
 import { getLimiter } from "@/lib/ratelimit/tokenBucket";
 import { isVerifiedCrawler } from "@/lib/ratelimit/verifiedCrawler";
 
-// Site-wide per-IP page limit: 2 requests/second sustained. The bucket holds
-// 10 tokens (10 per 5s window = 2/s refill) so a normal page load and quick
+// Site-wide per-IP page limit: 3 requests/second sustained. The bucket holds
+// 20 tokens (20 per 6.67s window = 3/s refill) so a normal page load and quick
 // click-through never trips it, but a scraper hammering dozens of pages a
 // second is cut off within a few seconds. API routes keep their own limits.
-const PAGE_LIMIT = 10;
-const PAGE_WINDOW_MS = 5000;
+const PAGE_LIMIT = 20;
+const PAGE_WINDOW_MS = Math.round((PAGE_LIMIT / 3) * 1000);
 const pageLimiter = getLimiter("pages", PAGE_LIMIT, PAGE_WINDOW_MS);
 
 export async function proxy(request: NextRequest) {
