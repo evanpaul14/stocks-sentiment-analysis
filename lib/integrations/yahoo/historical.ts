@@ -43,8 +43,18 @@ function startOfYear(): Date {
   return new Date(new Date().getUTCFullYear(), 0, 1);
 }
 
+// Trading days must be bucketed by exchange-local (New York) date. Bucketing
+// by UTC date splits the extended-hours session at 8pm ET (00:00 UTC), so in the
+// evening ET the "latest day" was just the last few post-market bars.
+const NY_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function toDateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return NY_DATE.format(date);
 }
 
 /**
