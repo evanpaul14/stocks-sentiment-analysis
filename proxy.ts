@@ -1,7 +1,39 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getClientIp } from "@/lib/ratelimit/withRateLimit";
+import { getLimiter } from "@/lib/ratelimit/tokenBucket";
+import { isVerifiedCrawler } from "@/lib/ratelimit/verifiedCrawler";
+
+// Site-wide per-IP page limit: 2 requests/second sustained. The bucket holds
+// 10 tokens (10 per 5s window = 2/s refill) so a normal page load and quick
+// click-through never trips it, but a scraper hammering dozens of pages a
+// second is cut off within a few seconds. API routes keep their own limits.
+const PAGE_LIMIT = 10;
+const PAGE_WINDOW_MS = 5000;
+const pageLimiter = getLimiter("pages", PAGE_LIMIT, PAGE_WINDOW_MS);
 
 export async function proxy(request: NextRequest) {
+  // Link prefetches fire in bursts (one per visible link) with no user
+  // intent, and /api routes are already limited per route, so neither
+  // counts against the page limit.
+  const isPrefetch = request.headers.has("next-router-prefetch");
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (!isPrefetch && !isApi) {
+    const ip = getClientIp(request);
+    if (!pageLimiter.consume(`pages:${ip}`)) {
+      // Verified search crawlers (Googlebot etc.) share IPs and must never be
+      // throttled. Checked only after the bucket is empty so normal traffic
+      // never pays for the reverse-DNS lookup.
+      const crawler = await isVerifiedCrawler(ip, request.headers.get("user-agent"));
+      if (!crawler) {
+        return new NextResponse("Too many requests", {
+          status: 429,
+          headers: { "retry-after": "5", "content-type": "text/plain" },
+        });
+      }
+    }
+  }
+
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 
   // Derived from UMAMI_SCRIPT_URL so the CSP can never drift out of sync with
