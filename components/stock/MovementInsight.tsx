@@ -45,8 +45,9 @@ export function MovementInsight({
     if (!qualifies) return;
     if (initialInsight && retryCount === 0) return;
 
+    // "loading" is set by the initial state and the retry handler, not here —
+    // setting state synchronously in an effect triggers cascading renders.
     let cancelled = false;
-    setState({ status: "loading" });
 
     fetch("/api/movement-insight", {
       method: "POST",
@@ -82,7 +83,10 @@ export function MovementInsight({
           </p>
           <button
             type="button"
-            onClick={() => setRetryCount((n) => n + 1)}
+            onClick={() => {
+              setState({ status: "loading" });
+              setRetryCount((n) => n + 1);
+            }}
             className="shrink-0 rounded-none border border-primary/40 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
           >
             Retry
