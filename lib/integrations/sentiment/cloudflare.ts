@@ -1,6 +1,6 @@
 import { buildSentimentPrompt, extractSentimentLabel, type SentimentLabel } from "./promptTemplates";
 
-const DEFAULT_MODEL = "@cf/meta/llama-3.2-3b-instruct";
+const DEFAULT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const DEFAULT_TIMEOUT_SECONDS = 3;
 
 function isEnabled(): boolean {
@@ -49,6 +49,9 @@ export async function classifyWithCloudflare(
             ),
           },
         ],
+        // Gemma is a reasoning model; skip the reasoning pass so the label comes
+        // back in content quickly. Ignored by non-reasoning models.
+        chat_template_kwargs: { enable_thinking: false },
       }),
       signal: controller.signal,
     });
@@ -61,7 +64,12 @@ export async function classifyWithCloudflare(
     }
 
     const data = await response.json();
-    const raw = data?.result?.response ?? data?.result?.output ?? null;
+    // Older models return result.response; newer ones use OpenAI-style choices.
+    const raw =
+      data?.result?.response ??
+      data?.result?.choices?.[0]?.message?.content ??
+      data?.result?.output ??
+      null;
     return extractSentimentLabel(typeof raw === "string" ? raw : null);
   } catch (error) {
     console.warn("[cloudflare] sentiment request errored, falling back to Gemini", error);

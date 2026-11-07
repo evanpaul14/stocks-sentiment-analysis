@@ -1,7 +1,7 @@
 import { llm7Client, llm7Model } from "./client";
 
-const DEFAULT_CLOUDFLARE_TEXT_MODEL = "@cf/meta/llama-3.2-3b-instruct";
-const DEFAULT_CLOUDFLARE_LONG_TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+const DEFAULT_CLOUDFLARE_TEXT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
+const DEFAULT_CLOUDFLARE_LONG_TEXT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const DEFAULT_CLOUDFLARE_TEXT_TIMEOUT_SECONDS = 30;
 const DEFAULT_LLM7_TIMEOUT_SECONDS = 20;
 
@@ -59,6 +59,9 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
         messages: opts.messages,
         temperature: opts.temperature,
         max_tokens: opts.maxTokens,
+        // Gemma is a reasoning model: without this it spends max_tokens on
+        // reasoning_content and returns empty content. Ignored by non-reasoning models.
+        chat_template_kwargs: { enable_thinking: false },
       }),
       signal: controller.signal,
     });
@@ -67,7 +70,12 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
       return null;
     }
     const data = await response.json();
-    const raw = data?.result?.response ?? data?.result?.output ?? null;
+    // Older models return result.response; newer ones use OpenAI-style choices.
+    const raw =
+      data?.result?.response ??
+      data?.result?.choices?.[0]?.message?.content ??
+      data?.result?.output ??
+      null;
     return typeof raw === "string" && raw.trim() ? raw.trim() : null;
   } catch (error) {
     console.error(`[cloudflare] ${opts.label} errored`, error);
