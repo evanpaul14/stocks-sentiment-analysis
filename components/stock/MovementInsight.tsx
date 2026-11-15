@@ -67,7 +67,7 @@ export function MovementInsight({
     return () => {
       cancelled = true;
     };
-  }, [symbol, companyName, changePercent, retryCount]);
+  }, [symbol, companyName, changePercent, retryCount, qualifies, initialInsight]);
 
   if (!qualifies) return null;
 

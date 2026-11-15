@@ -40,7 +40,11 @@ export function SentimentStream({
   useEffect(() => {
     const pendingIndexes = articles
       .map((_, i) => i)
-      .filter((i) => results[i]?.sentiment === "pending" || results[i] === undefined);
+      // Based on the server-provided snapshot, not live state: depending on
+      // `results` would restart the loop (and refetch) after every update.
+      .filter(
+        (i) => initialResults?.[i] === undefined || initialResults[i].sentiment === "pending"
+      );
     if (pendingIndexes.length === 0) return;
 
     let cancelled = false;
@@ -91,7 +95,7 @@ export function SentimentStream({
     return () => {
       cancelled = true;
     };
-  }, [articles, ticker, companyName]);
+  }, [articles, ticker, companyName, initialResults]);
 
   const analyzed = results.filter(
     (r) => r.sentiment !== "pending" && r.sentiment !== "error"
