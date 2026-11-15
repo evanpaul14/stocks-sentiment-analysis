@@ -73,7 +73,7 @@ export default async function StockPage({ params }: StockPageProps) {
   if (searchStatus?.limited) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <SearchLimitPrompt {...searchStatus}>
+        <SearchLimitPrompt symbol={stockInfo.symbol} {...searchStatus}>
           <header className="mb-6 flex items-center gap-3">
             <CompanyLogo symbol={stockInfo.symbol} companyName={stockInfo.companyName} />
             <div>
@@ -195,7 +195,7 @@ export default async function StockPage({ params }: StockPageProps) {
           </Link>
         </p>
       )}
-      {searchStatus && <SearchLimitPrompt {...searchStatus} />}
+      {searchStatus && <SearchLimitPrompt symbol={stockInfo.symbol} {...searchStatus} />}
     </main>
   );
 }

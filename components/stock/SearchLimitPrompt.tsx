@@ -4,9 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-const INTRO_SEEN_KEY = "search-limit-intro-seen";
+export const INTRO_SEEN_KEY = "search-limit-intro-seen";
+const VIEWED_KEY = "viewed-stocks";
+/** The intro nudge appears once this browser has opened this many distinct stocks. */
+const INTRO_AFTER_SEARCHES = 2;
+
+/** Records `symbol` in this browser's viewed list and returns how many distinct stocks it has opened. */
+function recordViewedStock(symbol: string): number {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(VIEWED_KEY) ?? "[]");
+    const viewed = new Set<string>(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
+    viewed.add(symbol.toUpperCase());
+    localStorage.setItem(VIEWED_KEY, JSON.stringify([...viewed]));
+    return viewed.size;
+  } catch {
+    return 0; // Storage blocked — never nudge rather than nudge on every page.
+  }
+}
 
 interface SearchLimitPromptProps {
+  /** Stock being viewed; counted toward this browser's local "viewed stocks" tally. */
+  symbol: string;
   used: number;
   limit: number;
   limited: boolean;
@@ -15,10 +33,10 @@ interface SearchLimitPromptProps {
 }
 
 /**
- * Signup nudge for anonymous visitors: shown once after their first search,
+ * Signup nudge for anonymous visitors: shown once on their second stock page,
  * then again whenever they've hit the free-search limit.
  */
-export function SearchLimitPrompt({ used, limit, limited, children }: SearchLimitPromptProps) {
+export function SearchLimitPrompt({ symbol, used, limit, limited, children }: SearchLimitPromptProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [closed, setClosed] = useState(false);
 
@@ -26,18 +44,19 @@ export function SearchLimitPrompt({ used, limit, limited, children }: SearchLimi
     const dialog = dialogRef.current;
     if (!dialog) return;
 
+    const viewedCount = limited ? 0 : recordViewedStock(symbol);
     let seen = false;
     try {
       seen = localStorage.getItem(INTRO_SEEN_KEY) === "1";
     } catch {
       // Storage blocked — treat as unseen; worst case the intro repeats.
     }
-    if (dialog.open || !(limited || !seen)) return;
+    if (dialog.open || !(limited || (!seen && viewedCount >= INTRO_AFTER_SEARCHES))) return;
     // At the limit the dialog is non-modal so the header stays usable; the
     // locked page content is simply not rendered while it's open.
     if (limited) dialog.show();
     else dialog.showModal();
-  }, [limited]);
+  }, [limited, symbol]);
 
   function dismiss() {
     if (!limited) {
