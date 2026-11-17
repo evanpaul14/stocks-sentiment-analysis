@@ -1,4 +1,4 @@
-import type { NewsArticle } from "@/lib/integrations/news/googleNews";
+import type { NewsArticle } from "@/lib/integrations/news";
 import { classifySentimentBatch } from "@/lib/integrations/sentiment/classify";
 import type { SentimentLabel } from "@/lib/integrations/sentiment/classify";
 import * as sentimentHistory from "@/lib/db/queries/sentimentHistory";

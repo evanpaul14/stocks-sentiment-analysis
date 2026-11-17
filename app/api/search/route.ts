@@ -3,7 +3,7 @@ import { withRateLimit } from "@/lib/ratelimit/withRateLimit";
 import { resolveSymbol, SymbolNotFoundError } from "@/lib/integrations/yahoo/search";
 import { getStockInfo } from "@/lib/integrations/yahoo/quote";
 import { getHistoricalPrices } from "@/lib/integrations/yahoo/historical";
-import { getNewsArticles } from "@/lib/integrations/news/googleNews";
+import { getNewsArticles } from "@/lib/integrations/news";
 
 /**
  * Resolves a free-text query, then returns stock_info + historical_data +

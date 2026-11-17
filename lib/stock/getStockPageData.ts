@@ -1,7 +1,7 @@
 import { resolveSymbol } from "@/lib/integrations/yahoo/search";
 import { getStockInfo, type StockInfo } from "@/lib/integrations/yahoo/quote";
 import { getHistoricalPrices, type PricePoint } from "@/lib/integrations/yahoo/historical";
-import { getNewsArticles, type NewsArticle } from "@/lib/integrations/news/googleNews";
+import { getNewsArticles, type NewsArticle } from "@/lib/integrations/news";
 
 export interface StockPageData {
   symbol: string;

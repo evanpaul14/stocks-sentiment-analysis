@@ -1,6 +1,6 @@
 import { generateText, llmAvailable } from "./generate";
 import { fetchFinnhubCompanyNews, type Headline } from "@/lib/integrations/news/finnhub";
-import { getNewsArticles } from "@/lib/integrations/news/googleNews";
+import { getNewsArticles } from "@/lib/integrations/news";
 import { TtlCache } from "@/lib/cache/memory";
 
 const MOVEMENT_THRESHOLD_PERCENT = 3;

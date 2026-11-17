@@ -1,13 +1,5 @@
 import Parser from "rss-parser";
-import { TtlCache } from "@/lib/cache/memory";
-
-export interface NewsArticle {
-  title: string;
-  description: string;
-  link: string;
-  publishedAt: string | null;
-  source: string;
-}
+import { stripHtml, type NewsArticle } from "./types";
 
 interface GoogleNewsItem {
   title?: string;
@@ -23,21 +15,13 @@ const parser = new Parser<unknown, GoogleNewsItem>({
   },
 });
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function extractSourceName(source: GoogleNewsItem["source"]): string {
   if (!source) return "Unknown";
   if (typeof source === "string") return stripHtml(source) || "Unknown";
   return source._ ?? "Unknown";
 }
 
-async function fetchGoogleNews(query: string): Promise<GoogleNewsItem[]> {
+async function fetchGoogleItems(query: string): Promise<GoogleNewsItem[]> {
   const url = `https://news.google.com/rss/search?q=${encodeURIComponent(
     query
   )}&hl=en-US&gl=US&ceid=US:en`;
@@ -56,32 +40,13 @@ function toArticle(item: GoogleNewsItem): NewsArticle | null {
   };
 }
 
-const ARTICLES_CACHE_TTL_MS =
-  Number(process.env.NEWS_ARTICLES_CACHE_TTL_SECONDS ?? 600) * 1000;
-const articlesCache = new TtlCache<NewsArticle[]>(ARTICLES_CACHE_TTL_MS);
-
-/**
- * Per-ticker news, used by /api/search (sentiment excluded, kept fast) and
- * the stock page's sentiment stream. Cached per symbol+limit so reloading
- * the same stock page doesn't re-fetch the feed (or re-trigger the
- * sentiment stream's per-article classification loop) within the TTL.
- */
-export async function getNewsArticles(
-  symbol: string,
-  limit = 10
-): Promise<NewsArticle[]> {
-  return articlesCache.getOrCompute(`${symbol.toUpperCase()}:${limit}`, async () => {
-    try {
-      const items = await fetchGoogleNews(`${symbol} stock`);
-      return items
-        .slice(0, limit)
-        .map(toArticle)
-        .filter((a): a is NewsArticle => a !== null);
-    } catch (error) {
-      console.error(`[googleNews] getNewsArticles(${symbol}) failed`, error);
-      return [];
-    }
-  });
+/** Throws on fetch failure (e.g. 429) so the caller can fall back to another source. */
+export async function fetchGoogleNews(query: string, limit: number): Promise<NewsArticle[]> {
+  const items = await fetchGoogleItems(`${query} stock`);
+  return items
+    .slice(0, limit)
+    .map(toArticle)
+    .filter((a): a is NewsArticle => a !== null);
 }
 
 const MARKET_DIGEST_QUERIES = [
@@ -100,7 +65,7 @@ export async function getMarketNewsDigest(
   for (const query of MARKET_DIGEST_QUERIES) {
     if (collected.length >= limit) break;
     try {
-      const items = await fetchGoogleNews(query);
+      const items = await fetchGoogleItems(query);
       for (const item of items) {
         if (collected.length >= limit) break;
         const article = toArticle(item);

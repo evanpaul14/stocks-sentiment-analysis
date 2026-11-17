@@ -1,6 +1,6 @@
 import { isNyseTradingDay } from "@/lib/integrations/nyseCalendar";
 import { getMarketIndexSnapshots, type IndexSnapshot } from "@/lib/integrations/yahoo/indices";
-import { getMarketNewsDigest } from "@/lib/integrations/news/googleNews";
+import { getMarketNewsDigest } from "@/lib/integrations/news";
 import { generateMarketSummaryText } from "@/lib/integrations/llm7/marketSummaryText";
 import { getOrFetchUnsplashImage, hashCacheKey } from "@/lib/integrations/unsplash";
 import { pingIndexNow } from "@/lib/integrations/indexnow";

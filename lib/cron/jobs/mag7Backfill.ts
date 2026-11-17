@@ -1,4 +1,4 @@
-import { getNewsArticles } from "@/lib/integrations/news/googleNews";
+import { getNewsArticles } from "@/lib/integrations/news";
 import { classifySentimentBatch } from "@/lib/integrations/sentiment/classify";
 import * as sentimentHistory from "@/lib/db/queries/sentimentHistory";
 import { SEO_SENTIMENT_COMPANIES } from "@/lib/utils/tickers";

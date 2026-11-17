@@ -1,6 +1,6 @@
 import { generateText, llmAvailable } from "./generate";
 import type { IndexSnapshot } from "@/lib/integrations/yahoo/indices";
-import type { NewsArticle } from "@/lib/integrations/news/googleNews";
+import type { NewsArticle } from "@/lib/integrations/news";
 
 function formatIndexLine(index: IndexSnapshot): string {
   const change =

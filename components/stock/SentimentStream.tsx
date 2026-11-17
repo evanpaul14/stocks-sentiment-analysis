@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import type { NewsArticle } from "@/lib/integrations/news/googleNews";
+import type { NewsArticle } from "@/lib/integrations/news";
 import type { SentimentLabel } from "@/components/stock/SentimentPieChart";
 import { SENTIMENT_COLORS } from "@/components/stock/SentimentPieChart";
 
