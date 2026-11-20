@@ -21,7 +21,7 @@
     "drizzle-orm": "^0.45.2",
     "gray-matter": "^4.0.3",
     "lucide-react": "^1.33.0",
-    "next": "^16.3.4",
+    "next": "^16.4.5",
     "next-mdx-remote": "^6.0.0",
     "node-cron": "^4.6.0",
     "obscenity": "^0.4.6",
@@ -42,7 +42,7 @@
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.4.5",
     "shadcn": "^4.19.0",
     "tailwindcss": "^4",
     "typescript": "^5"
@@ -50,6 +50,9 @@
   "overrides": {
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.0"
+    },
+    "@ts-morph/common": {
+      "minimatch": "^11.0.1"
     }
   },
   "allowScripts": {
