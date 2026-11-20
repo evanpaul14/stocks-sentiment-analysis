@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 interface MovementInsightProps {
   symbol: string;
-  companyName: string;
   changePercent: number | null;
   /**
    * Insight already generated server-side, so the initial SSR HTML —
@@ -28,7 +27,6 @@ type FetchState =
 
 export function MovementInsight({
   symbol,
-  companyName,
   changePercent,
   initialInsight,
 }: MovementInsightProps) {
@@ -52,7 +50,7 @@ export function MovementInsight({
     fetch("/api/movement-insight", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol, companyName, changePercent }),
+      body: JSON.stringify({ symbol }),
     })
       .then((res) => res.json())
       .then((data) => {
@@ -67,7 +65,7 @@ export function MovementInsight({
     return () => {
       cancelled = true;
     };
-  }, [symbol, companyName, changePercent, retryCount, qualifies, initialInsight]);
+  }, [symbol, changePercent, retryCount, qualifies, initialInsight]);
 
   if (!qualifies) return null;
 

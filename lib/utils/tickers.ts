@@ -59,6 +59,15 @@ function slugify(companyName: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+/**
+ * Cheap shape check for an already-resolved, uppercased Yahoo symbol
+ * (AAPL, BRK-B, ^GSPC, EURUSD=X) before it's used to key caches or hit
+ * upstream APIs. Not a guarantee the symbol exists.
+ */
+export function isPlausibleSymbol(symbol: string): boolean {
+  return /^[A-Z0-9^][A-Z0-9.=^-]{0,14}$/.test(symbol);
+}
+
 export function companySlug(companyName: string): string {
   return `sentiment-of-${slugify(companyName)}-stock`;
 }

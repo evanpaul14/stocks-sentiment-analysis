@@ -147,7 +147,6 @@ export default async function StockPage({ params }: StockPageProps) {
 
       <MovementInsight
         symbol={stockInfo.symbol}
-        companyName={stockInfo.companyName}
         changePercent={stockInfo.regularMarketChangePercent}
         initialInsight={movementInsight}
       />
@@ -176,7 +175,6 @@ export default async function StockPage({ params }: StockPageProps) {
         </div>
         <SentimentStream
           ticker={stockInfo.symbol}
-          companyName={stockInfo.companyName}
           articles={articles}
           initialResults={articleSentiments}
         />

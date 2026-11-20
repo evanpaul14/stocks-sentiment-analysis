@@ -5,6 +5,8 @@
 # whichever user runs this). Retains the last 14 daily backups locally and
 # on Drive. Run via a systemd timer — see deploy/stocks-db-backup.timer.
 set -euo pipefail
+# Backups are full copies of the DB — keep them owner-only like app.db itself.
+umask 077
 cd /
 
 APP_DIR="/opt/stocks-sentiment-analysis-v2"

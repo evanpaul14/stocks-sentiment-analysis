@@ -1,29 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { withRateLimit } from "@/lib/ratelimit/withRateLimit";
 import { buildMovementInsight } from "@/lib/integrations/llm7/movementInsight";
+import { getStockInfo } from "@/lib/integrations/yahoo/quote";
+import { isPlausibleSymbol } from "@/lib/utils/tickers";
 
-interface MovementInsightBody {
-  symbol?: string;
-  companyName?: string;
-  changePercent?: number;
-}
-
+/**
+ * Only the symbol is taken from the client. The insight is cached per symbol
+ * and server-rendered for every visitor of that stock page, so company name
+ * and % change are looked up here rather than trusted from the request body —
+ * otherwise any caller could seed the shared cache with their own text.
+ */
 async function handler(request: NextRequest) {
-  const body = (await request.json().catch(() => null)) as MovementInsightBody | null;
+  const body = await request.json().catch(() => null);
+  const symbol = typeof body?.symbol === "string" ? body.symbol.trim().toUpperCase() : "";
 
-  const symbol = body?.symbol?.trim().toUpperCase();
-  const companyName = body?.companyName?.trim() || symbol;
-  const changePercent = body?.changePercent;
-
-  if (!symbol || !companyName || typeof changePercent !== "number") {
-    return NextResponse.json(
-      { error: "Missing symbol, companyName, or changePercent" },
-      { status: 400 }
-    );
+  if (!isPlausibleSymbol(symbol)) {
+    return NextResponse.json({ error: "Missing or invalid symbol" }, { status: 400 });
   }
 
   try {
-    const insight = await buildMovementInsight(symbol, companyName, changePercent);
+    const stockInfo = await getStockInfo(symbol);
+    if (stockInfo.regularMarketChangePercent == null) {
+      return NextResponse.json({ movement_insight: null });
+    }
+    const insight = await buildMovementInsight(
+      stockInfo.symbol,
+      stockInfo.companyName,
+      stockInfo.regularMarketChangePercent
+    );
     return NextResponse.json({ movement_insight: insight });
   } catch (error) {
     console.error("[api/movement-insight] failed", error);

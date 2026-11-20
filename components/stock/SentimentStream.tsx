@@ -18,7 +18,6 @@ interface ArticleSentiment {
 
 interface SentimentStreamProps {
   ticker: string;
-  companyName: string;
   articles: NewsArticle[];
   /**
    * Sentiment already classified server-side (see `getArticleSentiments`),
@@ -30,7 +29,6 @@ interface SentimentStreamProps {
 
 export function SentimentStream({
   ticker,
-  companyName,
   articles,
   initialResults,
 }: SentimentStreamProps) {
@@ -58,17 +56,7 @@ export function SentimentStream({
           const response = await fetch("/api/sentiment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ticker,
-              companyName,
-              article: {
-                title: article.title,
-                description: article.description,
-                link: article.link,
-                source: article.source,
-                publishedAt: article.publishedAt,
-              },
-            }),
+            body: JSON.stringify({ ticker, link: article.link }),
           });
 
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -95,7 +83,7 @@ export function SentimentStream({
     return () => {
       cancelled = true;
     };
-  }, [articles, ticker, companyName, initialResults]);
+  }, [articles, ticker, initialResults]);
 
   const analyzed = results.filter(
     (r) => r.sentiment !== "pending" && r.sentiment !== "error"
