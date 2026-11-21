@@ -89,7 +89,8 @@ export interface JevArticle {
 
 /**
  * Classifies several articles about one company in a single Jev request: the
- * company and articles go in `state` once, with one choice question per article.
+ * company goes in `state` once, and each article's title/description goes in
+ * its own choice question, so articles can't influence each other's answers.
  * Returns one entry per input article (null where Jev gave no usable answer),
  * or null for the whole batch on any request failure, so the caller can fall
  * back to the per-article Cloudflare/Gemini path. Questions are answered
@@ -108,17 +109,17 @@ export async function classifyBatchWithJev(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const state: Record<string, unknown> = { company: companyName, articles: {} };
+  // Only the company is shared; each article lives inside its own question so
+  // one article's content can't sway the answer for another.
+  const state = { company: companyName };
   const questions: Record<string, unknown> = {};
   articles.forEach((article, i) => {
-    const id = `article_${i}`;
-    (state.articles as Record<string, unknown>)[id] = {
-      title: article.title,
-      ...(article.description ? { description: article.description } : {}),
-    };
-    questions[id] = {
+    const articleText = article.description
+      ? `Title: ${article.title}\nDescription: ${article.description}`
+      : `Title: ${article.title}`;
+    questions[`article_${i}`] = {
       type: "choice",
-      instructions: `What is the sentiment of \`articles.${id}\` toward the price outlook of \`company\`?`,
+      instructions: `What is the sentiment of this article toward the price outlook of \`company\`?\n\n${articleText}`,
       criteria: SENTIMENT_CRITERIA,
     };
   });
