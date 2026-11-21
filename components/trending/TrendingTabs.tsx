@@ -15,7 +15,7 @@ export function TrendingTabs({ active }: { active?: TrendingSource }) {
   const isAll = pathname === "/trending";
 
   return (
-    <nav className="mb-6 flex gap-2 border-b border-border">
+    <nav aria-label="Trending sources" className="mb-6 flex gap-2 border-b border-border">
       <TabLink href="/trending" label="All" isActive={isAll} />
       {TABS.map((tab) => (
         <TabLink
@@ -33,6 +33,7 @@ function TabLink({ href, label, isActive }: { href: string; label: string; isAct
   return (
     <Link
       href={href}
+      aria-current={isActive ? "page" : undefined}
       className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
         isActive
           ? "border-primary text-foreground"

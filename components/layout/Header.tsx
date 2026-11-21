@@ -122,11 +122,12 @@ export function Header() {
         </div>
 
         <div className="flex shrink-0 items-center gap-4 lg:gap-6">
-          <nav className="hidden items-center gap-4 whitespace-nowrap text-sm sm:flex lg:gap-6">
+          <nav aria-label="Main" className="hidden items-center gap-4 whitespace-nowrap text-sm sm:flex lg:gap-6">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={pathname === link.href ? "page" : undefined}
                 className={`transition-colors ${
                   pathname === link.href
                     ? "text-foreground"
@@ -140,6 +141,7 @@ export function Header() {
               <Link
                 href="/account"
                 aria-label="Account"
+                aria-current={pathname === "/account" ? "page" : undefined}
                 className="text-muted-foreground transition-colors hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 [&_svg]:hover:scale-110"
               >
                 <User className="size-5" />
@@ -200,12 +202,14 @@ export function Header() {
       {isMenuOpen && (
         <nav
           ref={mobileNavRef}
+          aria-label="Main"
           className="animate-fade-in-down mx-auto mt-3 flex max-w-4xl flex-col gap-1 px-4 sm:hidden"
         >
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
               className="rounded-none px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {link.label}
@@ -214,6 +218,7 @@ export function Header() {
           {loggedIn ? (
             <Link
               href="/account"
+              aria-current={pathname === "/account" ? "page" : undefined}
               className="rounded-none px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               Account

@@ -16,7 +16,7 @@ export function Footer() {
           informational purposes only — it is not financial, investment, or trading advice.
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-          <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             {FOOTER_LINKS.map((link) => (
               <Link
                 key={link.href}
