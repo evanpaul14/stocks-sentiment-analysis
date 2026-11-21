@@ -1,7 +1,14 @@
 import { stocktwitsFetch } from "./fetchClient";
 
 const TRENDING_URL = "https://api.stocktwits.com/api/2/trending/symbols.json";
-const ALLOWED_INSTRUMENT_CLASSES = new Set(["stock", "exchangetradedcommodity"]);
+// StockTwits instrument_class values (lowercased) for US-listed securities
+// Yahoo can quote. Excludes CRYPTO and FX pairs.
+const ALLOWED_INSTRUMENT_CLASSES = new Set([
+  "stock",
+  "exchangetradedfund",
+  "exchangetradedcommodity",
+  "depositoryreceipt", // ADRs, e.g. SONY, NVO
+]);
 
 export interface TrendingSymbolPayload {
   symbol: string;
@@ -23,7 +30,7 @@ interface TrendingResponse {
   }>;
 }
 
-/** Trending symbols, filtered to stocks/ETFs (excludes crypto). */
+/** Trending symbols, filtered to stocks, ADRs, ETFs and ETCs (excludes crypto and FX). */
 export async function fetchTrendingSymbols(
   limit = 60
 ): Promise<TrendingSymbolPayload[]> {
