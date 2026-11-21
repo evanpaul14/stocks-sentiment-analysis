@@ -126,9 +126,10 @@ function NewPasswordForm() {
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="New password"
+          aria-describedby="new-password-requirements"
           className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
         />
-        <PasswordRequirementsList password={newPassword} />
+        <PasswordRequirementsList id="new-password-requirements" password={newPassword} />
       </div>
       <Button
         type="submit"
