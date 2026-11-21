@@ -172,7 +172,7 @@ export default function AccountPage() {
           <Button
             type="button"
             variant="ghost"
-            className="w-full text-destructive hover:text-destructive"
+            className="w-full text-destructive-text hover:text-destructive-text"
             onClick={() => setConfirmingDelete(true)}
           >
             Delete account

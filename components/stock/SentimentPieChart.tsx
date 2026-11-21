@@ -10,6 +10,12 @@ export const SENTIMENT_COLORS: Record<SentimentLabel, string> = {
   neutral: "var(--color-muted-foreground)",
 };
 
+/** Same palette for text labels: rust is lightened to keep small text >=4.5:1. */
+export const SENTIMENT_TEXT_COLORS: Record<SentimentLabel, string> = {
+  ...SENTIMENT_COLORS,
+  negative: "var(--color-destructive-text)",
+};
+
 export function SentimentPieChart({
   chartData,
 }: {

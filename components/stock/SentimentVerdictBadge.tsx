@@ -2,7 +2,8 @@ import type { SentimentVerdict } from "@/lib/stock/getArticleSentiments";
 
 const VERDICT_COLORS: Record<SentimentVerdict["label"], string> = {
   Bullish: "var(--color-chart-1)",
-  Bearish: "var(--color-destructive)",
+  // Text-safe rust: the badge label is text, so it needs >=4.5:1.
+  Bearish: "var(--color-destructive-text)",
   Neutral: "var(--color-muted-foreground)",
 };
 

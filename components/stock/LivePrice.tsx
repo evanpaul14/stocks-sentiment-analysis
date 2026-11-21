@@ -58,7 +58,7 @@ export function LivePrice({
         {changePercent != null && (
           <span
             className={`text-sm font-medium tabular-nums ${
-              isUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+              isUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"
             }`}
           >
             {isUp ? "+" : ""}
@@ -74,7 +74,7 @@ export function LivePrice({
           className={`mt-1 text-sm tabular-nums ${
             postMarketChange >= 0
               ? "text-[var(--color-chart-1)]"
-              : "text-destructive"
+              : "text-destructive-text"
           }`}
         >
           {postMarketChange >= 0 ? "+" : "−"}$

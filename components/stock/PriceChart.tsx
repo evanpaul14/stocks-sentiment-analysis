@@ -68,7 +68,7 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
       <div className="mb-2 flex items-center justify-between gap-1">
         <div className={`flex flex-wrap items-baseline gap-x-4 text-sm font-medium tabular-nums ${isPending ? "opacity-60" : ""}`}>
           {change && (
-            <span style={{ color: change.amount >= 0 ? "var(--color-chart-1)" : "var(--color-destructive)" }}>
+            <span style={{ color: change.amount >= 0 ? "var(--color-chart-1)" : "var(--color-destructive-text)" }}>
               {formatChange(change.amount, change.percent)}
             </span>
           )}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { NewsArticle } from "@/lib/integrations/news";
 import type { SentimentLabel } from "@/components/stock/SentimentPieChart";
-import { SENTIMENT_COLORS } from "@/components/stock/SentimentPieChart";
+import { SENTIMENT_TEXT_COLORS } from "@/components/stock/SentimentPieChart";
 
 const SentimentPieChart = dynamic(
   () => import("@/components/stock/SentimentPieChart").then((m) => m.SentimentPieChart),
@@ -175,8 +175,8 @@ function SentimentBadge({ sentiment }: { sentiment: ArticleSentiment["sentiment"
     <span
       className="shrink-0 rounded-none px-2 py-0.5 text-xs font-medium capitalize"
       style={{
-        color: SENTIMENT_COLORS[sentiment],
-        border: `1px solid ${SENTIMENT_COLORS[sentiment]}`,
+        color: SENTIMENT_TEXT_COLORS[sentiment],
+        border: `1px solid ${SENTIMENT_TEXT_COLORS[sentiment]}`,
       }}
     >
       {sentiment}

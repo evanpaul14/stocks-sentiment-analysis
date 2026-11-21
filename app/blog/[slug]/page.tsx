@@ -417,7 +417,7 @@ function IndexWeeklyRecapView({
           {indexWeekly.dayChangePercent != null && (
             <p
               className={`text-xs tabular-nums ${
-                isDayUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+                isDayUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"
               }`}
             >
               {isDayUp ? "+" : ""}
@@ -430,7 +430,7 @@ function IndexWeeklyRecapView({
           {indexWeekly.weekChangePercent != null ? (
             <p
               className={`font-medium tabular-nums ${
-                isWeekUp ? "text-[var(--color-chart-1)]" : "text-destructive"
+                isWeekUp ? "text-[var(--color-chart-1)]" : "text-destructive-text"
               }`}
             >
               {isWeekUp ? "+" : ""}
