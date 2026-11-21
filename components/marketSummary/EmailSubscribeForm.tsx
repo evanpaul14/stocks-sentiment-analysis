@@ -24,7 +24,14 @@ export function EmailSubscribeForm() {
 
   if (status === "done") {
     return (
-      <p role="status" className="text-sm text-[var(--color-chart-1)]">
+      // The form (and its focused submit button) unmounts on success: move
+      // focus here so keyboard and screen-reader users land on the result.
+      <p
+        role="status"
+        tabIndex={-1}
+        ref={(el) => el?.focus()}
+        className="text-sm text-[var(--color-chart-1)] outline-none"
+      >
         You&apos;re subscribed — check your inbox.
       </p>
     );

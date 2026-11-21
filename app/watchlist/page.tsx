@@ -12,9 +12,27 @@ const REFRESH_INTERVAL_MS = 30_000;
 export default function WatchlistPage() {
   const { entries, remove, updatePrices, loggedIn } = useWatchlist();
   const symbolsRef = useRef<string[]>([]);
+  const listRef = useRef<HTMLUListElement>(null);
+  const emptyStateButtonRef = useRef<HTMLButtonElement>(null);
+  // Index of the row whose remove button was just clicked. Removing a row
+  // unmounts the focused button, so once the list re-renders, focus moves to
+  // the next row's remove button (or the empty-state button).
+  const focusAfterRemoveRef = useRef<number | null>(null);
 
   useEffect(() => {
     symbolsRef.current = entries.map((e) => e.symbol);
+  }, [entries]);
+
+  useEffect(() => {
+    const index = focusAfterRemoveRef.current;
+    if (index === null) return;
+    focusAfterRemoveRef.current = null;
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>("[data-remove-button]");
+    if (buttons && buttons.length > 0) {
+      buttons[Math.min(index, buttons.length - 1)].focus();
+    } else {
+      emptyStateButtonRef.current?.focus();
+    }
   }, [entries]);
 
   useEffect(() => {
@@ -59,6 +77,7 @@ export default function WatchlistPage() {
             Your watchlist is empty. Search a stock and add it from its page.
           </p>
           <Button
+            ref={emptyStateButtonRef}
             type="button"
             onClick={() => window.dispatchEvent(new Event("open-search"))}
           >
@@ -66,8 +85,8 @@ export default function WatchlistPage() {
           </Button>
         </div>
       ) : (
-        <ul className="space-y-2">
-          {entries.map((entry) => {
+        <ul ref={listRef} className="space-y-2">
+          {entries.map((entry, index) => {
             const isUp = (entry.lastChangePercent ?? 0) >= 0;
             return (
               <li
@@ -97,7 +116,11 @@ export default function WatchlistPage() {
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`Remove ${entry.symbol} from watchlist`}
-                  onClick={() => remove(entry.symbol)}
+                  data-remove-button
+                  onClick={() => {
+                    focusAfterRemoveRef.current = index;
+                    remove(entry.symbol);
+                  }}
                 >
                   <X />
                 </Button>

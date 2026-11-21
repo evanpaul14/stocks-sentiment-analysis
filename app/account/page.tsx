@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { mergeLocalDataIntoAccount } from "@/lib/auth/mergeLocalData";
@@ -17,6 +17,11 @@ export default function AccountPage() {
   const [user, setUser] = useState<AccountInfo | null>(null);
   const [status, setStatus] = useState<"loading" | "loaded" | "unauthenticated">("loading");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Toggling the delete confirmation unmounts whichever button was focused;
+  // move focus to its counterpart so keyboard users aren't dropped to <body>.
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteToggledRef = useRef(false);
   const [subscription, setSubscription] = useState<
     "loading" | "subscribed" | "unsubscribed" | "unavailable"
   >("loading");
@@ -98,6 +103,16 @@ export default function AccountPage() {
     router.refresh();
   }
 
+  useEffect(() => {
+    if (!deleteToggledRef.current) return;
+    (confirmingDelete ? cancelDeleteButtonRef : deleteButtonRef).current?.focus();
+  }, [confirmingDelete]);
+
+  function toggleConfirmingDelete(next: boolean) {
+    deleteToggledRef.current = true;
+    setConfirmingDelete(next);
+  }
+
   async function handleDelete() {
     await fetch("/api/account", { method: "DELETE" });
     const supabase = createClient();
@@ -173,13 +188,19 @@ export default function AccountPage() {
             type="button"
             variant="ghost"
             className="w-full text-destructive-text hover:text-destructive-text"
-            onClick={() => setConfirmingDelete(true)}
+            ref={deleteButtonRef}
+            onClick={() => toggleConfirmingDelete(true)}
           >
             Delete account
           </Button>
         ) : (
-          <div className="rounded-none border border-destructive/30 p-3">
-            <p className="mb-3 text-xs text-muted-foreground">
+          <div
+            role="group"
+            aria-label="Confirm account deletion"
+            aria-describedby="delete-account-warning"
+            className="rounded-none border border-destructive/30 p-3"
+          >
+            <p id="delete-account-warning" className="mb-3 text-xs text-muted-foreground">
               This permanently deletes your account, watchlist, and search history. This
               can&apos;t be undone.
             </p>
@@ -190,7 +211,8 @@ export default function AccountPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setConfirmingDelete(false)}
+                ref={cancelDeleteButtonRef}
+                onClick={() => toggleConfirmingDelete(false)}
                 className="flex-1"
               >
                 Cancel
