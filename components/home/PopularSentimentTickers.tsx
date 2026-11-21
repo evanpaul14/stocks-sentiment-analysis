@@ -77,19 +77,37 @@ export function PopularSentimentTickers() {
   const durationSeconds = 28 * repeat;
 
   return (
-    <div ref={containerRef} className="relative z-10 w-full overflow-hidden border-y border-border bg-card/60 backdrop-blur">
+    <div
+      ref={containerRef}
+      className="relative z-10 w-full overflow-hidden border-y border-border bg-card/60 backdrop-blur motion-reduce:overflow-x-auto"
+      onBlur={(e) => {
+        // Focusing a link scrolls this overflow container to reveal it; reset
+        // once focus leaves so the animated loop starts from a clean offset.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          e.currentTarget.scrollLeft = 0;
+        }
+      }}
+    >
+      {/* Keyboard focus and reduced motion stop the scroll outright (not just
+          pause it) so the focused link sits still and can be scrolled into view. */}
       <div
         ref={setRef}
-        className="flex w-max gap-8 py-2 whitespace-nowrap [animation-name:ticker-tape] [animation-timing-function:linear] [animation-iteration-count:infinite] hover:[animation-play-state:paused]"
+        className="flex w-max gap-8 py-2 whitespace-nowrap [animation-name:ticker-tape] [animation-timing-function:linear] [animation-iteration-count:infinite] hover:[animation-play-state:paused] focus-within:[animation-name:none] motion-reduce:[animation-name:none]"
         style={{ animationDuration: `${durationSeconds}s` }}
       >
         {items.map((company, index) => {
           const info = prices[company.ticker];
           const isUp = (info?.changePercent ?? 0) >= 0;
+          // Only the first copy of each company is exposed to keyboard and
+          // screen-reader users; the rest are visual filler for the loop.
+          // (Not `inert`, which would also block mouse clicks on them.)
+          const isDuplicate = index >= SEO_SENTIMENT_COMPANIES.length;
           return (
             <Link
               key={`${company.ticker}-${index}`}
               href={`/blog/${companySlug(company.companyName)}`}
+              aria-hidden={isDuplicate || undefined}
+              tabIndex={isDuplicate ? -1 : undefined}
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <span className="font-medium text-foreground">{displayTicker(company)}</span>{" "}
