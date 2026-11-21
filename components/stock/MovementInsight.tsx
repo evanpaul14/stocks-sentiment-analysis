@@ -72,27 +72,30 @@ export function MovementInsight({
   return (
     <section className="mb-8 rounded-none border border-primary/30 bg-primary/5 p-4 shadow-sm">
       <h2 className="mb-2 text-sm font-medium text-primary">Why is it moving?</h2>
-      {state.status === "loading" ? (
-        <p className="text-sm text-muted-foreground">Analyzing recent headlines…</p>
-      ) : state.status === "error" ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            We couldn&apos;t generate an explanation for this move right now.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setState({ status: "loading" });
-              setRetryCount((n) => n + 1);
-            }}
-            className="shrink-0 rounded-none border border-primary/40 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-          >
-            Retry
-          </button>
-        </div>
-      ) : (
-        <p className="text-base leading-relaxed">{state.insight.summary}</p>
-      )}
+      {/* Polite live region so the loading -> result/error swap is announced. */}
+      <div aria-live="polite">
+        {state.status === "loading" ? (
+          <p className="text-sm text-muted-foreground">Analyzing recent headlines…</p>
+        ) : state.status === "error" ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              We couldn&apos;t generate an explanation for this move right now.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setState({ status: "loading" });
+                setRetryCount((n) => n + 1);
+              }}
+              className="shrink-0 rounded-none border border-primary/40 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <p className="text-base leading-relaxed">{state.insight.summary}</p>
+        )}
+      </div>
     </section>
   );
 }

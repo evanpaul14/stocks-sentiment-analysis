@@ -35,6 +35,13 @@ export function SentimentStream({
   const [results, setResults] = useState<ArticleSentiment[]>(
     initialResults ?? articles.map((article) => ({ article, sentiment: "pending" }))
   );
+  // Whether any article still needed classifying on mount — only then is
+  // there a finished analysis worth announcing to screen readers.
+  const [startedWithPending] = useState(() =>
+    articles.some(
+      (_, i) => initialResults?.[i] === undefined || initialResults[i].sentiment === "pending"
+    )
+  );
   useEffect(() => {
     const pendingIndexes = articles
       .map((_, i) => i)
@@ -88,6 +95,7 @@ export function SentimentStream({
   const analyzed = results.filter(
     (r) => r.sentiment !== "pending" && r.sentiment !== "error"
   );
+  const isDone = results.every((r) => r.sentiment !== "pending");
   const progressPercent =
     articles.length === 0 ? 100 : Math.round((analyzed.length / articles.length) * 100);
 
@@ -129,8 +137,16 @@ export function SentimentStream({
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <p role="status" className="text-xs text-muted-foreground">
+          {/* Not a live region: it changes once per article, which would make
+              screen readers announce every step. The sr-only status below
+              speaks once, when the run finishes. */}
+          <p className="text-xs text-muted-foreground">
             Analyzed {analyzed.length} of {articles.length} articles
+          </p>
+          <p role="status" className="sr-only">
+            {startedWithPending && isDone
+              ? `Sentiment analysis complete: ${counts.positive} positive, ${counts.negative} negative, ${counts.neutral} neutral.`
+              : ""}
           </p>
           <div className="flex gap-3 text-xs">
             <span className="text-[var(--color-chart-1)]">Positive {counts.positive}</span>
@@ -167,7 +183,12 @@ export function SentimentStream({
 
 function SentimentBadge({ sentiment }: { sentiment: ArticleSentiment["sentiment"] }) {
   if (sentiment === "pending") {
-    return <span className="shrink-0 text-xs text-muted-foreground">…</span>;
+    return (
+      <span className="shrink-0 text-xs text-muted-foreground">
+        <span aria-hidden="true">…</span>
+        <span className="sr-only">Analyzing</span>
+      </span>
+    );
   }
   if (sentiment === "error") {
     return <span className="shrink-0 text-xs text-destructive-text">error</span>;
