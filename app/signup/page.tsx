@@ -76,34 +76,37 @@ export default function SignupPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <label htmlFor="signup-email" className="sr-only">
-          Email
-        </label>
-        <input
-          id="signup-email"
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-        />
-        <div className="space-y-2">
-          <label htmlFor="signup-password" className="sr-only">
-            Password
+        <div>
+          <label htmlFor="signup-email" className="mb-1 block text-sm font-medium">
+            Email
           </label>
           <input
-            id="signup-password"
-            type="password"
+            id="signup-email"
+            type="email"
             required
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            aria-describedby="signup-password-requirements"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
             className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
           />
+        </div>
+        <div className="space-y-2">
+          <div>
+            <label htmlFor="signup-password" className="mb-1 block text-sm font-medium">
+              Password
+            </label>
+            <input
+              id="signup-password"
+              type="password"
+              required
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-describedby="signup-password-requirements"
+              className="w-full rounded-none border border-field bg-background px-3 py-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+            />
+          </div>
           <PasswordRequirementsList id="signup-password-requirements" password={password} />
         </div>
         <Button
