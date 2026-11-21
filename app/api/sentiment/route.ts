@@ -62,6 +62,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "sentiment", limit: 30, windowMs: 60_000 },
+  { routeName: "sentiment", limit: 60, windowMs: 60_000 },
   handler
 );

@@ -17,6 +17,6 @@ async function handler(
 }
 
 export const GET = withRateLimit(
-  { routeName: "stocktwits-summary", limit: 30, windowMs: 60_000 },
+  { routeName: "stocktwits-summary", limit: 60, windowMs: 60_000 },
   handler as (request: NextRequest, context: unknown) => Promise<Response>
 );

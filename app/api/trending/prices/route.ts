@@ -30,6 +30,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "trending-prices", limit: 120, windowMs: 60_000 },
+  { routeName: "trending-prices", limit: 240, windowMs: 60_000 },
   handler
 );

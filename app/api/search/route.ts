@@ -42,6 +42,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "search", limit: 10, windowMs: 60_000 },
+  { routeName: "search", limit: 20, windowMs: 60_000 },
   handler
 );

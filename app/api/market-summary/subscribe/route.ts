@@ -51,6 +51,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "market-summary-subscribe", limit: 3, windowMs: 60 * 60_000 },
+  { routeName: "market-summary-subscribe", limit: 6, windowMs: 60 * 60_000 },
   handler
 );

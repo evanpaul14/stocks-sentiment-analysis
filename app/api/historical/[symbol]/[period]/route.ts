@@ -17,6 +17,6 @@ async function handler(
 }
 
 export const GET = withRateLimit(
-  { routeName: "historical", limit: 50, windowMs: 60_000 },
+  { routeName: "historical", limit: 100, windowMs: 60_000 },
   handler as (request: NextRequest, context: unknown) => Promise<Response>
 );

@@ -36,6 +36,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "movement-insight", limit: 20, windowMs: 60_000 },
+  { routeName: "movement-insight", limit: 40, windowMs: 60_000 },
   handler
 );

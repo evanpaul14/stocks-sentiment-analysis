@@ -24,6 +24,6 @@ async function handler(request: NextRequest) {
 }
 
 export const POST = withRateLimit(
-  { routeName: "market-summary-generate", limit: 10, windowMs: 60 * 60_000 },
+  { routeName: "market-summary-generate", limit: 20, windowMs: 60 * 60_000 },
   handler
 );

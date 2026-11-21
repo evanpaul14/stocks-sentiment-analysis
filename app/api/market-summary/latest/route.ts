@@ -11,6 +11,6 @@ async function handler() {
 }
 
 export const GET = withRateLimit(
-  { routeName: "market-summary-latest", limit: 30, windowMs: 60_000 },
+  { routeName: "market-summary-latest", limit: 60, windowMs: 60_000 },
   handler as (request: NextRequest, context: unknown) => Promise<Response>
 );

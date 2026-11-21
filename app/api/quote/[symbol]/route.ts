@@ -17,6 +17,6 @@ async function handler(
 }
 
 export const GET = withRateLimit(
-  { routeName: "quote", limit: 300, windowMs: 60_000 },
+  { routeName: "quote", limit: 600, windowMs: 60_000 },
   handler as (request: NextRequest, context: unknown) => Promise<Response>
 );

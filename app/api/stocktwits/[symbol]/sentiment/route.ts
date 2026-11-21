@@ -20,6 +20,6 @@ async function handler(
 }
 
 export const GET = withRateLimit(
-  { routeName: "stocktwits-sentiment", limit: 20, windowMs: 60_000 },
+  { routeName: "stocktwits-sentiment", limit: 40, windowMs: 60_000 },
   handler as (request: NextRequest, context: unknown) => Promise<Response>
 );

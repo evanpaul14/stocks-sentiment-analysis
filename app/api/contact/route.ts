@@ -55,4 +55,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit({ routeName: "contact", limit: 5, windowMs: 60 * 60_000 }, handler);
+export const POST = withRateLimit({ routeName: "contact", limit: 10, windowMs: 60 * 60_000 }, handler);
