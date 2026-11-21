@@ -23,7 +23,8 @@ export function SentimentPieChart({
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <PieChart>
+      {/* Rendered aria-hidden by its caller, so it must not be focusable either. */}
+      <PieChart accessibilityLayer={false}>
         <Pie
           data={chartData}
           dataKey="value"

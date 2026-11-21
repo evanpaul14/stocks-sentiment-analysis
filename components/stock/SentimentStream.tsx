@@ -105,7 +105,8 @@ export function SentimentStream({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
-        <div className="h-24 w-24 shrink-0">
+        {/* Decorative: the counts are spelled out in text alongside. */}
+        <div className="h-24 w-24 shrink-0" aria-hidden="true">
           {chartData.length > 0 ? (
             <SentimentPieChart chartData={chartData} />
           ) : (

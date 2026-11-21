@@ -63,6 +63,15 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
     });
   }
 
+  const rangeLabel = RANGES.find((r) => r.period === period)?.label ?? period;
+  // The chart's axes are hidden, so give screen readers the gist in words.
+  const chartSummary =
+    data.length >= 2
+      ? `${symbol} price, ${rangeLabel} range: $${data[0].price.toFixed(2)} on ${data[0].date} to $${data[
+          data.length - 1
+        ].price.toFixed(2)} on ${data[data.length - 1].date}.`
+      : null;
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-1">
@@ -73,11 +82,12 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
             </span>
           )}
         </div>
-        <div className="flex gap-1">
+        <div role="group" aria-label="Chart range" className="flex gap-1">
         {RANGES.map((range) => (
           <button
             key={range.period}
             type="button"
+            aria-pressed={period === range.period}
             onClick={() => handleRangeChange(range.period)}
             className={`rounded-none px-2 py-1 text-xs font-medium transition-colors ${
               period === range.period
@@ -97,6 +107,7 @@ export function PriceChart({ symbol, data: initialData }: PriceChartProps) {
         </div>
       ) : (
         <div className={`h-64 w-full ${isPending ? "opacity-60" : ""}`}>
+          {chartSummary && <p className="sr-only">{chartSummary}</p>}
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <XAxis dataKey="date" hide />
