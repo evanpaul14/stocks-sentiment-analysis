@@ -2,9 +2,7 @@
 
 # Project notes for AI agents
 
-Ground-up Next.js rebuild of the old Flask `stocks-sentiment-analysis` app. No code was ported —
-only the feature set and external API shapes were carried over. See `README.md` for stack/scripts.
-Runs as a systemd service on a self-hosted VPS behind Caddy, no serverless; `.github/workflows/deploy.yml`
+Next.js app for stock sentiment analysis. See `README.md` for stack/scripts. Runs as a systemd service on a self-hosted VPS behind Caddy, no serverless; `.github/workflows/deploy.yml`
 builds and deploys automatically on every push to `master`.
 
 ## Commands
@@ -17,7 +15,7 @@ npm run lint           # ESLint
 npm run db:migrate      # apply pending SQLite migrations (also runs automatically on first DB open)
 ```
 
-There is no test suite (the original Flask app had none either). There's no single-test command
+There is no test suite. There's no single-test command
 because there are no tests to target.
 
 Do not start the dev server (`npm run dev`) or invoke Playwright unless the user explicitly asks
@@ -67,8 +65,7 @@ The production server is reachable via `ssh digitalocean` (host alias already co
 App lives at `/opt/stocks-sentiment-analysis-v2`, owned by `flaskuser`. The live systemd service
 is named `stocks-nextjs` (not `stocks-sentiment`, despite `deploy/stocks-sentiment.service`'s
 example name) — use `systemctl restart stocks-nextjs` after editing `.env` on the server, and
-`journalctl -u stocks-nextjs -f` to tail logs. There's also a leftover failed `stocks.service`
-(the old Flask app) — ignore it.
+`journalctl -u stocks-nextjs -f` to tail logs.
 
 ## Git commit messages
 
