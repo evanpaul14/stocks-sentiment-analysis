@@ -54,8 +54,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <JsonLd data={organizationJsonLd()} />
         <JsonLd data={websiteJsonLd()} />
+        {/* Hidden until focused: the first Tab stop on every page. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
+        >
+          Skip to content
+        </a>
         <Header />
-        <div className="flex-1">{children}</div>
+        {/* tabIndex -1 lets the skip link move focus here, not just scroll. */}
+        <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
+          {children}
+        </div>
         <Footer />
         <AnalyticsProvider />
       </body>
