@@ -42,6 +42,49 @@ function extractImageUrls(message: StockTwitsMessage): string[] {
   return urls;
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  lt: "<",
+  gt: ">",
+  nbsp: " ",
+};
+
+/**
+ * StockTwits bodies arrive HTML-escaped (`don&#39;t`, `&quot;`, `&amp;` in
+ * URLs) but React renders text literally, so decode them. Single pass, so
+ * `&amp;quot;` correctly becomes `&quot;` rather than `"`.
+ */
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, entity: string) => {
+    if (entity[0] === "#") {
+      const code =
+        entity[1] === "x" || entity[1] === "X"
+          ? parseInt(entity.slice(2), 16)
+          : parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    }
+    return NAMED_ENTITIES[entity.toLowerCase()] ?? match;
+  });
+}
+
+/**
+ * Decodes entities and tidies whitespace: trims each line, drops lone "."
+ * spacer lines users add, and collapses runs of blank lines to one.
+ */
+export function cleanStockTwitsBody(body: string): string {
+  return decodeHtmlEntities(body)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== ".")
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function toFeedMessage(message: StockTwitsMessage): FeedMessage {
   const rawSentiment = message.entities?.sentiment?.basic?.toLowerCase();
   const sentiment =
@@ -62,7 +105,7 @@ function toFeedMessage(message: StockTwitsMessage): FeedMessage {
     username: message.user.username,
     avatarUrl: message.user.avatar_url,
     sentiment,
-    body: message.body,
+    body: cleanStockTwitsBody(message.body ?? ""),
     imageUrls: extractImageUrls(message),
     messageUrl: `https://stocktwits.com/symbol/message/${message.id}`,
     profileUrl: `https://stocktwits.com/${message.user.username}`,

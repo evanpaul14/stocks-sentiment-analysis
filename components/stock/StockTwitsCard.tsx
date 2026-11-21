@@ -96,10 +96,35 @@ export function StockTwitsCard({ symbol }: StockTwitsCardProps) {
                 </span>
               )}
             </div>
-            <p className="mt-0.5 text-muted-foreground">{message.body}</p>
+            <p className="mt-0.5 whitespace-pre-line break-words text-muted-foreground">
+              <MessageBody text={message.body} />
+            </p>
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+// Stops before trailing punctuation so "see https://x.com/a." doesn't link the period.
+const URL_PATTERN = /(https?:\/\/\S*[^\s.,!?;:'")\]])/g;
+
+/** Renders a message with its URLs as links (StockTwits sends plain text). */
+function MessageBody({ text }: { text: string }) {
+  return text.split(URL_PATTERN).map((part, i) =>
+    // split() with a capture group puts the matched URLs at odd indexes.
+    i % 2 === 1 ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer nofollow ugc"
+        className="text-primary underline underline-offset-2"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    )
   );
 }
