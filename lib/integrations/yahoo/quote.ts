@@ -122,17 +122,55 @@ export async function getPriceSnapshot(symbol: string): Promise<PriceSnapshot> {
   };
 }
 
-/** Batched snapshot for watchlist/trending price refresh. */
+/**
+ * Yahoo spells share classes with a dash (BRK-A); StockTwits, Reddit and
+ * users usually write a dot (BRK.A). Sent as-is, Yahoo returns a price-less
+ * stub for the dotted form.
+ */
+function toYahooSymbol(symbol: string): string {
+  return symbol.replace(/^([A-Z]+)\.([A-Z]{1,2})$/i, "$1-$2").toUpperCase();
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/**
+ * Batched snapshot for watchlist/trending price refresh.
+ *
+ * Schema validation is off on purpose: yahoo-finance2 validates the whole
+ * batch, so a single odd result (e.g. the stub Yahoo returns for an unknown
+ * symbol) used to throw away every quote — leaving the StockTwits trending
+ * list empty. Fields are read defensively instead, and each snapshot is keyed
+ * by the symbol the caller asked for.
+ */
 export async function getPriceSnapshots(
   symbols: string[]
 ): Promise<PriceSnapshot[]> {
   if (symbols.length === 0) return [];
-  const quotes = await yahooFinance.quote(symbols);
-  return quotes.map((quote) => ({
-    symbol: quote.symbol,
-    companyName: quote.longName ?? quote.shortName ?? null,
-    price: quote.regularMarketPrice ?? null,
-    previousClose: quote.regularMarketPreviousClose ?? null,
-    changePercent: quote.regularMarketChangePercent ?? null,
-  }));
+  const requestedByYahooSymbol = new Map(symbols.map((s) => [toYahooSymbol(s), s]));
+  const quotes: unknown = await yahooFinance.quote(
+    [...requestedByYahooSymbol.keys()],
+    {},
+    { validateResult: false }
+  );
+  if (!Array.isArray(quotes)) return [];
+
+  const snapshots: PriceSnapshot[] = [];
+  for (const quote of quotes as Array<Record<string, unknown>>) {
+    const yahooSymbol = asString(quote?.symbol);
+    if (!yahooSymbol) continue;
+    snapshots.push({
+      symbol: requestedByYahooSymbol.get(yahooSymbol.toUpperCase()) ?? yahooSymbol,
+      companyName: asString(quote.longName) ?? asString(quote.shortName),
+      price: asNumber(quote.regularMarketPrice),
+      previousClose: asNumber(quote.regularMarketPreviousClose),
+      changePercent: asNumber(quote.regularMarketChangePercent),
+    });
+  }
+  return snapshots;
 }
