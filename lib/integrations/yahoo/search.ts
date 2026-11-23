@@ -20,14 +20,29 @@ export class SymbolNotFoundError extends Error {
   }
 }
 
-/** Resolves a free-text company/ticker query to a Yahoo Finance symbol. */
+/** Yahoo exchange codes for US-listed securities (NYSE, Nasdaq, NYSE American/Arca, Cboe). */
+const US_EXCHANGES = new Set([
+  "NMS", "NGM", "NCM", "NIM", "NYQ", "ASE", "PCX", "BTS", "BATS", "NYS",
+]);
+
+/**
+ * Resolves a free-text company/ticker query to a Yahoo Finance symbol.
+ * Only equities and ETFs are considered; US-listed results are preferred,
+ * falling back to the first non-US equity/ETF if no US match exists.
+ */
 export async function resolveSymbol(rawQuery: string): Promise<string> {
   const query = normalizeSearchQuery(rawQuery);
   const results = await yahooFinance.search(query);
-  const firstQuote = results.quotes.find(
-    (quote): quote is typeof quote & { symbol: string } =>
-      "symbol" in quote && typeof quote.symbol === "string" && quote.symbol.length > 0
+  const candidates = results.quotes.filter(
+    (quote): quote is typeof quote & { symbol: string; quoteType: string; exchange?: string } =>
+      "symbol" in quote &&
+      typeof quote.symbol === "string" &&
+      quote.symbol.length > 0 &&
+      "quoteType" in quote &&
+      (quote.quoteType === "EQUITY" || quote.quoteType === "ETF")
   );
-  if (!firstQuote) throw new SymbolNotFoundError(rawQuery);
-  return firstQuote.symbol;
+  const best =
+    candidates.find((q) => q.exchange && US_EXCHANGES.has(q.exchange)) ?? candidates[0];
+  if (!best) throw new SymbolNotFoundError(rawQuery);
+  return best.symbol;
 }
