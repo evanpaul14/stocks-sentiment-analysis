@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { getStockPageData } from "@/lib/stock/getStockPageData";
 import { computeSentimentVerdict, getArticleSentiments } from "@/lib/stock/getArticleSentiments";
 import { SentimentVerdictBadge } from "@/components/stock/SentimentVerdictBadge";
@@ -56,6 +56,14 @@ export async function generateMetadata({ params }: StockPageProps): Promise<Meta
   }
 }
 
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export default async function StockPage({ params }: StockPageProps) {
   const { symbol } = await params;
 
@@ -65,6 +73,17 @@ export default async function StockPage({ params }: StockPageProps) {
   } catch (error) {
     if (error instanceof SymbolNotFoundError) notFound();
     throw error;
+  }
+
+  // Canonicalize the URL: /stock/microsoft, /stock/msft, /stock/Msft -> /stock/MSFT.
+  // Case-only differences are deterministic, so they get a cacheable 308. Name -> ticker
+  // depends on Yahoo's search results (which can change), so it gets a 307 that browsers
+  // and crawlers won't pin.
+  const requested = decodeURIComponentSafe(symbol);
+  if (requested !== data.symbol) {
+    const target = `/stock/${encodeURIComponent(data.symbol)}`;
+    if (requested.toUpperCase() === data.symbol) permanentRedirect(target);
+    redirect(target);
   }
 
   const { stockInfo, historicalData, articles } = data;
