@@ -20,7 +20,7 @@ function isEnabled(): boolean {
 /**
  * Primary sentiment classifier (TypeSafe Jev). Returns null on any failure
  * (timeout, HTTP error, unexpected response) so the caller falls through to
- * the Cloudflare backup — no retries, fail fast.
+ * the Gemini Decision backup — no retries, fail fast.
  */
 export async function classifyWithJev(
   companyName: string,
@@ -64,7 +64,7 @@ export async function classifyWithJev(
 
     if (!response.ok) {
       console.warn(
-        `[jev] sentiment request failed with ${response.status}, falling back to Cloudflare`
+        `[jev] sentiment request failed with ${response.status}, falling back to Gemini Decision`
       );
       return null;
     }
@@ -75,7 +75,7 @@ export async function classifyWithJev(
       ? choice
       : null;
   } catch (error) {
-    console.warn("[jev] sentiment request errored, falling back to Cloudflare", error);
+    console.warn("[jev] sentiment request errored, falling back to Gemini Decision", error);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -93,7 +93,7 @@ export interface JevArticle {
  * its own choice question, so articles can't influence each other's answers.
  * Returns one entry per input article (null where Jev gave no usable answer),
  * or null for the whole batch on any request failure, so the caller can fall
- * back to the per-article Cloudflare/Gemini path. Questions are answered
+ * back to the per-article Gemini Decision/Cloudflare path. Questions are answered
  * independently, so a missing answer only affects its own article.
  */
 export async function classifyBatchWithJev(

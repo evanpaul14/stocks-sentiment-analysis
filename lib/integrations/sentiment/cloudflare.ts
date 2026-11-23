@@ -10,9 +10,9 @@ function isEnabled(): boolean {
 }
 
 /**
- * Primary sentiment classifier. Returns null on any failure (timeout, HTTP
- * error, unparseable response) so the caller falls through to the Gemini
- * backup — mirrors the old app's "no retries, fail fast" behavior.
+ * Last-resort sentiment classifier. Returns null on any failure (timeout,
+ * HTTP error, unparseable response) so the caller can report the failure.
+ * No retries, fail fast.
  */
 export async function classifyWithCloudflare(
   companyName: string,
@@ -58,7 +58,7 @@ export async function classifyWithCloudflare(
 
     if (!response.ok) {
       console.warn(
-        `[cloudflare] sentiment request failed with ${response.status}, falling back to Gemini`
+        `[cloudflare] sentiment request failed with ${response.status}, no more fallbacks`
       );
       return null;
     }
@@ -72,7 +72,7 @@ export async function classifyWithCloudflare(
       null;
     return extractSentimentLabel(typeof raw === "string" ? raw : null);
   } catch (error) {
-    console.warn("[cloudflare] sentiment request errored, falling back to Gemini", error);
+    console.warn("[cloudflare] sentiment request errored, no more fallbacks", error);
     return null;
   } finally {
     clearTimeout(timeout);

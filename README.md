@@ -13,7 +13,7 @@ external API shapes were carried over; none of the original code was reused.
 
 - Search stocks by ticker or company name, with live price, historical chart (Day/5D/1M/YTD/1Y/5Y
   ranges), and key stats
-- AI-powered news sentiment analysis per article (Gemini, with a Cloudflare Workers AI fallback)
+- AI-powered news sentiment analysis per article (TypeSafe Jev, with Gemini Decision 1 and Cloudflare Workers AI Gemma as fallbacks)
 - Trending dashboards sourced from StockTwits and Reddit (via ApeWisdom)
 - Automated daily market summary (LLM-written wrap-up) with email subscription via Mailgun
 - AI-generated stock movement insight (why a stock moved, in plain language)
@@ -163,11 +163,12 @@ Drop it in `content/blog/`, commit, redeploy. It'll appear at `/blog/<filename-w
 ## Environment variables
 
 See `.env.example` for the full list with comments. Everything is optional except
-`GOOGLE_API_KEY` (Gemini sentiment classifier) — every other integration degrades gracefully
+`TYPESAFE_API_KEY` / `GOOGLE_API_KEY` / Cloudflare keys (sentiment classifiers; at least one needed) — every other integration degrades gracefully
 (returns empty results, or skips the feature) if its keys are unset. Notable ones:
 
-- `GOOGLE_API_KEY` — required; Gemini sentiment classification
-- `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — fallback sentiment classifier
+- `TYPESAFE_API_KEY` — primary sentiment classifier (Jev)
+- `GOOGLE_API_KEY` — second-line sentiment classifier (Gemini Decision 1)
+- `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — last-resort sentiment classifier (Gemma)
 - `LLM7_API_KEY` — movement insight + market summary + SEO page text generation (falls back to Cloudflare Workers AI, via `CLOUDFLARE_TEXT_MODEL` / `CLOUDFLARE_LONG_TEXT_MODEL`, if LLM7 errors)
 - `FINNHUB_API_KEY`, `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY` — market data / news
 - `UNSPLASH_ACCESS_KEY` — article thumbnail images

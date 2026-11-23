@@ -1,12 +1,18 @@
 import { classifyWithCloudflare } from "./cloudflare";
-import { classifyWithGemini } from "./gemini";
+import { classifyWithGeminiDecision } from "./geminiDecision";
 import { classifyBatchWithJev, classifyWithJev } from "./jev";
 import type { SentimentLabel } from "./promptTemplates";
 
 export type { SentimentLabel };
-export { ModelOverloadedError } from "./gemini";
+/** Thrown when every classifier in the chain failed to produce a label. */
+export class ModelOverloadedError extends Error {
+  constructor() {
+    super("MODEL_OVERLOADED");
+    this.name = "ModelOverloadedError";
+  }
+}
 
-/** Jev primary, Cloudflare backup, Gemini as the last resort. */
+/** Jev primary, Gemini Decision 1 backup, Cloudflare Gemma as the last resort. */
 export async function classifySentiment(
   companyName: string,
   articleTitle: string,
@@ -27,6 +33,13 @@ async function classifyWithFallbacks(
   articleTitle: string,
   articleDescription: string
 ): Promise<SentimentLabel> {
+  const geminiResult = await classifyWithGeminiDecision(
+    companyName,
+    articleTitle,
+    articleDescription
+  );
+  if (geminiResult) return geminiResult;
+
   const cloudflareResult = await classifyWithCloudflare(
     companyName,
     articleTitle,
@@ -34,7 +47,8 @@ async function classifyWithFallbacks(
   );
   if (cloudflareResult) return cloudflareResult;
 
-  return classifyWithGemini(companyName, articleTitle, articleDescription);
+  // Nothing answered: fail rather than store a made-up "neutral".
+  throw new ModelOverloadedError();
 }
 
 export interface ArticleToClassify {
@@ -45,7 +59,7 @@ export interface ArticleToClassify {
 /**
  * Classifies many articles about one company. Jev handles them in a single
  * batched request; any article Jev didn't answer (or all of them, if the batch
- * failed) goes through the existing per-article Cloudflare -> Gemini fallbacks,
+ * failed) goes through the existing per-article Gemini Decision -> Cloudflare fallbacks,
  * one request each, without retrying Jev. Results are settled per article so one
  * failed fallback doesn't lose the rest.
  */

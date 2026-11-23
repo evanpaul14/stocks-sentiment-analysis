@@ -1,6 +1,6 @@
 /**
  * In-process sliding-window rate limiter. Reusable across any client that
- * needs to stay under a calls-per-window quota (currently just Gemini).
+ * needs to stay under a calls-per-window quota (currently just Gemini Decision).
  */
 export class SlidingWindowRateLimiter {
   private readonly callTimestamps: number[] = [];
