@@ -6,7 +6,15 @@ import { yahooFinance } from "./client";
  * e.g. "brk.b" -> "BRK"). Free-text company names pass through unmodified.
  */
 export function normalizeSearchQuery(rawQuery: string): string {
-  const trimmed = rawQuery.trim();
+  // Route params from /stock/[symbol] can arrive still URL-encoded
+  // ("berkshire%20hathaway"), which would otherwise look like a spaceless ticker.
+  let decoded = rawQuery;
+  try {
+    decoded = decodeURIComponent(rawQuery);
+  } catch {
+    // malformed escape sequence — use the raw input
+  }
+  const trimmed = decoded.trim();
   if (trimmed.includes(" ")) return trimmed;
   const dotIndex = trimmed.indexOf(".");
   const truncated = dotIndex === -1 ? trimmed : trimmed.slice(0, dotIndex);
