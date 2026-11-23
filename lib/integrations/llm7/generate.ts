@@ -27,6 +27,24 @@ export interface GenerateTextOptions {
   cloudflareTimeoutMs?: number;
 }
 
+/** Epoch ms until which LLM7 is skipped, set when it answers 429 with a wait time. */
+let llm7BlockedUntil = 0;
+
+/** Reads the wait from a 429: the Retry-After header, else "retry in N seconds" in the message. */
+function parseRetryAfterMs(error: unknown): number | null {
+  const err = error as { status?: number; message?: string; headers?: Headers | Record<string, string> };
+  if (err?.status !== 429) return null;
+  const h = err.headers;
+  const header =
+    h && typeof (h as Headers).get === "function"
+      ? (h as Headers).get("retry-after")
+      : (h as Record<string, string> | undefined)?.["retry-after"];
+  const fromHeader = header ? Number(header) : NaN;
+  if (Number.isFinite(fromHeader) && fromHeader > 0) return fromHeader * 1000;
+  const match = err.message?.match(/retry in (\d+(?:\.\d+)?)\s*seconds?/i);
+  return match ? Number(match[1]) * 1000 : null;
+}
+
 function cloudflareEnabled(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
 }
@@ -91,7 +109,7 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
  * use their own templated fallback.
  */
 export async function generateText(opts: GenerateTextOptions): Promise<string | null> {
-  if (llm7Client) {
+  if (llm7Client && Date.now() >= llm7BlockedUntil) {
     try {
       // maxRetries: 0 — the SDK's default retries would stack on top of the
       // timeout before we ever reach the Cloudflare fallback.
@@ -111,7 +129,15 @@ export async function generateText(opts: GenerateTextOptions): Promise<string | 
       if (content) return content;
       console.error(`[llm7] ${opts.label} returned empty content`);
     } catch (error) {
-      console.error(`[llm7] ${opts.label} failed`, error);
+      const waitMs = parseRetryAfterMs(error);
+      if (waitMs) {
+        llm7BlockedUntil = Date.now() + waitMs;
+        console.warn(
+          `[llm7] rate limited; skipping LLM7 for ${Math.round(waitMs / 1000)}s (until ${new Date(llm7BlockedUntil).toISOString()})`
+        );
+      } else {
+        console.error(`[llm7] ${opts.label} failed`, error);
+      }
     }
   }
 
