@@ -28,15 +28,19 @@ export class SymbolNotFoundError extends Error {
   }
 }
 
-/** Yahoo exchange codes for US-listed securities (NYSE, Nasdaq, NYSE American/Arca, Cboe). */
+/** Yahoo exchange codes for US-listed securities (NYSE, Nasdaq, NYSE American/Arca, Cboe, S&P, Dow). */
 const US_EXCHANGES = new Set([
-  "NMS", "NGM", "NCM", "NIM", "NYQ", "ASE", "PCX", "BTS", "BATS", "NYS",
+  "NMS", "NGM", "NCM", "NIM", "NYQ", "ASE", "PCX", "BTS", "BATS", "NYS", "SNP", "DJI",
 ]);
+
+const ALLOWED_QUOTE_TYPES = new Set(["EQUITY", "ETF", "INDEX"]);
 
 /**
  * Resolves a free-text company/ticker query to a Yahoo Finance symbol.
- * Only equities and ETFs are considered; US-listed results are preferred,
- * falling back to the first non-US equity/ETF if no US match exists.
+ * Only equities, ETFs and indices are considered. An exact symbol match wins
+ * (so a canonical symbol like MSFT or ^GSPC always resolves to itself, which
+ * keeps the /stock/[symbol] canonical redirect from looping); otherwise
+ * US-listed results are preferred, falling back to the first match.
  */
 export async function resolveSymbol(rawQuery: string): Promise<string> {
   const query = normalizeSearchQuery(rawQuery);
@@ -47,10 +51,13 @@ export async function resolveSymbol(rawQuery: string): Promise<string> {
       typeof quote.symbol === "string" &&
       quote.symbol.length > 0 &&
       "quoteType" in quote &&
-      (quote.quoteType === "EQUITY" || quote.quoteType === "ETF")
+      typeof quote.quoteType === "string" &&
+      ALLOWED_QUOTE_TYPES.has(quote.quoteType)
   );
   const best =
-    candidates.find((q) => q.exchange && US_EXCHANGES.has(q.exchange)) ?? candidates[0];
+    candidates.find((q) => q.symbol === query) ??
+    candidates.find((q) => q.exchange && US_EXCHANGES.has(q.exchange)) ??
+    candidates[0];
   if (!best) throw new SymbolNotFoundError(rawQuery);
   return best.symbol;
 }
