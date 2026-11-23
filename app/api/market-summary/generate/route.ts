@@ -18,7 +18,7 @@ async function handler(request: NextRequest) {
     typeof body?.date === "string" && body.date ? body.date : todayInEastern();
 
   const record = await generateAndPersistMarketSummary(dateKey);
-  await ensureMarketSummaryEmailSent(record.id, record.title, record.body, record.imageUrl);
+  await ensureMarketSummaryEmailSent(record);
 
   return NextResponse.json({ market_summary: record });
 }
