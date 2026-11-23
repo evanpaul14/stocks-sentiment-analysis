@@ -81,6 +81,7 @@ Write a 2-3 sentence, no-speculation explanation of the move. Refer to the compa
     temperature: 0.3,
     maxTokens: 220,
     llm7TimeoutMs: 6_000,
+    preferCloudflare: true,
     cloudflareTimeoutMs: 10_000,
     messages: [
       {

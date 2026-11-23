@@ -212,6 +212,7 @@ Respond with ONLY the JSON object, no markdown fences.`;
   const raw = await generateText({
     label: `SEO sentiment page generation for ${ticker}`,
     long: true,
+    preferCloudflare: true,
     temperature: 0.4,
     maxTokens: 1400,
     messages: [
@@ -299,6 +300,7 @@ Respond with ONLY the JSON object, no markdown fences.`;
   const raw = await generateText({
     label: `index weekly recap generation for ${input.ticker}`,
     long: true,
+    preferCloudflare: true,
     temperature: 0.4,
     maxTokens: 700,
     messages: [

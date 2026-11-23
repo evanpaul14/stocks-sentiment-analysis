@@ -23,6 +23,8 @@ export interface GenerateTextOptions {
    * callers (user-facing pages) pass a small value; batch jobs use the default.
    */
   llm7TimeoutMs?: number;
+  /** Try Cloudflare first and fall back to LLM7 (default is LLM7 first). */
+  preferCloudflare?: boolean;
   /** Overrides how long to wait on the Cloudflare fallback. */
   cloudflareTimeoutMs?: number;
 }
@@ -103,45 +105,53 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
   }
 }
 
+async function generateWithLlm7(opts: GenerateTextOptions): Promise<string | null> {
+  if (!llm7Client || Date.now() < llm7BlockedUntil) return null;
+  try {
+    // maxRetries: 0 — the SDK's default retries would stack on top of the
+    // timeout before we ever reach the fallback provider.
+    const response = await llm7Client.chat.completions.create(
+      {
+        model: llm7Model,
+        temperature: opts.temperature,
+        max_tokens: opts.maxTokens,
+        messages: opts.messages,
+      },
+      {
+        timeout: opts.llm7TimeoutMs ?? DEFAULT_LLM7_TIMEOUT_SECONDS * 1000,
+        maxRetries: 0,
+      }
+    );
+    const content = response.choices[0]?.message?.content?.trim();
+    if (content) return content;
+    console.error(`[llm7] ${opts.label} returned empty content`);
+  } catch (error) {
+    const waitMs = parseRetryAfterMs(error);
+    if (waitMs) {
+      llm7BlockedUntil = Date.now() + waitMs;
+      console.warn(
+        `[llm7] rate limited; skipping LLM7 for ${Math.round(waitMs / 1000)}s (until ${new Date(llm7BlockedUntil).toISOString()})`
+      );
+    } else {
+      console.error(`[llm7] ${opts.label} failed`, error);
+    }
+  }
+  return null;
+}
+
 /**
- * Generates text with LLM7, falling back to Cloudflare Workers AI if LLM7 errors
- * or returns nothing. Returns null if no provider produced text, so callers can
+ * Generates text with LLM7 then Cloudflare Workers AI (or the reverse when
+ * `preferCloudflare` is set), using the second provider if the first errors or
+ * returns nothing. Returns null if no provider produced text, so callers can
  * use their own templated fallback.
  */
 export async function generateText(opts: GenerateTextOptions): Promise<string | null> {
-  if (llm7Client && Date.now() >= llm7BlockedUntil) {
-    try {
-      // maxRetries: 0 — the SDK's default retries would stack on top of the
-      // timeout before we ever reach the Cloudflare fallback.
-      const response = await llm7Client.chat.completions.create(
-        {
-          model: llm7Model,
-          temperature: opts.temperature,
-          max_tokens: opts.maxTokens,
-          messages: opts.messages,
-        },
-        {
-          timeout: opts.llm7TimeoutMs ?? DEFAULT_LLM7_TIMEOUT_SECONDS * 1000,
-          maxRetries: 0,
-        }
-      );
-      const content = response.choices[0]?.message?.content?.trim();
-      if (content) return content;
-      console.error(`[llm7] ${opts.label} returned empty content`);
-    } catch (error) {
-      const waitMs = parseRetryAfterMs(error);
-      if (waitMs) {
-        llm7BlockedUntil = Date.now() + waitMs;
-        console.warn(
-          `[llm7] rate limited; skipping LLM7 for ${Math.round(waitMs / 1000)}s (until ${new Date(llm7BlockedUntil).toISOString()})`
-        );
-      } else {
-        console.error(`[llm7] ${opts.label} failed`, error);
-      }
-    }
-  }
-
-  if (!cloudflareEnabled()) return null;
-  console.warn(`[llm7] falling back to Cloudflare for ${opts.label}`);
-  return generateWithCloudflare(opts);
+  const cloudflare = async () => (cloudflareEnabled() ? generateWithCloudflare(opts) : null);
+  const [first, second] = opts.preferCloudflare
+    ? [cloudflare, () => generateWithLlm7(opts)]
+    : [() => generateWithLlm7(opts), cloudflare];
+  const result = await first();
+  if (result) return result;
+  console.warn(`[llm] falling back to second provider for ${opts.label}`);
+  return second();
 }
