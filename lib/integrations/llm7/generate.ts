@@ -4,6 +4,8 @@ const DEFAULT_CLOUDFLARE_TEXT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const DEFAULT_CLOUDFLARE_LONG_TEXT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const DEFAULT_CLOUDFLARE_TEXT_TIMEOUT_SECONDS = 30;
 const DEFAULT_LLM7_TIMEOUT_SECONDS = 20;
+const DEFAULT_GOOGLE_TEXT_MODEL = "gemma-4-26b-a4b-it";
+const DEFAULT_GOOGLE_TEXT_TIMEOUT_SECONDS = 30;
 
 export interface ChatMessage {
   role: "system" | "user";
@@ -27,6 +29,8 @@ export interface GenerateTextOptions {
   preferCloudflare?: boolean;
   /** Overrides how long to wait on the Cloudflare fallback. */
   cloudflareTimeoutMs?: number;
+  /** Overrides how long to wait on Google AI Studio (the Cloudflare backup). */
+  googleTimeoutMs?: number;
 }
 
 /** Epoch ms until which LLM7 is skipped, set when it answers 429 with a wait time. */
@@ -51,9 +55,13 @@ function cloudflareEnabled(): boolean {
   return Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
 }
 
-/** True if at least one text-generation provider (LLM7 or Cloudflare) is configured. */
+function googleEnabled(): boolean {
+  return Boolean(process.env.GOOGLE_API_KEY);
+}
+
+/** True if at least one text-generation provider (LLM7, Cloudflare or Google) is configured. */
 export function llmAvailable(): boolean {
-  return Boolean(llm7Client) || cloudflareEnabled();
+  return Boolean(llm7Client) || cloudflareEnabled() || googleEnabled();
 }
 
 async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string | null> {
@@ -105,6 +113,63 @@ async function generateWithCloudflare(opts: GenerateTextOptions): Promise<string
   }
 }
 
+/** Same Gemma 4 26B model as Cloudflare, served by Google AI Studio (Gemini API). */
+async function generateWithGoogle(opts: GenerateTextOptions): Promise<string | null> {
+  const model = process.env.GOOGLE_TEXT_MODEL ?? DEFAULT_GOOGLE_TEXT_MODEL;
+  const timeoutMs =
+    opts.googleTimeoutMs ??
+    Number(process.env.GOOGLE_TEXT_TIMEOUT_SECONDS ?? DEFAULT_GOOGLE_TEXT_TIMEOUT_SECONDS) * 1000;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+  // Gemma on the Gemini API doesn't reliably accept systemInstruction, so the
+  // system prompt is prepended to the user turn instead.
+  const prompt = opts.messages.map((m) => m.content).join("\n\n");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": process.env.GOOGLE_API_KEY!,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: opts.temperature,
+          maxOutputTokens: opts.maxTokens,
+          // Gemma 4 thinks by default and burns maxOutputTokens on it before
+          // answering. "minimal" turns it off (thinkingBudget isn't supported).
+          thinkingConfig: { thinkingLevel: "minimal" },
+        },
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      console.error(`[google] ${opts.label} failed with ${response.status}`);
+      return null;
+    }
+    const data = await response.json();
+    // Skip any reasoning parts; only the answer text is wanted.
+    const parts: { text?: string; thought?: boolean }[] =
+      data?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts
+      .filter((p) => !p.thought && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("")
+      .trim();
+    if (text) return text;
+    console.error(`[google] ${opts.label} returned empty content`);
+    return null;
+  } catch (error) {
+    console.error(`[google] ${opts.label} errored`, error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function generateWithLlm7(opts: GenerateTextOptions): Promise<string | null> {
   if (!llm7Client || Date.now() < llm7BlockedUntil) return null;
   try {
@@ -140,18 +205,21 @@ async function generateWithLlm7(opts: GenerateTextOptions): Promise<string | nul
 }
 
 /**
- * Generates text with LLM7 then Cloudflare Workers AI (or the reverse when
- * `preferCloudflare` is set), using the second provider if the first errors or
- * returns nothing. Returns null if no provider produced text, so callers can
- * use their own templated fallback.
+ * Generates text with LLM7 then Cloudflare Workers AI (or Cloudflare first when
+ * `preferCloudflare` is set). Google AI Studio (same Gemma model) is the backup
+ * for Cloudflare and runs right after it. Each provider is tried in order until
+ * one returns text. Returns null if none did, so callers can use their own
+ * templated fallback.
  */
 export async function generateText(opts: GenerateTextOptions): Promise<string | null> {
   const cloudflare = async () => (cloudflareEnabled() ? generateWithCloudflare(opts) : null);
-  const [first, second] = opts.preferCloudflare
-    ? [cloudflare, () => generateWithLlm7(opts)]
-    : [() => generateWithLlm7(opts), cloudflare];
-  const result = await first();
-  if (result) return result;
-  console.warn(`[llm] falling back to second provider for ${opts.label}`);
-  return second();
+  const google = async () => (googleEnabled() ? generateWithGoogle(opts) : null);
+  const llm7 = () => generateWithLlm7(opts);
+  const providers = opts.preferCloudflare ? [cloudflare, google, llm7] : [llm7, cloudflare, google];
+  for (const [i, provider] of providers.entries()) {
+    if (i > 0) console.warn(`[llm] falling back to provider ${i + 1} for ${opts.label}`);
+    const result = await provider();
+    if (result) return result;
+  }
+  return null;
 }

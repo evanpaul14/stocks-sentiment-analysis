@@ -167,9 +167,9 @@ See `.env.example` for the full list with comments. Everything is optional excep
 (returns empty results, or skips the feature) if its keys are unset. Notable ones:
 
 - `TYPESAFE_API_KEY` — primary sentiment classifier (Jev)
-- `GOOGLE_API_KEY` — second-line sentiment classifier (Gemini Decision 1)
+- `GOOGLE_API_KEY` — second-line sentiment classifier (Gemini Decision 1), and Google AI Studio Gemma (`GOOGLE_TEXT_MODEL`) as the backup to Cloudflare for text generation
 - `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` — last-resort sentiment classifier (Gemma)
-- `LLM7_API_KEY` — movement insight + market summary + SEO page text generation (falls back to Cloudflare Workers AI, via `CLOUDFLARE_TEXT_MODEL` / `CLOUDFLARE_LONG_TEXT_MODEL`, if LLM7 errors)
+- `LLM7_API_KEY` — movement insight + market summary + SEO page text generation (falls back to Cloudflare Workers AI, via `CLOUDFLARE_TEXT_MODEL` / `CLOUDFLARE_LONG_TEXT_MODEL`, then Google AI Studio Gemma, if LLM7 errors; callers with `preferCloudflare` go Cloudflare → Google → LLM7)
 - `FINNHUB_API_KEY`, `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY` — market data / news
 - `UNSPLASH_ACCESS_KEY` — article thumbnail images
 - `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` — market summary email subscription
