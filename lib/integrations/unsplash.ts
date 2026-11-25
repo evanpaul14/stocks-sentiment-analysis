@@ -93,8 +93,15 @@ export async function getOrFetchUnsplashImage(
 
   if (!isEnabled()) return null;
 
-  const sanitizedQuery = sanitizeQuery(query) || (process.env.UNSPLASH_DEFAULT_QUERY ?? "stock market");
-  const photo = await requestUnsplashPhoto(sanitizedQuery);
+  const defaultQuery = process.env.UNSPLASH_DEFAULT_QUERY ?? "stock market";
+  const sanitizedQuery = sanitizeQuery(query) || defaultQuery;
+  // Unsplash 404s ("No photos found") for queries naming companies it has no
+  // tagged photos of (e.g. "Anthropic stock market"). Fall back to the generic
+  // query so the page still gets a hero — and gets it cached, instead of
+  // re-querying Unsplash on every request and burning the hourly rate limit.
+  const photo =
+    (await requestUnsplashPhoto(sanitizedQuery)) ??
+    (sanitizedQuery !== defaultQuery ? await requestUnsplashPhoto(defaultQuery) : null);
   if (!photo) return null;
 
   void registerDownload(photo);
