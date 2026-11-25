@@ -16,9 +16,14 @@ interface CompanyLogoProps {
  */
 const CDN_WIDTHS = [16, 20, 24, 32, 40, 48, 60, 64, 72, 80, 96, 128, 192] as const;
 
-/** Smallest allowed CDN width covering a 2x (retina) render, capped at the largest. */
+/**
+ * Smallest allowed CDN width covering a 4x render, capped at the largest.
+ * 4x rather than 2x: the CDN's small webps are heavily compressed, and 3x
+ * phone screens plus browser zoom made a 2x source look soft. Even the
+ * 192px cap is only ~1.5KB.
+ */
 function cdnWidth(size: number): number {
-  return CDN_WIDTHS.find((w) => w >= size * 2) ?? CDN_WIDTHS[CDN_WIDTHS.length - 1];
+  return CDN_WIDTHS.find((w) => w >= size * 4) ?? CDN_WIDTHS[CDN_WIDTHS.length - 1];
 }
 
 /**
@@ -51,6 +56,10 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
       alt=""
       width={size}
       height={size}
+      // The CDN already resizes; running it through Next's optimizer again
+      // re-encoded the small webp at quality 75 and capped the 2x srcset
+      // entry at the source width, which is what made logos look blurry.
+      unoptimized
       className="shrink-0 rounded-none border border-border bg-card object-contain"
       style={{ width: size, height: size }}
       onError={() => setFailed(true)}
