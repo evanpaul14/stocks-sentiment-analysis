@@ -10,8 +10,20 @@ interface CompanyLogoProps {
 }
 
 /**
+ * The CDN resizes via `?w=`, but only for a fixed allowlist of widths — any
+ * other value (e.g. 100, 200) returns 403, which would trip the fallback avatar.
+ * Originals are 1000x1000.
+ */
+const CDN_WIDTHS = [16, 20, 24, 32, 40, 48, 60, 64, 72, 80, 96, 128, 192] as const;
+
+/** Smallest allowed CDN width covering a 2x (retina) render, capped at the largest. */
+function cdnWidth(size: number): number {
+  return CDN_WIDTHS.find((w) => w >= size * 2) ?? CDN_WIDTHS[CDN_WIDTHS.length - 1];
+}
+
+/**
  * StockTwits serves ticker-keyed logo images (same CDN the old app's cached
- * StockTwits responses reference, e.g. logos.stocktwits-cdn.com/CRM.png) —
+ * StockTwits responses reference, e.g. logos.stocktwits-cdn.com/CRM.png; the CDN also serves .webp, used here) —
  * no API call needed, just the symbol. Not every ticker has one, so this
  * falls back to a letter avatar on load error.
  */
@@ -35,7 +47,7 @@ export function CompanyLogo({ symbol, companyName, size = 40 }: CompanyLogoProps
     // adjacent text (see app/stock/[symbol]/page.tsx) — if this is ever used
     // standalone, pass alt={companyName} instead.
     <Image
-      src={`https://logos.stocktwits-cdn.com/${encodeURIComponent(symbol.toUpperCase())}.png`}
+      src={`https://logos.stocktwits-cdn.com/${encodeURIComponent(symbol.toUpperCase())}.webp?w=${cdnWidth(size)}`}
       alt=""
       width={size}
       height={size}
