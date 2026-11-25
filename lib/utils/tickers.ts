@@ -16,6 +16,7 @@ export const SEO_SENTIMENT_COMPANIES: SeoSentimentCompany[] = [
   { ticker: "MSFT", companyName: "Microsoft", groups: ["cluster-hardware-ai"] },
   { ticker: "NVDA", companyName: "NVIDIA", groups: ["cluster-hardware-ai"] },
   { ticker: "TSLA", companyName: "Tesla", groups: ["cluster-hardware-ai"] },
+  { ticker: "ANT", companyName: "Anthropic", groups: ["cluster-hardware-ai"] },
   { ticker: "AMZN", companyName: "Amazon", groups: ["cluster-consumer-media"] },
   { ticker: "GOOGL", companyName: "Alphabet", groups: ["cluster-consumer-media"] },
   { ticker: "META", companyName: "Meta", groups: ["cluster-consumer-media"] },
